@@ -67,7 +67,7 @@ pub fn devlog(msg: &str) {
     // >200ms 慢调用哨兵保留（当年 /sdcard 未门控在 Windows 触发
     // UNC 解析 7s 级超时——"白窗干等"的真身，防复发）
     let t = starfish_std::debug::Stopwatch::now();
-    starfish_std::debug::console_log(msg);
+    starfish_debug::log_info!(msg);
     let a = t.ms();
     #[cfg(target_os = "android")]
     {
@@ -83,7 +83,7 @@ pub fn devlog(msg: &str) {
     }
     let b = t.ms();
     if a > 200 || b > 200 {
-        eprintln!("[devlog 慢调用哨兵] console={a}ms file段={b}ms");
+        starfish_debug::log_warn!(format!("[devlog 慢调用哨兵] console={a}ms file段={b}ms"));
     }
     #[cfg(all(target_os = "android", debug_assertions))]
     {

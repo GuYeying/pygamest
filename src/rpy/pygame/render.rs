@@ -327,8 +327,11 @@ pub(crate) mod render {
     pub(crate) struct MeshArgs {
         #[pyarg(any)]
         layout: String,
-        #[pyarg(any)]
-        vertices: PyObjectRef,
+        #[pyarg(any, optional)]
+        vertices: Option<PyObjectRef>,
+        /// vertices=None 时的零填充 float 数（容量预留快路径）
+        #[pyarg(any, optional)]
+        floats: Option<usize>,
         #[pyarg(any, optional)]
         indices: Option<PyObjectRef>,
         #[pyarg(any, optional)]
@@ -433,6 +436,10 @@ pub(crate) mod render {
             "pos3color4" => vec![Float32x3, Float32x4],
             // 角点模板（GPU 粒子：每粒子一个三角形，位置经 uniform/storage）
             "corner2" => vec![Float32x2],
+            // 实例步进 pos（GPU 粒子 v3——每实例一粒，pos 顶点属性直进 VS：
+            // 顶点属性 = 固定功能通路，规避 VS 段纹理/SSBO 读取的多平台
+            // 静默失效——DX12/GLES 双实测 2026-10-30）
+            "inst_pos2" => vec![Float32x2],
             // SpriteVertex 同布局（引擎批顶点——互操作）
             "pos3uv2color4" => vec![Float32x3, Float32x2, Float32x4],
             _ => return None,
@@ -446,6 +453,7 @@ pub(crate) mod render {
             "pos3uv2" => 5,
             "pos3color4" => 7,
             "corner2" => 2,
+            "inst_pos2" => 2,
             "pos3uv2color4" => 9,
             _ => 0,
         }
@@ -540,23 +548,45 @@ pub(crate) mod render {
                     args.layout
                 ))
             })?;
-            let n: Vec<f64> = vm.extract_elements_with(&args.vertices, |o| {
-                f64::try_from_object(vm, o.to_owned())
-            })?;
             let stride = layout_stride_floats(&args.layout);
-            if stride == 0 || n.len() % stride != 0 {
+            let nv = if args.vertices.is_some() {
+                vm.extract_elements_with(&args.vertices.as_ref().unwrap(), |o| {
+                    f64::try_from_object(vm, o.to_owned())
+                })?
+                .len()
+            } else {
+                0
+            };
+            if stride == 0 || nv % stride != 0 {
                 return Err(vm.new_value_error(format!(
-                    "vertices 数量 {} 须为布局 stride {stride} 的整数倍",
-                    n.len()
+                    "vertices 数量 {nv} 须为布局 stride {stride} 的整数倍",
                 )));
             }
-            let bytes: Vec<u8> = n.iter().flat_map(|v| (*v as f32).to_le_bytes()).collect();
+            // vertices=None + floats=N → 零填充快路径（容量预留形态——
+            // GPU 粒子 v3：pos 平面经 copy_mesh_vertices 每帧 GPU 侧直搬，
+            // 百万级 Python 列表不可行）
+            let bytes: Vec<u8> = if args.vertices.is_none() {
+                let floats = args.floats.ok_or_else(|| {
+                    vm.new_value_error("vertices=None 须同时给 floats=N（零填充 float 数）")
+                })?;
+                vec![0u8; floats * 4]
+            } else {
+                let n: Vec<f64> = vm.extract_elements_with(&args.vertices.as_ref().unwrap(), |o| {
+                    f64::try_from_object(vm, o.to_owned())
+                })?;
+                n.iter().flat_map(|v| (*v as f32).to_le_bytes()).collect()
+            };
             // 顶点恒带 COPY_DST（update_mesh 的 write_buffer 硬要求——
             // 动态几何是 mesh 常规用法，绑定层默认开启免用户踩坑）
-            let mut b = self
-                .access
-                .mesh_builder(formats, bytes)
-                .with_vertex_usages(wgpu::BufferUsages::COPY_DST);
+            let mut b = if args.layout == "inst_pos2" {
+                self.access
+                    .mesh_builder_instance(formats, bytes)
+                    .with_vertex_usages(wgpu::BufferUsages::COPY_DST)
+            } else {
+                self.access
+                    .mesh_builder(formats, bytes)
+                    .with_vertex_usages(wgpu::BufferUsages::COPY_DST)
+            };
             if let Some(idx) = args.indices {
                 let idx: Vec<i64> =
                     vm.extract_elements_with(&idx, |o| i64::try_from_object(vm, o.to_owned()))?;
@@ -622,6 +652,15 @@ pub(crate) mod render {
                                 "\"texture\" 绑定 obj 须为 pygame.Surface 或 Texture",
                             ));
                         }
+                    }
+                    "texture_data" => {
+                        // 数据纹理（VS texelFetch 通路——rgba32float 等
+                        // 非 filterable 格式；obj 须为 access.texture
+                        // kind="rgba32f" 产物）
+                        let tex = obj.downcast_ref::<PyTexture>().ok_or_else(|| {
+                            vm.new_type_error("\"texture_data\" 绑定 obj 须为 Texture")
+                        })?;
+                        b = b.texture_view_data(slot, tex.default_view());
                     }
                     "sampler" => {
                         // PySampler（access.sampler 产物）或 None（默认线性
@@ -832,14 +871,29 @@ pub(crate) mod render {
 
         /// texture(size=(w,h), rgba=None, kind="sampled", label=None)
         /// -> Texture：GPU 纹理（rgba = w×h×4 字节列表，None = 零填充；
-        /// kind 目前 "sampled"，storage 形态随计算纹理 v2）
+        /// kind = "sampled"（rgba8 图像）| "rgba32f"（空数据纹理——GPU
+        /// 侧 copy_buffer_to_texture 写入，bind_group "texture_data"
+        /// 绑定，VS/FS texelFetch 读；compute_probe 大粒子 pos 通路）
         #[pymethod]
         fn texture(&self, args: TextureArgs, vm: &VirtualMachine) -> PyResult<PyRef<PyTexture>> {
             let (w, h) = parse_size_2d(&args.size, vm)?;
             let kind = args.kind.as_deref().unwrap_or("sampled");
+            if kind == "rgba32f" {
+                // 空数据纹理：CPU 不上传（零 rgba 合法且忽略）
+                let tex = self.access.create_texture_data_2d(
+                    args.label.as_deref().unwrap_or("py_render_texture_data"),
+                    w,
+                    h,
+                    wgpu::TextureFormat::Rgba32Float,
+                );
+                return Ok(PyTexture {
+                    texture: Arc::new(tex),
+                }
+                .into_ref(&vm.ctx));
+            }
             if kind != "sampled" {
                 return Err(vm.new_value_error(format!(
-                    "kind 须为 sampled（storage 形态 v2），实际 {kind:?}"
+                    "kind 须为 sampled / rgba32f，实际 {kind:?}"
                 )));
             }
             let bytes: Vec<u8> = match &args.rgba {
@@ -1097,7 +1151,7 @@ pub(crate) mod render {
                     let f = fit.to_cols_array();
                     let c = cm.0.get().to_cols_array();
                     let r = composed.to_cols_array();
-                    starfish_std::debug::console_log(&format!(
+                    starfish_debug::log_info!(&format!(
                         "[wcmvp] fit sx={:.4} sy={:.4} tx={:.4} ty={:.4} | cam平移=({:.1},{:.1}) | 合成平移=({:.1},{:.1}) 合成sx={:.4}",
                         f[0], f[5], f[12], f[13], c[12], c[13],
                         r[12], r[13], r[0],
@@ -1142,7 +1196,7 @@ pub(crate) mod render {
             .iter()
             .map(|(x, y, c)| format!("({x},{y})=#{:02X}{:02X}{:02X}", c[0], c[1], c[2]))
             .collect();
-        starfish_std::debug::console_log(&format!("[screen-probe] {}", fmt.join(" ")));
+        starfish_debug::log_info!(&format!("[screen-probe] {}", fmt.join(" ")));
         let items: Vec<PyObjectRef> = samples
             .iter()
             .map(|(x, y, c)| {
@@ -1414,6 +1468,11 @@ pub(crate) mod render {
         Dispatch(u32, u32, u32),
         /// compute 写 storage → copy 到 uniform 的 GPU 闭环命令
         CopyBuffer(PyRef<PyBuffer>, PyRef<PyBuffer>, u64),
+        /// compute 写 storage → 搬进采样纹理（大 N 数据通路——VS
+        /// texelFetch；bpr 256 对齐，(w,h) = 拷贝区域）
+        CopyBufferToTexture(PyRef<PyBuffer>, PyRef<PyTexture>, u32, u32, u32),
+        /// storage → mesh 顶点缓冲（instanced 粒子——顶点属性通路）
+        CopyMeshVertices(PyRef<PyMesh>, PyRef<PyBuffer>, u64),
     }
 
     /// raw_compute 计算会话（`with t.raw_compute() as p:`——p 记录
@@ -1442,7 +1501,14 @@ pub(crate) mod render {
             // encoder、不在 pass 内——拷贝源是本 pass 的写入结果）
             let (compute_cmds, copies): (Vec<_>, Vec<_>) = cmds
                 .into_iter()
-                .partition(|c| !matches!(c, ComputeCmd::CopyBuffer(_, _, _)));
+                .partition(|c| {
+                    !matches!(
+                        c,
+                        ComputeCmd::CopyBuffer(_, _, _)
+                            | ComputeCmd::CopyBufferToTexture(..)
+                            | ComputeCmd::CopyMeshVertices(..)
+                    )
+                });
             let replay = move |octx: &mut sf::OverlayCtx| {
                 octx.with_compute_pass("raw_compute", |cp| {
                     for c in &compute_cmds {
@@ -1459,6 +1525,33 @@ pub(crate) mod render {
                 for c in &copies {
                     if let ComputeCmd::CopyBuffer(src, dst, size) = c {
                         octx.copy_buffer_to_buffer(&src.inner, &dst.inner, *size);
+                    }
+                }
+                for c in &copies {
+                    if let ComputeCmd::CopyBufferToTexture(src, tex, bpr, w, h) = c {
+                        octx.copy_buffer_to_texture(
+                            &src.inner,
+                            *bpr,
+                            &tex.texture.inner(),
+                            *w,
+                            *h,
+                        );
+                    }
+                }
+                for c in &copies {
+                    if let ComputeCmd::CopyMeshVertices(mesh, src, size) = c {
+                        // 尺寸守卫：超目标容量 = 截断 + 告警（wasm 上校验
+                        // 错误会 trap——源头拦住，符合"永不崩溃"定约）
+                        let cap = mesh.inner.vertex_buffer().size();
+                        let n = if *size > cap {
+                            starfish_debug::log_warn!(format!(
+                                "[copy_mesh_vertices] 拷贝 {size}B 超顶点缓冲 {cap}B——截断"
+                            ));
+                            cap
+                        } else {
+                            *size
+                        };
+                        octx.copy_buffer_to_buffer(&src.inner, mesh.inner.vertex_buffer(), n);
                     }
                 }
             };
@@ -1497,6 +1590,37 @@ pub(crate) mod render {
             self.cmds
                 .borrow_mut()
                 .push(ComputeCmd::CopyBuffer(src, dst, size));
+        }
+
+        /// copy_mesh_vertices(mesh, src, size)：storage → mesh 顶点缓冲
+        /// 直搬（GPU 粒子 v3 instanced 通路——pos 平面即顶点属性数据）
+        #[pymethod]
+        fn copy_mesh_vertices(
+            &self,
+            mesh: PyRef<PyMesh>,
+            src: PyRef<PyBuffer>,
+            size: u64,
+        ) {
+            self.cmds.borrow_mut().push(ComputeCmd::CopyMeshVertices(
+                mesh, src, size,
+            ));
+        }
+
+        /// copy_buffer_to_texture(src, tex, bytes_per_row, w, h)：storage
+        /// → 采样纹理（大 N 数据通路——texel.buffer 平面直搬；bpr 须
+        /// 256 对齐，(w,h) = 拷贝区域）
+        #[pymethod]
+        fn copy_buffer_to_texture(
+            &self,
+            src: PyRef<PyBuffer>,
+            tex: PyRef<PyTexture>,
+            bytes_per_row: u32,
+            w: u32,
+            h: u32,
+        ) {
+            self.cmds.borrow_mut().push(ComputeCmd::CopyBufferToTexture(
+                src, tex, bytes_per_row, w, h,
+            ));
         }
     }
 

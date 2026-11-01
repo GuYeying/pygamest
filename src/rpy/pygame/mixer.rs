@@ -342,7 +342,16 @@ use std::cell::Cell;
 
             #[pyfunction]
             fn load(path: String, vm: &VirtualMachine) -> PyResult<()> {
-                bridge::with_mixer(vm, |m| m.music_load_file(&path))?;
+                if let Err(e) = bridge::with_mixer(vm, |m| m.music_load_file(&path)) {
+                    // "缺资源不崩溃"：BGM 缺失 = 静音继续（游戏性不受阻），
+                    // 严格模式恢复真异常（CI 测漏）
+                    starfish_debug::log_error!(format!(
+                        "[assets] 音乐加载失败 {path}: {e:?}——静音继续"
+                    ));
+                    if starfish_pygame::image::strict_assets() {
+                        return Err(e);
+                    }
+                }
                 Ok(())
             }
 

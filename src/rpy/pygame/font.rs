@@ -129,9 +129,16 @@ use std::cell::Cell;
                             .ok_or_else(|| vm.new_value_error("字体名含非 UTF-8 字符"))?;
                         match resolve_by_name(name, vm)? {
                             Some(f) => Ok(f),
-                            None => Err(vm.new_value_error(format!(
-                                "字体 '{name}' 未预载且文件不存在（Web 须宿主 io 预加载）"
-                            ))),
+                            None => {
+                                // "缺资源不崩溃"：字体未命中 = 落默认字体继续（纯英文
+                                // 默认——中文变豆腐块 = 可视化告警，日志同步记因；
+                                // 严格模式恢复真异常）
+                                starfish_debug::log_error!(format!("[assets] 字体 '{name}' 未预载且文件不存在——落默认字体（中文将显示豆腐块）"));
+                                if starfish_pygame::image::strict_assets() {
+                                    return Err(vm.new_value_error(format!("字体 '{name}' 未预载且文件不存在（Web 须宿主 io 预加载）")));
+                                }
+                                sf_font::Font::from_bytes(DEFAULT_FONT.to_vec(), size).map_err(|e| fail(vm, e))
+                            }
                         }
                     } else if let Ok(bytes) = Vec::<u8>::try_from_object(vm, o.clone()) {
                         sf_font::Font::from_bytes(bytes, size).map_err(|e| fail(vm, e))

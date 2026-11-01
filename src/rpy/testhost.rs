@@ -20,11 +20,92 @@ use starfish_pygame::display;
 use std::cell::{Cell, RefCell};
 use std::io::Write;
 
-/// 诊断日志（console_log 单路输出：桌面 stdout / wasm 浏览器控制台 +
-/// 安卓 TCP 收集器 + 文件兜底；与 binding_probe 的 dlog 同构）
+/// 帧桥 + async 微调度器（**单一定义，游戏门/脚本直跑门两宿主共用**）：
+/// 协作式任务表——spawn/gather/sleep_frames，帧边界推进零竞态；
+/// 替代 asyncio 的游戏场景子集（asyncio 已随冻结裁剪移除）
+const FRAME_BRIDGE: &str = r#"
+class _FrameAwait:
+    def __await__(self):
+        _async_pump()      # 每帧挂起点先推进 spawn 的任务（协作式调度）
+        yield "frame"
+_next_frame_state = _FrameAwait()
+def next_frame():
+    return _next_frame_state
+
+# ── 帧泵驱动的协作式微调度器 ──
+class _AsyncTask:
+    def __init__(self, coro):
+        self.coro = coro
+        self.done = False
+        self.result = None
+        self.wake_frame = 0
+
+    def tick(self, now_frame):
+        if self.done or now_frame < self.wake_frame:
+            return
+        try:
+            req = self.coro.send(None)
+            if type(req) is tuple and req[0] == "sleep_frames":
+                self.wake_frame = now_frame + req[1]
+        except StopIteration as e:
+            self.done = True
+            self.result = e.value
+
+_async_tasks = []
+_async_frame = 0
+
+def _async_pump():
+    global _async_frame
+    _async_frame += 1
+    for t in _async_tasks:
+        t.tick(_async_frame)
+
+class _SleepFrames:
+    def __init__(self, frames):
+        self.frames = frames
+    def __await__(self):
+        # 单次挂起（yield 一次即返回——任务下一 tick 恢复执行；
+        # 无限 yield 会让 wake_frame 永远前移 = 死锁，首版实测）
+        yield ("sleep_frames", self.frames)
+
+class _Gather:
+    def __init__(self, tasks):
+        self.tasks = tasks
+    def __await__(self):
+        while any(not t.done for t in self.tasks):
+            _async_pump()
+            yield "frame"
+        return [t.result for t in self.tasks]
+
+def _async_spawn(coro):
+    # 幂等：传入的已是任务（spawn 产物/gather 复用）直接返回
+    if hasattr(coro, "tick"):
+        return coro
+    t = _AsyncTask(coro)
+    _async_tasks.append(t)
+    return t
+
+def _async_gather(*coros):
+    return _Gather([_async_spawn(c) for c in coros])   # 实例即 awaitable
+
+def _async_sleep_frames(frames):
+    return _SleepFrames(max(1, int(frames)))
+
+class _AsyncNs:
+    pass
+
+_async_ns = _AsyncNs()
+_async_ns.spawn = _async_spawn
+_async_ns.gather = _async_gather
+_async_ns.sleep_frames = _async_sleep_frames
+_async_ns.frame = lambda: _async_frame
+"#;
+
+/// 诊断日志（统一走 starfish-debug log 模块：桌面/Android 文件 +
+/// wasm 控制台回退；与 binding_probe 的 dlog 同构）
 fn dlog(tag: &str, msg: &str) {
     let line = format!("[{tag}] {msg}");
-    starfish_std::debug::console_log(&line);
+    starfish_debug::log_info!(&line);
     #[cfg(target_os = "android")]
     net_log(&line);
     #[cfg(target_os = "android")]
@@ -210,32 +291,34 @@ pub async fn run(script: &str, tag: &str, transparent: bool) -> Result<(), Box<d
             // ——async 形态向下兼容纯同步写法（帧逻辑照常顺序写），
             // 向上承接将来 `await` 网络 IO 不卡帧（net awaitable 接
             // 帧桥同款机制）；生成器形态（def main + yield）退役。
-            let frame_bridge = r#"
-class _FrameAwait:
-    def __await__(self):
-        yield "frame"
-_next_frame_state = _FrameAwait()
-def next_frame():
-    return _next_frame_state
-"#;
             let bridge_code = vm
                 .compile(
-                    frame_bridge,
+                    FRAME_BRIDGE,
                     rustpython_vm::compiler::Mode::Exec,
                     "<frame_bridge>".to_string(),
                 )
                 .map_err(|e| format!("帧桥编译失败: {e}"))?;
             if let Err(e) = vm.run_code_obj(bridge_code, scope.clone()) {
-                return Err(format!("帧桥注入失败: {e:?}"));
+                return Err(format!("帧桥注入失败:
+{}", format_traceback(vm, &e)));
             }
-            // pygame.next_frame 挂载（帧桥函数 → pygame 模块属性）
-            match (vm.import("pygame", 0), scope.globals.get_item("next_frame", vm)) {
-                (Ok(pg), Ok(nf)) => {
-                    let mounted = pg.set_attr("next_frame", nf, vm);
-                    eprintln!("[bridge-run] next_frame 挂载: {mounted:?}");
+            // pygame.next_frame / pygame.tasks 挂载（帧桥 → pygame 模块属性）
+            match (
+                vm.import("pygame", 0),
+                scope.globals.get_item("next_frame", vm),
+                scope.globals.get_item("_async_ns", vm),
+            ) {
+                (Ok(pg), Ok(nf), Ok(an)) => {
+                    let mounted_nf = pg.set_attr("next_frame", nf, vm);
+                    let mounted_tasks = pg.set_attr("tasks", an, vm);
+                    starfish_debug::log_info!(format!(
+                        "[bridge-run] next_frame 挂载: {mounted_nf:?} / tasks 挂载: {mounted_tasks:?}"
+                    ));
                 }
-                (pg, nf) => {
-                    eprintln!("[bridge-run] 挂载失败 pg={pg:?} nf={nf:?}");
+                (pg, nf, an) => {
+                    starfish_debug::log_error!(format!(
+                        "[bridge-run] 挂载失败 pg={pg:?} nf={nf:?} tasks={an:?}"
+                    ));
                 }
             }
             let entry = scope.globals.get_item("main", vm).map_err(|_| {
@@ -273,7 +356,7 @@ def next_frame():
     dlog(tag, "entering frame loop");
     loop {
         if starfish_pygame::event::pump() || starfish_std::run_control::stop_requested() {
-            starfish_std::debug::console_log("[host] 嵌入式停止信号命中——帧循环收口");
+            starfish_debug::log_warn!("[host] 嵌入式停止信号命中——帧循环收口");
             dlog(tag, "退出请求，结束");
             break;
         }
@@ -358,28 +441,31 @@ pub async fn run_script_in(
             // def main + await pygame.next_frame() 的协程游戏）
             let bridge_code = vm
                 .compile(
-                    r#"
-class _FrameAwait:
-    def __await__(self):
-        yield "frame"
-_next_frame_state = _FrameAwait()
-def next_frame():
-    return _next_frame_state
-"#,
+                    FRAME_BRIDGE,
                     rustpython_vm::compiler::Mode::Exec,
                     "<run_script frame_bridge>".to_string(),
                 )
                 .map_err(|e| format!("帧桥编译失败: {e}"))?;
             if let Err(e) = vm.run_code_obj(bridge_code, scope.clone()) {
-                return Err(format!("帧桥注入失败: {e:?}"));
+                return Err(format!("帧桥注入失败:
+{}", format_traceback(vm, &e)));
             }
-            match (vm.import("pygame", 0), scope.globals.get_item("next_frame", vm)) {
-                (Ok(pg), Ok(nf)) => {
-                    let mounted = pg.set_attr("next_frame", nf, vm);
-                    eprintln!("[bridge] next_frame 挂载: {mounted:?}");
+            match (
+                vm.import("pygame", 0),
+                scope.globals.get_item("next_frame", vm),
+                scope.globals.get_item("_async_ns", vm),
+            ) {
+                (Ok(pg), Ok(nf), Ok(an)) => {
+                    let mounted_nf = pg.set_attr("next_frame", nf, vm);
+                    let mounted_tasks = pg.set_attr("tasks", an, vm);
+                    starfish_debug::log_info!(format!(
+                        "[bridge] next_frame 挂载: {mounted_nf:?} / tasks 挂载: {mounted_tasks:?}"
+                    ));
                 }
-                (pg, nf) => {
-                    eprintln!("[bridge] 挂载失败 pg={pg:?} nf={nf:?}");
+                (pg, nf, an) => {
+                    starfish_debug::log_error!(format!(
+                        "[bridge] 挂载失败 pg={pg:?} nf={nf:?} tasks={an:?}"
+                    ));
                 }
             }
             let code = match vm.compile(
@@ -450,7 +536,7 @@ def next_frame():
         let seg_pump = starfish_std::debug::Stopwatch::now();
         if starfish_pygame::event::pump() || starfish_std::run_control::stop_requested() {
             if starfish_std::run_control::stop_requested() {
-                starfish_std::debug::console_log("[host] 嵌入式停止信号命中——帧循环收口");
+                starfish_debug::log_warn!("[host] 嵌入式停止信号命中——帧循环收口");
             }
             dlog("pygame-rs-dev", "退出请求，结束");
             break;

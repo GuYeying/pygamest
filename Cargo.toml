@@ -1,6 +1,6 @@
 [package]
 name = "pygame-rs"
-version = "0.3.60"
+version = "0.3.61"
 edition = "2024"
 description = "starfish 的 Python 绑定层：RustPython 内嵌壳 + pygame 绑定面（独立 crate，starfish 本体零 Python 资产）"
 
@@ -12,7 +12,14 @@ description = "starfish 的 Python 绑定层：RustPython 内嵌壳 + pygame 绑
 #   只开 physics 不开维度 = 仅依赖图就位，Python 面无 rapier 模块。
 # 缺省 2D 全开保持现状；--no-default-features 轻量构建下对应 Python
 # 子模块随之消失（import 即 AttributeError）。
-default = ["gui", "physics2d"]
+default = ["runtime", "gui", "physics2d"]
+# runtime：生产模块集基座（白名单——游戏运行所需的最小 pygame.* 面）。
+# dev：+ 调试模块面（pygame.dialog / pygame.net）——开发宿主启用；
+#   打包构建只开 runtime，生产二进制 import 即"生产构建未启用"。
+#   starfish-dialog/net 是 pygame-rs 自有依赖（非可选）——feature 只
+#   门控 Python 模块注册面，不直接引用 starfish crate（2026-10-31 定约）
+runtime = []
+dev = ["runtime"]
 gui = ["dep:egui-starfish-we", "dep:egui-wgpu"]
 physics = ["dep:rapier-starfish-debug"]
 physics2d = ["physics", "rapier-starfish-debug/2d"]
@@ -21,6 +28,7 @@ physics3d = ["physics", "rapier-starfish-debug/3d"]
 
 [dependencies]
 starfish-std        = { path = "../starfish/crates/starfish-std", features = ["we"] }
+starfish-debug      = { path = "../starfish/crates/starfish-debug" }
 starfish-we         = { path = "../starfish/crates/starfish-we" }
 starfish-time       = { path = "../starfish/crates/starfish-time" }
 starfish-permission = { path = "../starfish/crates/starfish-permission" }

@@ -29,7 +29,20 @@ use std::cell::Cell;
         fn load(path: String, vm: &VirtualMachine) -> PyResult<PyRef<PySurface>> {
             match sf_image::load(&path) {
                 Ok(s) => Ok(PySurface { surface: std::sync::Arc::new(s) }.into_ref(&vm.ctx)),
-                Err(e) => Err(vm.new_value_error(format!("图片加载失败: {e:?}"))),
+                Err(e) => {
+                    // "缺资源不崩溃"定约：占位图顶上（品红棋盘格）；严格
+                    // 模式（STARFISH_STRICT_ASSETS）恢复真异常供 CI 测漏
+                    starfish_debug::log_error!(format!(
+                        "[assets] 图片加载失败 {path}: {e:?}——占位图顶上"
+                    ));
+                    if sf_image::strict_assets() {
+                        return Err(vm.new_value_error(format!("图片加载失败: {e:?}")));
+                    }
+                    Ok(PySurface {
+                        surface: std::sync::Arc::new(sf_image::placeholder_surface(64)),
+                    }
+                    .into_ref(&vm.ctx))
+                }
             }
         }
 
@@ -45,7 +58,19 @@ use std::cell::Cell;
         fn load_from_bytes(bytes: Vec<u8>, vm: &VirtualMachine) -> PyResult<PyRef<PySurface>> {
             match sf_image::load_from_bytes(&bytes) {
                 Ok(s) => Ok(PySurface { surface: std::sync::Arc::new(s) }.into_ref(&vm.ctx)),
-                Err(e) => Err(vm.new_value_error(format!("图片解码失败: {e:?}"))),
+                Err(e) => {
+                    starfish_debug::log_error!(format!(
+                        "[assets] 图片解码失败（{} 字节）: {e:?}——占位图顶上",
+                        bytes.len()
+                    ));
+                    if sf_image::strict_assets() {
+                        return Err(vm.new_value_error(format!("图片解码失败: {e:?}")));
+                    }
+                    Ok(PySurface {
+                        surface: std::sync::Arc::new(sf_image::placeholder_surface(64)),
+                    }
+                    .into_ref(&vm.ctx))
+                }
             }
         }
 
