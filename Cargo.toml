@@ -19,6 +19,7 @@ default = ["runtime", "gui", "physics2d"]
 #   starfish-dialog/net 是 pygame-rs 自有依赖（非可选）——feature 只
 #   门控 Python 模块注册面，不直接引用 starfish crate（2026-10-31 定约）
 runtime = []
+stdlib-full = ["rustpython-pylib/freeze-full"]
 dev = ["runtime"]
 gui = ["dep:egui-starfish-we", "dep:egui-wgpu"]
 physics = ["dep:rapier-starfish-debug"]
@@ -35,6 +36,7 @@ starfish-permission = { path = "../starfish/crates/starfish-permission" }
 starfish-io         = { path = "../starfish/crates/starfish-io" }
 starfish-net        = { path = "../starfish/crates/starfish-net" }
 starfish-dialog     = { path = "../starfish/crates/starfish-dialog" }
+chacha20poly1305    = { version = "0.10", default-features = false, features = ["alloc"] }
 starfish-gamepad    = { path = "../starfish/crates/starfish-gamepad" }
 starfish-render     = { path = "../starfish/crates/starfish-render" }
 starfish-gfx        = { path = "../starfish/crates/starfish-gfx" }
@@ -76,6 +78,7 @@ wasm-bindgen = "0.2.129"
 rustpython-vm = { path = "src/rpy/dependencies/RustPython-main/crates/vm", default-features = false, features = [
     "compiler", "wasmbind", "gc", "stdio", "importlib", "encodings", "freeze-stdlib",
 ] }
+# stdlib-full：dev 宿主全量冻结标准库（编辑器工具链面）——runtime 缺省 min
 rustpython-pylib = { path = "src/rpy/dependencies/RustPython-main/crates/pylib", features = ["freeze-stdlib"] }
 # RP 派生宏直依赖（批次 B 原生模块树）：pyclass/pymethod/pyattr 等宏的
 # 权威来源——vm 根 re-export 的 glob 因同名冲突只导出部分宏

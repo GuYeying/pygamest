@@ -11,6 +11,12 @@ pub const LIB_PATH: &str = match option_env!("win_lib_path") {
     None => concat!(env!("CARGO_MANIFEST_DIR"), "/Lib"),
 };
 
-#[cfg(feature = "freeze-stdlib")]
+// 冻结分叉（2026-11-01）：freeze-full = 全量 Lib（dev 宿主/编辑器形态，
+// +23MB 级）；缺省 = Lib_min 白名单（runtime 形态）。pygame-rs 以
+// stdlib-full feature 转发 freeze-full。
+#[cfg(all(feature = "freeze-stdlib", feature = "freeze-full"))]
 pub const FROZEN_STDLIB: &rustpython_compiler_core::frozen::FrozenLib =
     rustpython_derive::py_freeze!(dir = "../Lib", crate_name = "rustpython_compiler_core");
+#[cfg(all(feature = "freeze-stdlib", not(feature = "freeze-full")))]
+pub const FROZEN_STDLIB: &rustpython_compiler_core::frozen::FrozenLib =
+    rustpython_derive::py_freeze!(dir = "../Lib_min", crate_name = "rustpython_compiler_core");

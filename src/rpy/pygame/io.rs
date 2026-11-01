@@ -19,28 +19,188 @@ use std::cell::Cell;
             p.to_str().ok_or_else(|| vm.new_value_error("路径含非 UTF-8 字符"))
         }
 
-        /// read(path) -> bytes
-                /// init_resource(packs, key_hex="")：资源源策略 init（创建时一次性
-        /// ——runtime 宿主运行前调用）。packs = 资源包路径列表（按序查找）；
-        /// key_hex = 64 位 hex（32B 解密密钥），空 = 无解密。
+        /// init_crypto(key_hex, magic)：资源加密 init（创建时一次性——
+        /// runtime 宿主运行前调用）。key_hex = 64 位 hex（32B 解密密钥）；
+        /// magic = 项目自定义封装魔数（5 字符，缺省 SFXE1）。
         #[pyfunction]
-        fn init_resource(packs: Vec<String>, key_hex: String, vm: &VirtualMachine) -> PyResult<()> {
-            let key = if key_hex.len() == 64 {
-                let mut k = [0u8; 32];
-                for (i, b) in key_hex.as_bytes().chunks(2).enumerate() {
-                    let hexs = std::str::from_utf8(b).map_err(|e| vm.new_value_error(format!("key hex: {e}")))?;
-                    k[i] = u8::from_str_radix(hexs, 16).map_err(|e| vm.new_value_error(format!("key hex: {e}")))?;
-                }
-                Some(k)
-            } else {
-                None
-            };
-            let paths: Vec<std::path::PathBuf> = packs.iter().map(std::path::PathBuf::from).collect();
-            starfish_io::init_resource(&paths, key);
+        fn init_crypto(key_hex: String, magic: String, vm: &VirtualMachine) -> PyResult<()> {
+            if key_hex.len() != 64 {
+                return Err(vm.new_value_error("key_hex 须为 64 位 hex（32 字节）"));
+            }
+            let mut key = [0u8; 32];
+            for (i, b) in key_hex.as_bytes().chunks(2).enumerate() {
+                let hexs = std::str::from_utf8(b)
+                    .map_err(|e| vm.new_value_error(format!("key hex: {e}")))?;
+                key[i] = u8::from_str_radix(hexs, 16)
+                    .map_err(|e| vm.new_value_error(format!("key hex: {e}")))?;
+            }
+            let mut m = [b'S'; 5];
+            let msrc = magic.as_bytes();
+            if msrc.len() == 5 {
+                m.copy_from_slice(msrc);
+            }
+            starfish_io::init_crypto(key, m);
             Ok(())
         }
 
-#[pyfunction]
+        /// init_crypto_embedded()：宿主嵌入钥接线（build.rs 编译期嵌入的
+        /// ASSET_KEY_HEX/ASSET_MAGIC → io init）。运行态宿主启动自动调用；
+        /// 未嵌入（dev 明文形态）= no-op。
+        #[pyfunction]
+        fn init_crypto_embedded(vm: &VirtualMachine) -> PyResult<()> {
+            match (
+                std::option_env!("ASSET_KEY_HEX"),
+                std::option_env!("ASSET_MAGIC"),
+            ) {
+                (Some(hex), magic) => {
+                    if hex.len() != 64 {
+                        return Err(vm.new_value_error("嵌入密钥须为 64 位 hex"));
+                    }
+                    let mut key = [0u8; 32];
+                    for (i, b) in hex.as_bytes().chunks(2).enumerate() {
+                        let hexs = std::str::from_utf8(b)
+                            .map_err(|e| vm.new_value_error(format!("嵌入 key hex: {e}")))?;
+                        key[i] = u8::from_str_radix(hexs, 16)
+                            .map_err(|e| vm.new_value_error(format!("嵌入 key hex: {e}")))?;
+                    }
+                    let mut m = [b'S'; 5];
+                    if let Some(magic) = magic {
+                        let src = magic.as_bytes();
+                        if src.len() == 5 {
+                            m.copy_from_slice(src);
+                        }
+                    }
+                    starfish_io::init_crypto(key, m);
+                }
+                _ => {} // 未嵌入 = dev 明文形态（io 透传）
+            }
+            Ok(())
+        }
+
+        /// export_game(runtime_exe, staging_dir, out_exe)：单文件导出——
+        /// 遍历 staging（明文脚本+资源）→ SFXE1 封装（io 密钥态）→ SFIX1
+        /// 组包 → 追加到 runtime 壳 exe 尾部 + trailer。
+        #[pyfunction]
+        fn export_game(
+            runtime_exe: String,
+            staging_dir: String,
+            out_exe: String,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            use chacha20poly1305::{
+                aead::{Aead, KeyInit, Payload},
+                ChaCha20Poly1305, Key, Nonce,
+            };
+            let Some(key) = starfish_io::io_key() else {
+                return Err(vm.new_value_error("init_crypto 未调用——导出前须注入密钥"));
+            };
+            let magic = starfish_io::io_magic();
+            fn derive_nonce(name: &str, len: usize) -> [u8; 12] {
+                let mut n = [0u8; 12];
+                let seed = format!("{name}:{len}");
+                for (i, b) in seed.bytes().enumerate() {
+                    n[i % 12] = n[i % 12].wrapping_add(b).rotate_left(1);
+                }
+                n
+            }
+            fn walk(
+                dir: &std::path::Path,
+                prefix: &str,
+                key: &[u8; 32],
+                magic: &[u8; 5],
+                out: &mut Vec<(String, Vec<u8>)>,
+            ) -> Result<(), String> {
+                if let Ok(rd) = std::fs::read_dir(dir) {
+                    let mut items: Vec<_> = rd.filter_map(|e| e.ok()).collect();
+                    items.sort_by_key(|e| e.file_name());
+                    for entry in items {
+                        let p = entry.path();
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        let key_name = if prefix.is_empty() {
+                            name.clone()
+                        } else {
+                            format!("{prefix}/{name}")
+                        };
+                        if p.is_dir() {
+                            walk(&p, &key_name, key, magic, out)?;
+                        } else if let Ok(data) = std::fs::read(&p) {
+                            let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
+                            let nonce = derive_nonce(&key_name, data.len());
+                            let ct = cipher
+                                .encrypt(&Nonce::from_slice(&nonce), Payload {
+                                    msg: &data,
+                                    aad: b"starfish-asset-v1",
+                                })
+                                .map_err(|e| format!("封装失败 {key_name}: {e:?}"))?;
+                            let mut env = magic.to_vec();
+                            env.extend_from_slice(&nonce);
+                            env.extend_from_slice(&ct);
+                            out.push((key_name, env));
+                        }
+                    }
+                }
+                Ok(())
+            }
+            let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
+            let root = std::path::Path::new(&staging_dir);
+            walk(root, "", &key, &magic, &mut entries)
+                .map_err(|e| vm.new_value_error(format!("遍历封装失败: {e}")))?;
+            if entries.is_empty() {
+                return Err(vm.new_value_error("staging 目录为空"));
+            }
+            let mut out = std::fs::read(&runtime_exe)
+                .map_err(|e| vm.new_value_error(format!("runtime 壳读取失败: {e}")))?;
+            let mut blob = Vec::new();
+            let mut index_entries: Vec<(String, u64, u64)> = Vec::new();
+            for (name, env) in &entries {
+                index_entries.push((name.clone(), 41 + blob.len() as u64, env.len() as u64));
+                blob.extend_from_slice(env);
+            }
+            let index_json = {
+                let parts: Vec<String> = index_entries
+                    .iter()
+                    .map(|(p, o, l)| format!("{{\"p\":\"{p}\",\"o\":{o},\"l\":{l}}}"))
+                    .collect();
+                format!("{{\"entries\":[{}]}}", parts.join(","))
+            };
+            let index_nonce: [u8; 12] = *b"IDXNONCE0112";
+            let index_ct = {
+                let cipher = ChaCha20Poly1305::new(Key::from_slice(&key));
+                cipher
+                    .encrypt(
+                        &Nonce::from_slice(&index_nonce),
+                        chacha20poly1305::aead::Payload {
+                            msg: index_json.as_bytes(),
+                            aad: b"sf-index",
+                        },
+                    )
+                    .map_err(|e| vm.new_value_error(format!("索引加密失败: {e:?}")))?
+            };
+            let mut pack = b"SFIX1".to_vec();
+            pack.extend_from_slice(&1u32.to_le_bytes());
+            pack.extend_from_slice(&1u32.to_le_bytes());
+            pack.extend_from_slice(&index_nonce);
+            pack.extend_from_slice(&(41 + blob.len() as u64).to_le_bytes());
+            pack.extend_from_slice(&(index_ct.len() as u64).to_le_bytes());
+            pack.extend_from_slice(&blob);
+            pack.extend_from_slice(&index_ct);
+            let pack_len = pack.len() as u64;
+            let mut out = std::fs::read(&runtime_exe)
+                .map_err(|e| vm.new_value_error(format!("runtime 壳读取失败: {e}")))?;
+            out.extend_from_slice(&pack);
+            out.extend_from_slice(&pack_len.to_le_bytes());
+            out.extend_from_slice(b"SFBUNDL1");
+            std::fs::write(&out_exe, &out)
+                .map_err(|e| vm.new_value_error(format!("导出写入失败: {e}")))?;
+            starfish_debug::log_info!(format!(
+                "[export] 单文件导出完成: {out_exe}（{}B，{} 条目）",
+                out.len(), entries.len()
+            ));
+            Ok(())
+        }
+
+        /// read(path) -> bytes
+        #[pyfunction]
         fn read(path: PyStrRef, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
             #[cfg(target_arch = "wasm32")]
             return Err(vm.new_value_error(

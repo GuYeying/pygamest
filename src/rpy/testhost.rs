@@ -99,6 +99,11 @@ _async_ns.spawn = _async_spawn
 _async_ns.gather = _async_gather
 _async_ns.sleep_frames = _async_sleep_frames
 _async_ns.frame = lambda: _async_frame
+
+# 资源加密嵌入钥自动接线（build.rs 嵌入存在时；未嵌入 = no-op——
+# dev 明文形态。运行态宿主 = 分发物零密钥文件，钥编译进二进制）
+import pygame as _pg_wiring
+_pg_wiring.io.init_crypto_embedded()
 "#;
 
 /// 诊断日志（统一走 starfish-debug log 模块：桌面/Android 文件 +

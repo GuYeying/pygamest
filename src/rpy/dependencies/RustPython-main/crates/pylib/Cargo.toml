@@ -10,6 +10,7 @@ rust-version.workspace = true
 repository.workspace = true
 
 [features]
+freeze-full = []
 freeze-stdlib = ["dep:rustpython-compiler-core", "dep:rustpython-derive"]
 
 [dependencies]
