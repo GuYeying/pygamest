@@ -72,6 +72,17 @@ pub fn scan_module_dir(_root: &str) -> usize {
     0
 }
 
+/// 动态注册/热更模块（**热加载核心口**）：插入或替换表条目。替换后
+/// 调用方需剔 `sys.modules[name]`（Python 侧 `sf_loader.register/reload`
+/// 已自动处理）——重导入即新源码。返回 true = 更新已有条目。
+pub fn register_module(name: &str, filename: &str, src: &str, is_pkg: bool) -> bool {
+    TABLE.with(|t| {
+        t.borrow_mut()
+            .insert(name.to_string(), (filename.to_string(), src.to_string(), is_pkg))
+            .is_some()
+    })
+}
+
 /// 打包态直接装表（`(点分名, 虚拟文件名, 源码, 是否包)`）——清单由
 /// 打包器生成、宿主经 starfish-io 启动期读入后调此口。
 pub fn install_table(entries: Vec<(String, String, String, bool)>) -> usize {
@@ -141,6 +152,41 @@ mod sf_loader {
         PyObjectRef, PyResult, VirtualMachine,
         builtins::PyStrRef,
     };
+
+    /// register(name, src, is_pkg=false)：动态注册/热更模块源（表更新
+    /// + 自动剔 sys.modules[name]——下次 import 即新源码）。**热加载
+    /// 官方口**：配合宿主 io 写文件或直接传源码字符串均可。
+    /// register(name, src, is_pkg_flag)：动态注册/热更模块源（表更新 +
+    /// 自动剔 sys.modules[name]——下次 import 即新源码）。**热加载官方
+    /// 口**；is_pkg_flag = "1"/"0"（字符串旗标，免 derive 依赖）
+    #[pyfunction]
+    fn register(
+        name: PyStrRef,
+        src: PyStrRef,
+        is_pkg_flag: PyStrRef,
+        vm: &VirtualMachine,
+    ) -> PyResult<()> {
+        let key = name.to_str().unwrap_or("").to_string();
+        let src_text = src.to_str().unwrap_or("").to_string();
+        let filename = format!("{}.py", key.replace('.', "/"));
+        let is_pkg = is_pkg_flag.to_str().unwrap_or("0") == "1";
+        let _ = super::register_module(&key, &filename, &src_text, is_pkg);
+        // 剔缓存：**真删**（置 None = "导入中止"标记，PEP 语义陷阱）——
+        // 下次 import 走 finder 重执行新源码
+        let sys_modules = vm.sys_module.get_attr("modules", vm)?;
+        let _ = vm.call_method(&sys_modules, "__delitem__", (key.as_str(),));
+        Ok(())
+    }
+
+    /// reload(name)：剔 sys.modules[name]——下次 import 重执行表内
+    /// 当前源码（配 register = 热更全流程）
+    #[pyfunction]
+    fn reload(name: PyStrRef, vm: &VirtualMachine) -> PyResult<()> {
+        let key = name.to_str().unwrap_or("");
+        let sys_modules = vm.sys_module.get_attr("modules", vm)?;
+        let _ = vm.call_method(&sys_modules, "__delitem__", (key,));
+        Ok(())
+    }
 
     /// read_module_source(name) -> (filename, src, is_pkg) | None
     ///（内存表查按需取源；None = 表中没有，Finder 回落标准 machinery）

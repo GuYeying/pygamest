@@ -20,7 +20,27 @@ use std::cell::Cell;
         }
 
         /// read(path) -> bytes
+                /// init_resource(packs, key_hex="")：资源源策略 init（创建时一次性
+        /// ——runtime 宿主运行前调用）。packs = 资源包路径列表（按序查找）；
+        /// key_hex = 64 位 hex（32B 解密密钥），空 = 无解密。
         #[pyfunction]
+        fn init_resource(packs: Vec<String>, key_hex: String, vm: &VirtualMachine) -> PyResult<()> {
+            let key = if key_hex.len() == 64 {
+                let mut k = [0u8; 32];
+                for (i, b) in key_hex.as_bytes().chunks(2).enumerate() {
+                    let hexs = std::str::from_utf8(b).map_err(|e| vm.new_value_error(format!("key hex: {e}")))?;
+                    k[i] = u8::from_str_radix(hexs, 16).map_err(|e| vm.new_value_error(format!("key hex: {e}")))?;
+                }
+                Some(k)
+            } else {
+                None
+            };
+            let paths: Vec<std::path::PathBuf> = packs.iter().map(std::path::PathBuf::from).collect();
+            starfish_io::init_resource(&paths, key);
+            Ok(())
+        }
+
+#[pyfunction]
         fn read(path: PyStrRef, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
             #[cfg(target_arch = "wasm32")]
             return Err(vm.new_value_error(

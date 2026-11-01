@@ -302,23 +302,30 @@ pub async fn run(script: &str, tag: &str, transparent: bool) -> Result<(), Box<d
                 return Err(format!("帧桥注入失败:
 {}", format_traceback(vm, &e)));
             }
-            // pygame.next_frame / pygame.tasks 挂载（帧桥 → pygame 模块属性）
+            // pygame.next_frame / pygame.tasks / pygame.modload 挂载（帧桥 → pygame 模块属性）
+            let sf_loader = vm
+                .sys_module
+                .get_attr("modules", vm)
+                .ok()
+                .and_then(|mods| mods.get_item("_sf_loader", vm).ok());
             match (
                 vm.import("pygame", 0),
                 scope.globals.get_item("next_frame", vm),
                 scope.globals.get_item("_async_ns", vm),
+                sf_loader,
             ) {
-                (Ok(pg), Ok(nf), Ok(an)) => {
+                (Ok(pg), Ok(nf), Ok(an), Some(ml)) => {
                     let mounted_nf = pg.set_attr("next_frame", nf, vm);
                     let mounted_tasks = pg.set_attr("tasks", an, vm);
+                    let mounted_ml = pg.set_attr("modload", ml, vm);
                     starfish_debug::log_info!(format!(
-                        "[bridge-run] next_frame 挂载: {mounted_nf:?} / tasks 挂载: {mounted_tasks:?}"
+                        "[bridge-run] next_frame: {mounted_nf:?} / tasks: {mounted_tasks:?} / modload: {mounted_ml:?}"
                     ));
                 }
-                (pg, nf, an) => {
-                    starfish_debug::log_error!(format!(
-                        "[bridge-run] 挂载失败 pg={pg:?} nf={nf:?} tasks={an:?}"
-                    ));
+                _ => {
+                    starfish_debug::log_error!(
+                        "[bridge-run] 挂载失败（pygame/next_frame/tasks/modload 任一缺失）"
+                    );
                 }
             }
             let entry = scope.globals.get_item("main", vm).map_err(|_| {
@@ -450,22 +457,29 @@ pub async fn run_script_in(
                 return Err(format!("帧桥注入失败:
 {}", format_traceback(vm, &e)));
             }
+            let sf_loader = vm
+                .sys_module
+                .get_attr("modules", vm)
+                .ok()
+                .and_then(|mods| mods.get_item("_sf_loader", vm).ok());
             match (
                 vm.import("pygame", 0),
                 scope.globals.get_item("next_frame", vm),
                 scope.globals.get_item("_async_ns", vm),
+                sf_loader,
             ) {
-                (Ok(pg), Ok(nf), Ok(an)) => {
+                (Ok(pg), Ok(nf), Ok(an), Some(ml)) => {
                     let mounted_nf = pg.set_attr("next_frame", nf, vm);
                     let mounted_tasks = pg.set_attr("tasks", an, vm);
+                    let mounted_ml = pg.set_attr("modload", ml, vm);
                     starfish_debug::log_info!(format!(
-                        "[bridge] next_frame 挂载: {mounted_nf:?} / tasks 挂载: {mounted_tasks:?}"
+                        "[bridge] next_frame: {mounted_nf:?} / tasks: {mounted_tasks:?} / modload: {mounted_ml:?}"
                     ));
                 }
-                (pg, nf, an) => {
-                    starfish_debug::log_error!(format!(
-                        "[bridge] 挂载失败 pg={pg:?} nf={nf:?} tasks={an:?}"
-                    ));
+                _ => {
+                    starfish_debug::log_error!(
+                        "[bridge] 挂载失败（pygame/next_frame/tasks/modload 任一缺失）"
+                    );
                 }
             }
             let code = match vm.compile(
