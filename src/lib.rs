@@ -94,4 +94,9 @@
 //! .pyi 桩体系、行为回归集（旧仓库 M2 的 71 例迁移）、get_at/tostring
 //! 像素回读（需 starfish 出 pub 包装）。
 
+
+// RustPython 嵌入面 re-export（pygamest-dev 经此使用 RP API——
+// vendored RP path 只在本仓内部，下游经此别名共享单实例）
+pub use rustpython_vm;
+
 pub mod rpy;

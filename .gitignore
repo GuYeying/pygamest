@@ -19,3 +19,6 @@ _sig_io_tmp.bin
 scripts/__pycache__/
 dist/
 examples/*.exe
+
+# 开发者本机依赖覆盖（paths）
+.cargo/config.toml

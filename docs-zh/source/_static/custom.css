@@ -1,0 +1,117 @@
+/* ========== Pygame 风格主题 ========== */
+
+/* 左侧侧边导航栏 */
+.wy-nav-side {
+    background: #6CED36 !important;
+}
+
+/* 侧边顶部搜索头部 */
+.wy-side-nav-search {
+    background: #C1FC35 !important;
+}
+
+.wy-side-nav-search > a,
+.wy-side-nav-search .wy-dropdown > a {
+    color: #000000 !important;
+    font-weight: bold;
+}
+
+/* 侧边菜单 */
+.wy-menu-vertical a {
+    color: #002200 !important;
+}
+
+.wy-menu-vertical a:hover {
+    color: #0055cc !important;
+    background-color: #bfff80 !important;
+}
+
+.wy-menu-vertical li.current > a {
+    background: #C1FC35 !important;
+    color: #000000 !important;
+}
+
+.wy-menu-vertical li.toctree-l2 a {
+    color: #003300 !important;
+}
+
+.wy-menu-vertical li.toctree-l2 a:hover {
+    color: #0055cc !important;
+    background-color: #bfff80 !important;
+}
+
+.wy-side-nav-search input[type="text"] {
+    border-color: #399900 !important;
+}
+
+/* ========== 右侧内容区背景强制改成 #ACEDBC ========== */
+
+.wy-body-for-nav,
+.wy-nav-content-wrap,
+.wy-nav-content {
+    background-color: #ACEDBC !important;
+}
+
+.rst-content {
+    background-color: #ACEDBC !important;
+    padding: 1rem;
+}
+
+/* 页面最外层白色容器也去掉 */
+.document {
+    background-color: #ACEDBC !important;
+}
+
+/* 卡片保持白底，这样文字和蓝色链接更清楚 */
+.sd-card {
+    background-color: #ffffff !important;
+}
+
+/* ========== 卡片样式 ========== */
+
+.sd-card.sd-h-100 {
+    height: 100%;
+}
+
+.sd-card img {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+    padding: 6px;
+    border-radius: 999px;
+    background-color: #d4ff9e;
+}
+
+.sd-card ul {
+    margin-top: 0.5rem;
+    margin-bottom: 0;
+    padding-left: 1.15rem;
+}
+
+.sd-card li {
+    margin: 0.2rem 0;
+    font-size: 0.9rem;
+}
+
+/* ========== 卡片内链接：Pygame 蓝色 ========== */
+
+.sd-card li a,
+.sd-card li a:visited {
+    color: #0055cc !important;
+    text-decoration: none;
+}
+
+.sd-card li a:hover {
+    color: #003399 !important;
+    text-decoration: underline;
+}
+
+.sd-card strong {
+    color: #111111;
+}
+
+/* ========== 代码块 ========== */
+
+.highlight {
+    background: #e6ffb2 !important;
+}

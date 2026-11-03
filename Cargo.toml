@@ -25,22 +25,22 @@ physics2d = ["physics", "rapier-starfish-debug/2d"]
 physics3d = ["physics", "rapier-starfish-debug/3d"]
 
 [dependencies]
-starfish-std        = { path = "../starfish/crates/starfish-std", features = ["we"] }
-starfish-debug      = { path = "../starfish/crates/starfish-debug" }
-starfish-we         = { path = "../starfish/crates/starfish-we" }
-starfish-time       = { path = "../starfish/crates/starfish-time" }
-starfish-permission = { path = "../starfish/crates/starfish-permission" }
-starfish-io         = { path = "../starfish/crates/starfish-io" }
-starfish-net        = { path = "../starfish/crates/starfish-net" }
-starfish-dialog     = { path = "../starfish/crates/starfish-dialog" }
+starfish-std        = { git = "https://github.com/GuYeying/starfish", features = ["we"] }
+starfish-debug      = { git = "https://github.com/GuYeying/starfish" }
+starfish-we         = { git = "https://github.com/GuYeying/starfish" }
+starfish-time       = { git = "https://github.com/GuYeying/starfish" }
+starfish-permission = { git = "https://github.com/GuYeying/starfish" }
+starfish-io         = { git = "https://github.com/GuYeying/starfish" }
+starfish-net        = { git = "https://github.com/GuYeying/starfish" }
+starfish-dialog     = { git = "https://github.com/GuYeying/starfish" }
 chacha20poly1305    = { version = "0.10", default-features = false, features = ["alloc"] }
-starfish-gamepad    = { path = "../starfish/crates/starfish-gamepad" }
-starfish-render     = { path = "../starfish/crates/starfish-render" }
-starfish-gfx        = { path = "../starfish/crates/starfish-gfx" }
-starfish-font       = { path = "../starfish/crates/starfish-font" }
-starfish-audio      = { path = "../starfish/crates/starfish-audio" }
-starfish-video      = { path = "../starfish/crates/starfish-video" }
-starfish-pygame     = { path = "../starfish/crates/starfish-pygame" }
+starfish-gamepad    = { git = "https://github.com/GuYeying/starfish" }
+starfish-render     = { git = "https://github.com/GuYeying/starfish" }
+starfish-gfx        = { git = "https://github.com/GuYeying/starfish" }
+starfish-font       = { git = "https://github.com/GuYeying/starfish" }
+starfish-audio      = { git = "https://github.com/GuYeying/starfish" }
+starfish-video      = { git = "https://github.com/GuYeying/starfish" }
+starfish-pygame     = { git = "https://github.com/GuYeying/starfish" }
 
 # ── 外接客人库（原生风格绑定面，2026-10-24 批次 42；feature 门控，见 [features]）──
 # rapier 物理适配层（2D v1；default 为空，features 必显式；wgpu 版本
@@ -48,7 +48,7 @@ starfish-pygame     = { path = "../starfish/crates/starfish-pygame" }
 rapier-starfish-debug = { path = "../rapier-starfish-debug", features = ["2d"], optional = true }
 # egui 适配层（vendored fork；feature "render" 拉 egui-wgpu + starfish-render
 # 桥 SfEguiRenderer；egui 经它重导出，本 crate 不直依赖 egui）
-egui-starfish-we = { path = "../egui-starfish-we", features = ["render"], optional = true }
+egui-starfish-we = { git = "https://github.com/GuYeying/egui-starfish-we", features = ["render"], optional = true }
 # egui 绘制端（Renderer/ScreenDescriptor 类型面——egui-starfish-we 不重导出）
 egui-wgpu = { version = "0.37.0", optional = true }
 # wgpu 类型直依（渲染架构批次 C：ResourceAccess 包装层的内部桥接类型

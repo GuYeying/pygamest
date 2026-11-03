@@ -21,7 +21,6 @@ const LOG_PATH: &str = "/sdcard/Download/bp_log.txt";
 
 fn dlog(msg: &str) {
     println!("{}", msg);
-    starfish_std::debug::console_log(msg);
     #[cfg(target_os = "android")]
     net_log(msg);
     if let Ok(mut f) = std::fs::OpenOptions::new()
