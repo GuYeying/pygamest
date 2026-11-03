@@ -150,6 +150,17 @@ Android 另需环境变量（未设时脚本按常见路径探测，如 `D:/SDK/
 | [egui-starfish-we](https://github.com/GuYeying/egui-starfish-we) | egui × starfish-we 适配（vendored egui-winit fork） |
 | [rapier-starfish-debug](https://github.com/GuYeying/rapier-starfish-debug) | Rapier 物理适配 + 通用 debug 渲染 |
 
+## 与 pygame 的关系声明
+
+pygamest 是**独立项目**：与 pygame 官方（pygame.org / pygame-ce）**无隶属、
+无关联、无背书**，不使用其任何代码、商标或美术资源。API 形态对 pygame
+保持心智兼容，是降低学习成本的工程选择（pygame 的 API 本身亦源自 SDL
+家族惯例）。
+
+- 本项目分发**零 pygame 代码**：绑定层为 Rust 原生重实现，引擎为独立
+  Rust crate 库（starfish）
+- 使用本项目**无需安装或依赖 pygame**
+
 ## 协议
 
 MIT OR Apache-2.0 双协议（见 LICENSE-MIT / LICENSE-APACHE）。
