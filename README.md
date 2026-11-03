@@ -164,3 +164,6 @@ pygamest 是**独立项目**：与 pygame 官方（pygame.org / pygame-ce）**�
 ## 协议
 
 MIT OR Apache-2.0 双协议（见 LICENSE-MIT / LICENSE-APACHE）。
+
+> 本软件按"现状"提供，不含任何形式的担保；使用造成的任何损失由使用者
+> 自负——完整担保免责与责任限制条款见 LICENSE 文本。
