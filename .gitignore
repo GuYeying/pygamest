@@ -22,3 +22,7 @@ examples/*.exe
 
 # 开发者本机依赖覆盖（paths）
 .cargo/config.toml
+
+# ── 非开源/许可不明字体（合规 2026-11-03：公开仓只分发 SIL OFL 字体）──
+resources/fonts/字体家AI造字朝花.ttf
+resources/fonts/Canterbury.ttf
