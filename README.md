@@ -1,37 +1,117 @@
 # pygamest
 
-**starfish 游戏引擎的 Python 绑定层**（独立 crate）：内嵌
-[RustPython](https://github.com/RustPython/RustPython) 解释器 + 原生
-`pygame` 模块，让你用标准 pygame 心智在 starfish 引擎上写游戏。
+**次世代 pygame —— Python 游戏开发的原生形态。**
 
-- **三平台**：Windows 桌面 / Web（wasm32）/ Android（arm64 真机，鸿蒙 NEXT + 卓易通容器实测）
-- **原生绑定面**：`import pygame` 直达 Rust 原生模块（`#[pymodule]` 树），零 Python shim
-- **依赖单向**：`pygamest → starfish`（引擎本体零 Python 资产）
+[starfish](https://github.com/GuYeying/starfish) 引擎（wgpu GPU 渲染）的
+Python 绑定层：内嵌 [RustPython](https://github.com/RustPython/RustPython)
+解释器，`import pygame` 直达 **Rust 原生模块**（`#[pymodule]` 树，零 shim
+零 ctypes）——pygame 的心智，GPU 的出生面，三平台一套代码。
+
+- **三平台**：Windows 桌面 / Web（wasm32）/ Android（arm64 真机，鸿蒙
+  NEXT + 卓易通容器实测）
+- **依赖单向红线**：`pygamest → starfish`（引擎本体零 Python 资产）
+
+## 快速开始（真实案例）
+
+开发用 [pygamest-dev](https://github.com/GuYeying/pygamest-dev) 的解释器
+（`python.exe`，pygame 全内置零 Rust 工具链）。最小游戏
+（[pygamest-runtime](https://github.com/GuYeying/pygamest-runtime)
+/examples/hello_word）：
 
 ```python
 import pygame
 
-def game():
+async def main():
     screen = pygame.display.set_mode((800, 600))
+    font   = pygame.font.Font(None, 32)
+    text   = font.render("Hello Word!", True, (255, 255, 255))
+    clock  = pygame.time.Clock()
+
+    image = await pygame.image.load("assets/ferris.png")
+    sound = await pygame.mixer.load("assets/bleep.wav")
+
     while True:
-        with screen.render() as r:
-            r.rect((0, 200, 90), (20, 20, 120, 80))
+        for e in pygame.event.get():
+            if e.type == pygame.event.QUIT:
+                return
+            if e.type == pygame.event.KEYDOWN and e.key == pygame.key.K_ESCAPE:
+                return
+
+        with screen.render() as r:          # GPU 渲染会话
+            r.fill((125, 125, 125))
+            r.blit(image, (0, 0))
+            r.blit(text, (325, 275))
+
+        clock.tick(60)
         pygame.display.flip()
-        yield   # 生成器门：yield = 帧边界
+        await pygame.next_frame()           # 帧桥：跨平台统一挂起点
 ```
 
----
+与 pygame 心智一致，只有三处"新"：
 
-## 目录
+1. 入口严格 `async def main()`（跨平台统一——Web rAF 模型的硬约束；
+   生成器 `yield` 门已退役）；
+2. 绘制进 **GPU 渲染会话**（`with screen.render() as r:`——blit/draw 全走
+   wgpu 管线，Surface 即 GPU 出生面）；
+3. 帧尾 `await pygame.next_frame()`（帧桥；将来网络 awaitable 同机制扩展）。
 
-- [前置准备](#前置准备)
-- [桌面运行](#桌面运行)
-- [Web 构建](#web-构建)
-- [Android 构建](#android-构建)
-- [示例清单](#示例清单)
-- [文档指引](#文档指引)
+## 异步资源链（跨平台 IO 兼容优先）
 
----
+```python
+data = await pygame.io.fetch("assets/hero.png")      # 底层通用口（分发形态含解密）
+img  = await pygame.image.load("assets/hero.png")    # 三线统一：load = fetch + 解码
+snd  = await pygame.mixer.load("assets/bleep.wav")
+fnt  = await pygame.font.load("cjk", 20)             # CJK 预载链（dev 解释器）
+
+img2 = pygame.image.load_from_bytes(data)            # sync 字节构造（无路径场景）
+```
+
+`fetch` 读到 `.py` 自动注册 import（分发形态的模块装载链）；无路径场景
+（Web 无文件系统）走 `fetch → *_from_bytes`。资源缓存归开发者，生命周期
+自己管。Web 边界：音频须首次手势解锁（`pygame.mixer.needs_gesture()`）。
+
+## 模块面（与 pygame 对位 + 扩展）
+
+| 原生模块 | 覆盖 |
+|---|---|
+| `display` `event` `time`(Clock) `key` `mouse` | 窗口 / 事件轮询 / 计时 / 输入 |
+| `image` `font` `mixer` `draw` `gfxdraw` `transform` `mask` `math` `Rect` `Surface` | 资源 / 文本（含 CJK 预载链）/ 图形（六形状×填充描边/半透明）/ 几何 |
+| `gamepad` `touch` `sndarray` `sprite` `video` `permission` `version` | 手柄 / 多点触控 / 数组互操作 / 精灵组 / 视频输出 |
+| `io` `net` `dialog` | 跨平台读写 / TCP·UDP 轮询面 / 桌面模态 |
+| `pygame_gui` | egui 对接（OOP 门面 `UiBase`：`t.draw_ui(panel)` + `egui.event(e)` 显式喂事件 + 嵌套布局 with 语法） |
+| `pygame_physics` | Rapier 原生词汇物理（`PhysicsWorld` / `RigidBodyBuilder`，`t.draw_debug` 调试线） |
+| `pygame.next_frame` `pygame.tasks` `pygame.io.payload_list` | 帧桥 / 微调度（spawn·gather·sleep_frames）/ 分发清单 |
+
+UI 与物理示例（pygamest-dev/examples/egui_test.py、rapier_test.py）：
+
+```python
+import pygame_gui as egui
+import pygame_physics as rp
+
+with screen.render() as r:
+    r.draw_ui(panel)                    # egui HUD 恒叠在游戏内容之上
+    r.draw_debug(renderer, sink)        # 物理调试线（同一会话排程）
+```
+
+## 开发与分发分工
+
+- **开发** = [pygamest-dev](https://github.com/GuYeying/pygamest-dev)：
+  pygame 全内置的解释器（`python.exe`），零 Rust 工具链；游戏示例
+  （hello_world / draw_test / font_test / egui_test / rapier_test…）在其
+  examples/ 下
+- **分发** = [pygamest-runtime](https://github.com/GuYeying/pygamest-runtime)：
+  玩家单元（入口脚本编译期加密嵌入 + 哈希名散文件 + 加密清单——
+  `hello_word.exe + assets/ + modules/` 镜像源结构，双击即玩）
+
+## 本仓锚点探针
+
+`examples/` 保留体系**契约锚点**（发版必跑）：
+
+| 探针 | 说明 |
+|---|---|
+| `sig_probe` | 签名契约锚点（**无头**，先于真机跑；130+ 项断言，终端看 `[OK]`/`FAIL`） |
+| `binding_probe` | M1 绑定面验收（标准 pygame：with 会话渲染 + font + mixer + 手柄/触摸查询） |
+| `rp_hello` | M0 嵌入冒烟（RP 创世纪 / 语言特性 / 冻结 stdlib） |
 
 ## 前置准备
 
@@ -40,82 +120,15 @@ def game():
 rustup target add wasm32-unknown-unknown
 rustup target add aarch64-linux-android
 
-# Web 胶水工具（版本必须与 Cargo.lock 严格一致，当前 0.2.127）
-cargo install wasm-bindgen-cli --version 0.2.127
+# Web 胶水工具（版本必须与 Cargo.lock 严格一致）
+cargo install wasm-bindgen-cli
 
 # Android 打包工具
 cargo install cargo-ndk
 ```
 
 Android 另需环境变量（未设时脚本按常见路径探测，如 `D:/SDK/Android`）：
-`ANDROID_HOME` / `ANDROID_NDK_ROOT` / `ANDROID_JAR`（dialog 用，如
-`...\platforms\android-37.0\android.jar`）。
-
----
-
-## 桌面运行
-
-```bash
-cargo run --release -p pygamest --example <示例名>
-```
-
-`--release` 为验收口径（debug 已可用，性能验收以 release 为准）。
-
----
-
-## Web 构建
-
-```bash
-# 构建（wasm32 + JS 胶水 + HTML 加载页，产物落本仓库 web/）
-python scripts/build_web.py <示例名>
-
-# 本地服务（file:// 无效，必须走 http）
-cd web && python -m http.server 8000
-# 浏览器打开 http://localhost:8000/<示例名>.html
-```
-
-- 窗口类示例（binding_probe / font_test / draw_test / transparent_test）为 canvas 页；
-  `sig_probe` / `rp_hello` 为控制台页（结果在 **F12**）。
-- `--all` 全量构建；新增示例须在 `scripts/build_web.py` 顶部 REGISTRY 登记。
-- Web 边界：无文件系统（资源走宿主预加载 / `load_from_bytes`）；音频须首次手势解锁
-  （`pygame.mixer.needs_gesture()`）。
-
----
-
-## Android 构建
-
-```bash
-# 统一打包链（唯一入口；xtask 已退役）
-python scripts/build_apk.py <示例名>          # pygamest 示例
-python scripts/build_apk.py hello --dir ..    # starfish 根 crate 示例共用本脚本
-```
-
-产物：`target/android-apk/<名>_android.apk`。
-
-```bash
-# 安装运行（模拟器冒烟必须 x86_64 原生包：--abi x86_64，arm64 走翻译层不可信）
-adb install -r target/android-apk/<名>_android.apk
-adb logcat | grep -E "selftest|diag"     # 卓易通不可信时看 /sdcard/Download/bp_log.txt
-```
-
-> 关键坑：秒退先查 `lib_name`（`aapt2 dump xmltree --file AndroidManifest.xml <apk>
-> | grep -A2 lib_name`，value 必须 = `<名>_android`）；transform 源表面必须保活
-> （GL 纹理 ID 复用串内容）。详见 CLAUDE.md「Android 实机关键坑」。
-
----
-
-## 示例清单
-
-| 示例 | 说明 |
-|---|---|
-| `sig_probe` | 签名契约锚点（**无头**，先于真机跑；130+ 项断言，终端看 `[OK]`/`FAIL`） |
-| `binding_probe` | M1 绑定面验收（标准 pygame：with 会话渲染 + font + mixer + 手柄/触摸查询） |
-| `font_test` | pygame.font 专项（构造/度量/旋转缩放/半透明/CJK 链路） |
-| `draw_test` | pygame.draw 专项（六形状 + 半透明 + gfxdraw 兼容混绘） |
-| `transparent_test` | 透明窗口专项（桌宠形态：`TRANSPARENT \| DIRECTX` 逐像素透明，仅 Windows） |
-| `rp_hello` | M0 嵌入冒烟（RP 创世纪 / 语言特性 / 冻结 stdlib） |
-
----
+`ANDROID_HOME` / `ANDROID_NDK_ROOT` / `ANDROID_JAR`。
 
 ## 文档指引
 
@@ -127,18 +140,13 @@ adb logcat | grep -E "selftest|diag"     # 卓易通不可信时看 /sdcard/Down
 | `reference/pygame兼容层模块架构.md` | 模块映射 + Tier 排期 |
 | `reference/安卓APK打包lib_name坑与真机诊断手册.md` | 安卓问题先读 |
 | `reference/wasm编译与运行指南.md` | wasm 编译详解 |
-| `../starfish/doc/PROJECT_STATUS.md` | 引擎侧进度主线 |
-
-**逐模块独立测试**：共享宿主壳 `rpy::testhost::run(script, tag, transparent)`，
-每模块一个 `examples/<模块>_test.py`（`[模块-test]` 行逐项断言 + 样张上屏）。
-已完成：font_test / draw_test / transparent_test。
 
 ## 生态仓库矩阵
 
 | 仓库 | 角色 |
 |---|---|
 | [starfish](https://github.com/GuYeying/starfish) | 引擎本体（纯 Rust 跨平台库，零 Python 资产） |
-| [pygamest](https://github.com/GuYeying/pygamest) | Python 绑定层（本仓，RustPython 内嵌 + 原生 pygame 面） |
+| [pygamest](https://github.com/GuYeying/pygamest) | Python 绑定层（本仓） |
 | [pygamest-dev](https://github.com/GuYeying/pygamest-dev) | 开发解释器（python.exe 形态，零 Rust 工具链） |
 | [pygamest-runtime](https://github.com/GuYeying/pygamest-runtime) | 游戏运行时（玩家单元，入口加密嵌入 + 散文件清单） |
 | [egui-starfish-we](https://github.com/GuYeying/egui-starfish-we) | egui × starfish-we 适配（vendored egui-winit fork） |
