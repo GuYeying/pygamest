@@ -132,3 +132,18 @@ adb logcat | grep -E "selftest|diag"     # 卓易通不可信时看 /sdcard/Down
 **逐模块独立测试**：共享宿主壳 `rpy::testhost::run(script, tag, transparent)`，
 每模块一个 `examples/<模块>_test.py`（`[模块-test]` 行逐项断言 + 样张上屏）。
 已完成：font_test / draw_test / transparent_test。
+
+## 生态仓库矩阵
+
+| 仓库 | 角色 |
+|---|---|
+| [starfish](https://github.com/GuYeying/starfish) | 引擎本体（纯 Rust 跨平台库，零 Python 资产） |
+| [pygamest](https://github.com/GuYeying/pygamest) | Python 绑定层（本仓，RustPython 内嵌 + 原生 pygame 面） |
+| [pygamest-dev](https://github.com/GuYeying/pygamest-dev) | 开发解释器（python.exe 形态，零 Rust 工具链） |
+| [pygamest-runtime](https://github.com/GuYeying/pygamest-runtime) | 游戏运行时（玩家单元，入口加密嵌入 + 散文件清单） |
+| [egui-starfish-we](https://github.com/GuYeying/egui-starfish-we) | egui × starfish-we 适配（vendored egui-winit fork） |
+| [rapier-starfish-debug](https://github.com/GuYeying/rapier-starfish-debug) | Rapier 物理适配 + 通用 debug 渲染 |
+
+## 协议
+
+MIT OR Apache-2.0 双协议（见 LICENSE-MIT / LICENSE-APACHE）。
