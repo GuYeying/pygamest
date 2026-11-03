@@ -128,6 +128,11 @@ Android 另需环境变量（未设时脚本按常见路径探测，如 `D:/SDK/
 | 文档 | 内容 |
 |---|---|
 | `CLAUDE.md` | 项目全景 + 架构 + 坑位（接手先读） |
+| `docs/API参考/00-核心循环.md` | display/event/key/mouse/time/帧桥/Surface/渲染会话 |
+| `docs/API参考/01-绘制与资源.md` | draw 会话族/gfxdraw/image/font/mixer |
+| `docs/API参考/02-io与网络.md` | io 异步链/net/dialog |
+| `docs/API参考/03-扩展命名空间.md` | pygame_gui/pygame_physics/tasks/杂项 |
+| `docs/1.0-路线图.md` | 测试覆盖矩阵/文档进度/稳定性准则（1.0 = API 稳定承诺） |
 | `reference/三端构建与运行指南.md` | 三端构建一站式详细入口 |
 | `reference/pygame绑定层API设计稿.md` | 绑定工程唯一契约 |
 | `reference/pygame兼容层模块架构.md` | 模块映射 + Tier 排期 |
