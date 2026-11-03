@@ -23,12 +23,7 @@ import pygame
 
 async def main():
     screen = pygame.display.set_mode((800, 600))
-    font   = pygame.font.Font(None, 32)
-    text   = font.render("Hello Word!", True, (255, 255, 255))
     clock  = pygame.time.Clock()
-
-    image = await pygame.image.load("assets/ferris.png")
-    sound = await pygame.mixer.load("assets/bleep.wav")
 
     while True:
         for e in pygame.event.get():
@@ -39,8 +34,6 @@ async def main():
 
         with screen.render() as r:          # GPU 渲染会话
             r.fill((125, 125, 125))
-            r.blit(image, (0, 0))
-            r.blit(text, (325, 275))
 
         clock.tick(60)
         pygame.display.flip()

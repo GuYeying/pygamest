@@ -45,6 +45,26 @@ fn try_install(vm: &VirtualMachine) -> Result<(), String> {
 
     // ── pygame 主模块（子模块挂在其属性下）──
     let pygame_mod = mount_top(vm, &sys_modules, pygame::pygame::module_def(&vm.ctx), "pygame")?;
+    // 顶层窗口旗标（pygame 惯例：FULLSCREEN/RESIZABLE… 顶层与 display
+    // 子模块同名同值——此前只挂 display 层，`pygame.FULLSCREEN` 直接
+    // AttributeError，2026-11-03 实测补）
+    for (name, v) in [
+        ("RESIZABLE", starfish_pygame::display::RESIZABLE),
+        ("FULLSCREEN", starfish_pygame::display::FULLSCREEN),
+        ("NOFRAME", starfish_pygame::display::NOFRAME),
+        ("HIDDEN", starfish_pygame::display::HIDDEN),
+        ("ALWAYS_ON_TOP", starfish_pygame::display::ALWAYS_ON_TOP),
+        ("TRANSPARENT", starfish_pygame::display::TRANSPARENT),
+        ("VULKAN", starfish_pygame::display::VULKAN),
+        ("DIRECTX", starfish_pygame::display::DIRECTX),
+        ("METAL", starfish_pygame::display::METAL),
+        ("OPENGLES", starfish_pygame::display::OPENGLES),
+    ] {
+        let flag_obj: PyObjectRef = vm.ctx.new_int(v).into();
+        pygame_mod
+            .set_attr(name, flag_obj, vm)
+            .map_err(|e| crate::rpy::bridge::exc_msg(vm, e))?;
+    }
     let children: &[Child] = &[
         child("display", pygame::display::module_def(&vm.ctx)),
         child("time", pygame::time::module_def(&vm.ctx)),
