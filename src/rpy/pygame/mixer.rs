@@ -32,7 +32,10 @@ use std::cell::Cell;
             pub(crate) channel: Cell<Option<usize>>,
         }
 
-        /// Sound() 无参 = 内嵌提示音 / Sound("路径") / Sound(b"bytes")
+        pub(crate) type PySoundRef = PyRef<PySound>;
+
+        /// Sound(b"bytes") / Sound() = 内嵌提示音（路径构造退役——统一
+        /// await mixer.load(path) / load_from_bytes(bytes)，2026-11-02）
         #[derive(FromArgs)]
         pub(crate) struct SoundArgs {
             #[pyarg(any, optional)]
@@ -100,6 +103,18 @@ use std::cell::Cell;
         }
 
         /// pygame.mixer.init(channels=8)：显式初始化（不调也行——首次播放自动建）
+        /// load_from_bytes(bytes)：统一 sync 字节构造（三线同规范）
+        #[pyfunction]
+        fn load_from_bytes(bytes: Vec<u8>, vm: &VirtualMachine) -> PyResult<PySoundRef> {
+            let data = SoundData::from_bytes(bytes)
+                .map_err(|e| vm.new_value_error(format!("音频解码失败: {e:?}")))?;
+            Ok(PySound {
+                data: std::sync::Arc::new(data),
+                channel: std::cell::Cell::new(None),
+            }
+            .into_ref(&vm.ctx))
+        }
+
         #[pyfunction]
         fn init(channels: Option<u32>, vm: &VirtualMachine) -> PyResult<()> {
             starfish_pygame::mixer::init(channels.unwrap_or(8))

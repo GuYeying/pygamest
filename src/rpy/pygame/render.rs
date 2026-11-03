@@ -245,7 +245,7 @@ pub(crate) mod render {
             };
         }
         sf::store_wish(wish);
-        // GPU 槽已建立（宿主壳预置 set_mode 的 pygame-rs 形态）且相机
+        // GPU 槽已建立（宿主壳预置 set_mode 的 pygamest 形态）且相机
         // 维被改：即时生效——reset_camera 即"回到当前愿望"。cull/blend
         // 为管线编译期定型，不追溯（下次 set_mode 生效）。
         if dim.is_some() || fov.is_some() || near.is_some() || far.is_some() {
@@ -1151,7 +1151,7 @@ pub(crate) mod render {
                     let f = fit.to_cols_array();
                     let c = cm.0.get().to_cols_array();
                     let r = composed.to_cols_array();
-                    starfish_debug::log_info!(&format!(
+                    starfish_debug::log_debug!(&format!(
                         "[wcmvp] fit sx={:.4} sy={:.4} tx={:.4} ty={:.4} | cam平移=({:.1},{:.1}) | 合成平移=({:.1},{:.1}) 合成sx={:.4}",
                         f[0], f[5], f[12], f[13], c[12], c[13],
                         r[12], r[13], r[0],
@@ -1196,7 +1196,7 @@ pub(crate) mod render {
             .iter()
             .map(|(x, y, c)| format!("({x},{y})=#{:02X}{:02X}{:02X}", c[0], c[1], c[2]))
             .collect();
-        starfish_debug::log_info!(&format!("[screen-probe] {}", fmt.join(" ")));
+        starfish_debug::log_debug!(&format!("[screen-probe] {}", fmt.join(" ")));
         let items: Vec<PyObjectRef> = samples
             .iter()
             .map(|(x, y, c)| {

@@ -65,9 +65,10 @@ use starfish_pygame::render::RenderPass;
 pub fn devlog(msg: &str) {
     // 桌面 = console_log 单路输出（println 双写已退役，2026-10-26）；
     // >200ms 慢调用哨兵保留（当年 /sdcard 未门控在 Windows 触发
-    // UNC 解析 7s 级超时——"白窗干等"的真身，防复发）
+    // UNC 解析 7s 级超时——"白窗干等"的真身，防复发）。
+    // **Debug 级**——绑定层诊断，发行壳 Info 级别下不落盘
     let t = starfish_std::debug::Stopwatch::now();
-    starfish_debug::log_info!(msg);
+    starfish_debug::log_debug!(msg);
     let a = t.ms();
     #[cfg(target_os = "android")]
     {
@@ -266,6 +267,74 @@ pub(crate) fn with_mixer<R>(
 
 /// 音频源对象 → SoundData（None = 内嵌提示音 / str = 文件路径 /
 /// bytes = 内存解码；OGG/MP3/FLAC/WAV 按内容探测）
+
+// ── 异步 IO 完成表（两拍桥侧槽，2026-11-03 重构）────────────────
+// fetch 完成 → 按路径入表（单槽 LAST_IO 已退役——多任务并发 io 会
+// 串数据）；Python 侧 pygame.io.io_take(path) 按路径取走。
+pub(crate) static IO_RESULTS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// 任务级 io 挂起队列（tick 收 io_read 挂起时压入——step_coro 每帧
+/// 排空并发起 fetch）
+pub(crate) static IO_PENDING: std::sync::LazyLock<std::sync::Mutex<Vec<String>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(Vec::new()));
+
+/// 在飞 fetch 去重集（同路径多帧重复发起防抖）
+pub(crate) static IO_INFLIGHT: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashSet<String>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+
+/// fetch 完成：结果入表 + 移出在飞集（失败 = 空字节占位，取数侧可辨）
+pub(crate) fn store_io_result(path: &str, b: Vec<u8>) {
+    if let Ok(mut g) = IO_RESULTS.lock() {
+        g.insert(path.to_string(), b);
+    }
+    if let Ok(mut g) = IO_INFLIGHT.lock() {
+        g.remove(path);
+    }
+}
+
+/// 按路径取走结果（就绪前不调用——调用方须先过 io_ready）
+pub(crate) fn take_io_result(path: &str) -> Option<Vec<u8>> {
+    let b = IO_RESULTS.lock().ok()?.remove(path)?;
+    Some(b)
+}
+
+/// 路径是否就绪（结果已入表）
+pub(crate) fn io_ready(path: &str) -> bool {
+    IO_RESULTS
+        .lock()
+        .map(|g| g.contains_key(path))
+        .unwrap_or(false)
+}
+
+/// 任务挂起路径压队（去重）
+pub(crate) fn push_io_pending(path: &str) {
+    if let Ok(mut g) = IO_PENDING.lock() {
+        if !g.iter().any(|p| p == path) {
+            g.push(path.to_string());
+        }
+    }
+}
+
+/// 排空任务挂起队列（step_coro 每帧取走发起 fetch）
+pub(crate) fn drain_io_pending() -> Vec<String> {
+    IO_PENDING
+        .lock()
+        .map(|mut g| std::mem::take(&mut *g))
+        .unwrap_or_default()
+}
+
+/// 已在飞（防止同路径重复 spawn）
+pub(crate) fn mark_inflight(path: &str) -> bool {
+    let mut g = match IO_INFLIGHT.lock() {
+        Ok(g) => g,
+        Err(_) => return false,
+    };
+    g.insert(path.to_string())
+}
+
 pub(crate) fn sound_source_to_data(
     source: Option<PyObjectRef>,
     vm: &VirtualMachine,
@@ -274,16 +343,16 @@ pub(crate) fn sound_source_to_data(
         // Font(None) 惯例延续：无参 = 内嵌标准提示音
         None => Ok(starfish_pygame::mixer::beep()),
         Some(o) => {
-            if let Some(s) = o.downcast_ref::<rustpython_vm::builtins::PyStr>() {
-                let t = s
-                    .to_str()
-                    .ok_or_else(|| vm.new_value_error("音频路径含非 UTF-8 字符"))?;
-                SoundData::from_file(t)
-            } else {
-                // bytes / bytearray / memoryview（try_bytes_like 对非字节对象
-                // 自报 TypeError）
-                o.try_bytes_like(vm, |b| SoundData::from_bytes(b.to_vec()))?
+            // 路径构造已退役（2026-11-02 统一接口定约）：str → 指路
+            // await pygame.mixer.load(path) / load_from_bytes(bytes)
+            if o.downcast_ref::<rustpython_vm::builtins::PyStr>().is_some() {
+                return Err(vm.new_value_error(
+                    "Sound 路径构造已退役——await pygame.mixer.load(path) 或 load_from_bytes(bytes)",
+                ));
             }
+            // bytes / bytearray / memoryview（try_bytes_like 对非字节对象
+            // 自报 TypeError）
+            o.try_bytes_like(vm, |b| SoundData::from_bytes(b.to_vec()))?
         }
         .map(Arc::new)
         .map_err(|e| vm.new_value_error(format!("音频错误: {e:?}")))

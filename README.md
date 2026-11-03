@@ -1,4 +1,4 @@
-# pygame-rs
+# pygamest
 
 **starfish 游戏引擎的 Python 绑定层**（独立 crate）：内嵌
 [RustPython](https://github.com/RustPython/RustPython) 解释器 + 原生
@@ -6,7 +6,7 @@
 
 - **三平台**：Windows 桌面 / Web（wasm32）/ Android（arm64 真机，鸿蒙 NEXT + 卓易通容器实测）
 - **原生绑定面**：`import pygame` 直达 Rust 原生模块（`#[pymodule]` 树），零 Python shim
-- **依赖单向**：`pygame-rs → starfish`（引擎本体零 Python 资产）
+- **依赖单向**：`pygamest → starfish`（引擎本体零 Python 资产）
 
 ```python
 import pygame
@@ -56,7 +56,7 @@ Android 另需环境变量（未设时脚本按常见路径探测，如 `D:/SDK/
 ## 桌面运行
 
 ```bash
-cargo run --release -p pygame-rs --example <示例名>
+cargo run --release -p pygamest --example <示例名>
 ```
 
 `--release` 为验收口径（debug 已可用，性能验收以 release 为准）。
@@ -86,7 +86,7 @@ cd web && python -m http.server 8000
 
 ```bash
 # 统一打包链（唯一入口；xtask 已退役）
-python scripts/build_apk.py <示例名>          # pygame-rs 示例
+python scripts/build_apk.py <示例名>          # pygamest 示例
 python scripts/build_apk.py hello --dir ..    # starfish 根 crate 示例共用本脚本
 ```
 

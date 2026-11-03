@@ -4,11 +4,11 @@
 //! mixer 度量面等）在 `sig_probe.py` 锁定——签名回归先跑本探针，再上
 //! 真机批次。draw 族 FromArgs 收参需真会话，由 binding_probe 覆盖。
 //!
-//! 运行：`cargo run -p pygame-rs --example sig_probe`
+//! 运行：`cargo run -p pygamest --example sig_probe`
 //! 预期：`[sig_probe] PASS`；Exit 1 = 契约破坏。
 //! Android：`sig_probe_android`（app_entry 形态——结果走 logcat）。
 
-use pygame_rs::rpy;
+use pygamest::rpy;
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let interp = rpy::new_interpreter();

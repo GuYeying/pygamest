@@ -63,11 +63,7 @@ fn try_install(vm: &VirtualMachine) -> Result<(), String> {
         child("gamepad", pygame::gamepad::module_def(&vm.ctx)),
         child("touch", pygame::touch::module_def(&vm.ctx)),
         child("io", pygame::io::module_def(&vm.ctx)),
-        // dev 门控：调试模块面（打包构建 = runtime only，import 即报
-        // "生产构建未启用"——见 pygame-rs Cargo.toml [features] 定约）
-        #[cfg(feature = "dev")]
         child("net", pygame::net::module_def(&vm.ctx)),
-        #[cfg(feature = "dev")]
         child("dialog", pygame::dialog::module_def(&vm.ctx)),
         child("gfxdraw", pygame::gfxdraw::module_def(&vm.ctx)),
         child("render", pygame::render::module_def(&vm.ctx)),

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """starfish Android APK 统一打包脚本（xtask 退役后的唯一打包链）。
 
-归属：pygame-rs 自持（批次二十一，2026-09-29），根 crate 示例共用
+归属：pygamest 自持（批次二十一，2026-09-29），根 crate 示例共用
 （--dir 指向仓库根即可）。链路 = 批次十八/十九真机验证过的五步：
 
   1. cargo ndk 交叉编译（release；RP 恒 release 铁律）
@@ -22,7 +22,7 @@
 
   示例名用桌面名（binding_probe），Android 侧自动取 <名>_android
   （仓库双注册惯例：桌面 <名> + [[example]] <名>_android cdylib）。
-  --dir 默认本脚本所属 crate（pygame-rs）；根 crate 示例传 --dir ..
+  --dir 默认本脚本所属 crate（pygamest）；根 crate 示例传 --dir ..
 
 环境：ANDROID_HOME / ANDROID_NDK_ROOT（未设时按常见路径探测）。
 """
@@ -59,7 +59,7 @@ features = []                  # cargo features（physics3d 等）
 # out = "target/android-apk"  # 产物目录（缺省）
 """
 SCRIPT_DIR = Path(__file__).resolve().parent
-CRATE_DIR_DEFAULT = SCRIPT_DIR.parent          # pygame-rs/（独立后仍成立）
+CRATE_DIR_DEFAULT = SCRIPT_DIR.parent          # pygamest/（独立后仍成立）
 PACK_DIR = CRATE_DIR_DEFAULT / "pack"          # toml 配置目录（三平台共享）
 
 
@@ -136,7 +136,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="starfish Android APK 统一打包（toml 驱动）")
     ap.add_argument("example", nargs="?", help="桌面示例名（pack/<名>.android.toml）")
     ap.add_argument("--init", metavar="名", help="生成 pack/<名>.android.toml 模板")
-    ap.add_argument("--dir", default=str(CRATE_DIR_DEFAULT), help="示例所属 crate 目录（默认 pygame-rs；根示例传 ..）")
+    ap.add_argument("--dir", default=str(CRATE_DIR_DEFAULT), help="示例所属 crate 目录（默认 pygamest；根示例传 ..）")
     ap.add_argument("--abi", default=None, help="覆盖 toml 的 abi（默认 arm64-v8a）")
     ap.add_argument("--out", default=None, help="产物目录（默认 <仓库根>/target/android-apk）")
     ap.add_argument("--dex", default=None, help="classes.dex 显式路径（默认自动探测）")

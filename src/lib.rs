@@ -1,4 +1,4 @@
-//! pygame-rs：starfish 的 Python 绑定层（RustPython 内嵌壳 + 绑定面）。
+//! pygamest：starfish 的 Python 绑定层（RustPython 内嵌壳 + 绑定面）。
 //!
 //! 分层红线：starfish 本体**零 Python 资产**；本 crate 单向依赖
 //! `starfish`（path = "../starfish"），RP（RustPython）接触面全部收在 [`rpy`]。

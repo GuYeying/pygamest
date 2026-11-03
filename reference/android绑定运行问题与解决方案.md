@@ -1,6 +1,6 @@
 # Android 绑定层运行问题与解决方案（详解版）
 
-> 2026-09-23,批次 22/22·续。pygame-rs 首版 APK 真机闪退的完整定位、
+> 2026-09-23,批次 22/22·续。pygamest 首版 APK 真机闪退的完整定位、
 > 机理、平台差异分析与修复记录。两个问题:① TLS 键耗尽(启动即崩);
 > ② GPU 表面就绪时序(启动后冻结)。关联:changelog 批次 22/22·续;
 > `reference/vendor与crates切换指南.md` 例外登记;诊断命令见文末速查。
@@ -9,7 +9,7 @@
 
 ## 〇、背景与症状
 
-pygame-rs 在 android 上落地运行入口(M4)后,首版 APK 真机点击图标
+pygamest 在 android 上落地运行入口(M4)后,首版 APK 真机点击图标
 **立即闪退**——无窗口、无提示、无 ANR。而同一份代码在桌面
 (Windows)完全正常、在 Web(wasm)也已跑通。
 
@@ -43,7 +43,7 @@ pygame-rs 在 android 上落地运行入口(M4)后,首版 APK 真机点击图标
 4. **对照实验定性归属**(本案例最有价值的一步):用**最小无 Python 的
    引擎探针 probe_gfx** 跑同一环境——它同样炸 `Invalid surface`,
    由此把问题二干净地归给引擎/模拟器 GL 层,避免在绑定层瞎修。
-   问题一则是反证:探针不崩、pygame-rs 崩 → 差异量在 RustPython。
+   问题一则是反证:探针不崩、pygamest 崩 → 差异量在 RustPython。
 
 ---
 
@@ -215,7 +215,7 @@ wgpu error: Validation Error
 
 ```bash
 # 复现包(模拟器为 x86_64;arm64 包模拟器跑不了)
-cargo xtask android pygame_hello --dir pygame-rs --abi x86_64 --build
+cargo xtask android pygame_hello --dir pygamest --abi x86_64 --build
 # 装启收
 adb install -r target/android-apk/pygame_hello_android.apk
 adb logcat -c && adb shell am start -n com.starfish.test/android.app.NativeActivity

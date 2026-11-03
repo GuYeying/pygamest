@@ -8,11 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-pygame-rs 是 **starfish 游戏引擎的 Python 绑定层**（独立 crate）：内嵌
+pygamest 是 **starfish 游戏引擎的 Python 绑定层**（独立 crate）：内嵌
 RustPython 解释器 + pygame 绑定面。引擎本体在**同级目录** `../starfish/`，
 本 crate 以 `path = "../starfish"` 单向引用。
 
-- **依赖单向红线**：pygame-rs → starfish；starfish 永不感知本 crate，
+- **依赖单向红线**：pygamest → starfish；starfish 永不感知本 crate，
   starfish 本体零 Python 资产。
 - **三平台**：Windows 桌面 / Web（wasm32-unknown-unknown）/ Android（arm64 真机，
   鸿蒙 NEXT + 卓易通容器为实测环境）。
@@ -122,9 +122,9 @@ RustPython 解释器 + pygame 绑定面。引擎本体在**同级目录** `../st
 # 本 crate 无单元测试——验证方式 = 跑示例（Windows debug 已可用：build.rs
 #   抬主线程栈 Reserve 修掉了引导 RecursionError；性能验收仍以 --release
 #   为准，见 reference 手册 §九-6）：
-cargo run --release -p pygame-rs --example rp_hello        # M0 冒烟（RP 创世纪/语言特性/冻结 stdlib）
-cargo run --release -p pygame-rs --example sig_probe       # 签名契约锚点（无头零窗口，先于真机跑）
-cargo run --release -p pygame-rs --example binding_probe   # M1 绑定面验收（标准 pygame 写法）
+cargo run --release -p pygamest --example rp_hello        # M0 冒烟（RP 创世纪/语言特性/冻结 stdlib）
+cargo run --release -p pygamest --example sig_probe       # 签名契约锚点（无头零窗口，先于真机跑）
+cargo run --release -p pygamest --example binding_probe   # M1 绑定面验收（标准 pygame 写法）
 
 # Android APK 统一打包（唯一打包链；xtask 已退役）
 python scripts/build_apk.py binding_probe                  # 本 crate 示例（默认 --dir 本目录）
@@ -141,8 +141,8 @@ Web：`wasm-bindgen-cli` 版本必须与 Cargo.lock 严格一致（当前 0.2.12
 "not compatible with version of the wasm-bindgen in the dependency tree"）。
 **本 crate 示例的 Web 构建/测试统一走 `python scripts/build_web.py <名>`
 （wasm32 构建 + 胶水 + HTML 加载页，产物落本仓库 `web/`；`--all` 全量；
-页面带【pygame-rs】归属标识）**——归属规则：pygame-rs 的 demo 产物只进
-pygame-rs/web/，starfish 示例的进 starfish/web/，两边不混放。
+页面带【pygamest】归属标识）**——归属规则：pygamest 的 demo 产物只进
+pygamest/web/，starfish 示例的进 starfish/web/，两边不混放。
 **Web 窗口大小控制**（页面即权威，开发者自行调整）：canvas 占多大
 （CSS）渲染就是多大——位图 = CSS 布局 1:1，dpr 不进引擎。产物页默认
 `800×600`（与桌面 `set_mode` 一致）；改产物 HTML 里 canvas 的 CSS
@@ -304,7 +304,7 @@ Python 触达 Rust 的分层链（自上而下，单向）：
     `physics2d`/`physics3d` 转发维度（可双开——crate dim2/dim3 命名空间
     天然并存）；default = ["gui", "physics2d"]；3D 绑定面
     （`pygame.rapier3d`）随 3D 批次落地；
-  - 验收：`cargo run --release -p pygame-rs --example rapier_test`
+  - 验收：`cargo run --release -p pygamest --example rapier_test`
     （15/15）+ `egui_test`（15/15，OOP 门面版含负路径×2）桌面全 PASS；
     双注册含 `_android`。
     v1 边界：rapier 仅 2D；egui 事件不拦截/无 IME；Web/Android 编译门
@@ -414,7 +414,7 @@ Python 触达 Rust 的分层链（自上而下，单向）：
 
 ## 文档指引
 
-- 本仓库 `reference/`：`三端构建与运行指南.md`（**pygame-rs 一站式构建入口**）、
+- 本仓库 `reference/`：`三端构建与运行指南.md`（**pygamest 一站式构建入口**）、
   `安卓APK打包lib_name坑与真机诊断手册.md`（**接手安卓问题先读**）、
   `android构建与运行指南.md`、`wasm编译与运行指南.md`、
   `wasm高DPI深度附件脱节问题详解.md`、`wasm运行时生命周期与尺寸竞态问题详解.md`、
@@ -432,7 +432,7 @@ Python 触达 Rust 的分层链（自上而下，单向）：
     **`IRect = [i32; 4]` 数组别名**（`[x, y, w, h]`，用户定约：struct
     载体也不要）承载 clip/scissor/blit_area 内部几何；`DrawTarget`
     trait 的 fill/blit/blit_centered/blit_area 返回 `()`；
-  - pygame-rs 侧：**`pygame.Rect` pyclass 删除**（struct + `#[pyclass]
+  - pygamest 侧：**`pygame.Rect` pyclass 删除**（struct + `#[pyclass]
     impl` + Constructor/Comparable/Representable + collidelist* 的
     rect_list 助手——碰撞查询面随之消失）；`Surface.blit/fill` 与三会话
     （Screen/Surface/Targets）的 fill/blit/blit_area/text 全部改无返回
@@ -810,7 +810,7 @@ Python 触达 Rust 的分层链（自上而下，单向）：
     pos3color4/pos3uv2color4、枚举字符串）+ 主屏查询
     （screen_attachment/screen_format/screen_size/screen_samples）；
     `write_camera_mvp(buf)`（全局相机定约直写——group0/b0 = 64B 列主
-    MVP，自定义管线与引擎同约定即吃全局相机）；pygame-rs 直依 wgpu
+    MVP，自定义管线与引擎同约定即吃全局相机）；pygamest 直依 wgpu
     （内部桥接类型用，不出 Python 界）；
   - **D raw_render**：`with t.raw_render(depth=False) as p:` 直绘会话
     （Screen=present 收口 / Surface=flush 收口回放，恒在内容之上）——
@@ -1012,7 +1012,7 @@ Python 触达 Rust 的分层链（自上而下，单向）：
   - 验证：pypg -c/脚本/--game 三形态 + async_demo/mini_game dist
     实跑全通（绿字标题 + 橙色矩形帧动画）。
 - **批次 60（2026-10-25，用户定夺）：pypg 拆独立仓**——D:\Projects\
-  Rust\pypg（git 分仓，Cargo 同源：path 依赖 pygame-rs + lock 复刻
+  Rust\pypg（git 分仓，Cargo 同源：path 依赖 pygamest + lock 复刻
   锁 ruff 传递依赖版本——独立解析会拉更新 patch 致 RP codegen 编译
   炸，实测后以 lock 复刻根治）。本仓删 src/bin/pypg.rs 回归纯 lib
   + 宿主（runner/examples）；rpy 对外面（install/testhost/rpy 各
@@ -1026,3 +1026,88 @@ Python 触达 Rust 的分层链（自上而下，单向）：
   examples/egui_test.py` 全链通（egui HUD 滑条/按钮/可选行完整渲染）。
   同步澄清两形态语义：`pypg <脚本.py>` = **顶层直跑**（任意脚本——
   游戏门脚本定义 async def main 后即结束，属预期——要用 `--game`）。
+- **批次 62（2026-11-03，用户定夺"全 io 异步化 + 三线统一接口"）**：
+  **IO 异步化 + SFIX1 退役**——跨平台 IO 兼容优先，三线资源加载统一
+  两接口（**async 路径加载 + sync 字节构造**）：
+  - **统一接口规范**：`await pygame.image.load(path)` / `await
+    pygame.mixer.load(path)` / `await pygame.font.load(path, size)`
+    / `await pygame.io.fetch(path)`（底层通用口，.py 自动注册
+    import）+ 三线 `load_from_bytes(bytes)`（sync 解码）；`Sound("path")`/
+    `Font(path)` 路径构造退役（bytes 形态保留）；`image.load` sync→
+    async（breaking，已拍板）；
+  - **两拍 IO 桥（单层 `__await__` 构型）**：Python `_IoFetch`/
+    `_LoadImage` 等直接 yield `("io_read", path)` → 帧循环发起 fetch
+    → **按路径完成表**（HashMap 替代单槽——多任务并发 io 不串数）
+    → send(None) 恢复 → gen 内 `io_take(path)` 取走。恒单层委派
+    （协程套协程多层委派在 RP 有恢复病态，实测挂死）；
+  - **实测双根因修**（wasm 挂死案）：①`io_wait` 闸门曾声明在帧循环
+    体内——每帧重置=漏闸，fetch 未完成即二次 send → RP 病态挂死
+    （**帧间持久旗标定约**）；②IAB/嵌入式 webview **rAF 永不驱动**
+    （纯探针页实证）→ `starfish-we::next_frame` 改 rAF+setTimeout
+    (50ms) race 兜底——任何 webview 环境帧循环必推进；
+  - **任务泵 io 语义**：`_AsyncTask.tick` 识别 io_read 挂起（压队等
+    就绪，就绪帧恢复）——spawn 任务不再提前恢复拿空数据；
+  - **wasm fetch no-store**：载荷读取恒 bypass 缓存（无缓存头静态
+    服务的启发式缓存会拿旧件）；
+  - **SFIX1 退役（批次3）**：runtime 三平台统一**散文件+清单形态**
+    ——脚本保原名加密 .py + 资源哈希名 .sfx + `_payload.txt` 逻辑
+    清单（壳启动读清单装表，fetch→register→import 定约；资源子树
+    .py=热更走 .sfx 链不入装表）+ `_manifest.txt` 物理展开表
+    （Android AssetManager 增量展开）。删 trailer/read_self_blob/
+    pack.rs/set_pack_source/dev bin runtime；desktop=净壳 exe+目录；
+  - **构建四脚本**：build_windows.py 散文件版 / android/build.py
+    脚本入 APK assets / build_wasm.py（原地加密+清单，已合型）/
+    verify_export.py 重写（①全产物明文扫描（双清单豁免）②脚本
+    roundtrip ③资源 roundtrip ④清单一致性）；
+  - **验证**：Windows dist 实跑（启动→清单 5 项→跑 12s 零错误）+
+    verify_export 全绿（①②③④）+ wasm 浏览器 hello_word 全量
+    （async image+mixer+音频+无限循环 0 错误，帧拍持续推进）+
+    Android APK 重建。真机待验。
+- **批次 63（2026-11-03，用户架构定夺）**：**加密红线 + 分发形态定稿**：
+  - **加密红线（架构级）**：starfish 全家**唯一加密归属 =
+    `starfish-pygame::sfx`**（SFXE1 封装/密钥/逻辑路径哈希/解密/
+    Android 清单编排）——starfish-io 等其余引擎 crate **零加密语义**
+    （chacha/sha2 依赖已卸，io 只做字节搬运 + android 裸读/裸展开
+    原语）；io 纯库定位：原始跨平台通用，不背资源加密；
+  - **入口嵌入**：build.rs 编译期 SFXE1 加密 main.py → OUT_DIR/
+    main.sfx → `include_bytes!` 嵌入 exe/so/wasm（磁盘/APK 零 main
+    文件、二进制零明文）；缺游戏 = 空占位（裸 build 不炸，acquire
+    显式报"入口空缺"）；
+  - **双清单密文化**：`_payload.sfx`（逻辑路径，壳装表）+ 
+    `_manifest.sfx`（Android 物理展开表）——Android 硬必需（
+    AssetManager 不能枚举目录）；桌面/Web 为热更对照便利；
+  - **目录结构保留**（用户定约）：哈希文件写**原目录位**——
+    `assets/modules/<hash>.sfx`、`assets/assets/<hash>.sfx`——目录
+    形状镜像源侧，叶子名不可读；sfx 查找链（native）= dirname(逻辑
+    路径) + 哈希名；wasm 无哈希链（fetch 按原名寻址）；
+  - **数量映射语义**：源 6 文件（main/modules/lib/assets×3/key）→
+    包 5 文件 + 1 嵌入（main→嵌入 exe；key→管线恒剔除；其余→哈希
+    .sfx；1:1 全有去处，名字变哈希）；
+  - verify_export 四关：①全产物明文零命中 ②脚本 roundtrip（清单
+    逻辑路径→嵌套哈希定位→解密对源）③资源 roundtrip+.sfx 账目
+    （资源+非资源脚本+清单）④清单一致性（main.py 嵌入例外）；
+  - 三平台重验全绿：Windows（verify+实跑 12s 零错误）、wasm（浏览器
+    加密清单解密+资源解密+循环 0 错误）、Android（APK 14MB 重组包，
+    自检过；零 .py 零原名零 main 文件）。真机待验。
+- **批次 63 补（2026-11-03，用户定夺"保持原项目目录结构"）**：**拆
+  RES_DIR 包裹层**——分发物直接镜像源项目布局（`exe|so + assets/ +
+  modules/ + _payload.sfx` 全同级；APK assets 根 = 游戏根）：io
+  `android_expand(names)` 去参拍平（展开基准 = data_dir 根）、sfx
+  `android_expand_assets()` 无参化（清单固定 APK assets 根 `_manifest
+  .sfx`）、runtime 壳 `set_base_dir(exe_dir)`——**Python 模块加载规
+  则按基目录直达**（`from module import xxx` 语义成立）；哈希文件写
+  原目录位不变（`assets/<hash>.sfx`）；`RES_DIR_NAME` env 语义收窄 =
+  资源前缀判据（模块注册过滤 `assets/…` 不预载，热更走 .sfx 链）。
+  三平台重验全绿（Windows verify+实跑 / wasm 浏览器 / Android APK
+  拍平抽检）；真机待验。
+- **批次 63 补 2（2026-11-03，用户定夺"分平台模块化"）**：**starfish-io
+  / starfish-net 单文件拆分**——统一接口在 lib.rs 导出，平台实现按
+  `#[cfg] #[path]` 路由为 `mod imp`（二选一装载）：
+  - io：`native.rs`（std::fs + BASE_DIR）/ `web.rs`（fetch no-store +
+    BASE_URL 前缀）/ `android.rs`（AssetManager 原语，`pub use` 别名
+    导出 android_attach/read_asset/expand）；
+  - net：`native.rs`（线程 TCP + 非阻塞 UDP）/ `web.rs`（WebSocket +
+    UDP UnsupportedPlatform stub）；
+  - 公共 API 零变动——下游（pygamest/dev/runtime）零改动零重编面；
+  - 验证：双 crate native+wasm 四目标 check 全绿；io 测试 3/3、net
+    测试 3/3（TCP 本地回环 roundtrip + UDP×2）。

@@ -2,7 +2,7 @@
 
 > 2026-09-28。window_test 真机"闪退"问题自 09-27 批次十六起存在，本日定位
 > 并修复。本文沉淀根因、错误假设清单（防止重走弯路）、正确打包链与诊断
-> 工具箱。接手 pygame-rs 安卓问题先读本文。
+> 工具箱。接手 pygamest 安卓问题先读本文。
 
 ## 一、核心根因：`android.app.lib_name` 与 .so 不匹配（致命）
 
@@ -43,13 +43,13 @@ aapt2 dump xmltree --file AndroidManifest.xml <apk> | grep -A2 lib_name
 
 ## 二、正确打包链（2026-09-29 起统一为脚本，本节保留手动步骤作原理说明）
 
-**首选**：`python pygame-rs/scripts/build_apk.py <示例名> [--dir <crate目录>]`
-（pygame-rs 自持、全 crate 共用、lib_name 自检内置——批次二十一）。
+**首选**：`python pygamest/scripts/build_apk.py <示例名> [--dir <crate目录>]`
+（pygamest 自持、全 crate 共用、lib_name 自检内置——批次二十一）。
 以下手动步骤即该脚本的内部逻辑（理解原理 / 脚本不可用时兜底）：
 
 ```bash
 # 1) 编译 + strip
-cd pygame-rs
+cd pygamest
 export ANDROID_NDK_ROOT=D:/SDK/Android/ndk/30.0.16248370
 cargo ndk -t arm64-v8a -P 26 -o jniLibs -- build --release --example <名>_android
 $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-strip \

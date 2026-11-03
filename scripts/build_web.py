@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""pygame-rs Web 构建脚本（产品化批次 toml 化，2026-10-25）。
+"""pygamest Web 构建脚本（产品化批次 toml 化，2026-10-25）。
 
 配置 = pack/<名>.web.toml（每案例一份；--init <名> 生成模板——
 buildozer 风格分节、更细粒度：Web 平台认识的键 Web 平台用）。
@@ -10,7 +10,7 @@ buildozer 风格分节、更细粒度：Web 平台认识的键 Web 平台用）�
     python scripts/build_web.py my_game [名...]  # 读 toml 打包
     python scripts/build_web.py --all            # pack/*.web.toml 全打
 
-产物：pygame-rs/web/<名>.html + <名>.js + <名>_bg.wasm
+产物：pygamest/web/<名>.html + <名>.js + <名>_bg.wasm
 测试：cd web && python -m http.server 8000
       浏览器打开 http://localhost:8000/<名>.html（file:// 无效）
 前置：rustup target add wasm32-unknown-unknown；wasm-bindgen-cli 版本
@@ -53,7 +53,7 @@ CANVAS_TEMPLATE = """<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>pygame-rs · {name}</title>
+<title>pygamest · {name}</title>
 <style>
   html, body {{ margin: 0; height: 100%; background: #000;
     display: flex; flex-direction: column;
@@ -91,7 +91,7 @@ CANVAS_TEMPLATE = """<!DOCTYPE html>
 <body>
 <canvas id="starfish-we"></canvas>
 <div id="raf">raf 0</div>
-<p>【pygame-rs】{caption}</p>
+<p>【pygamest】{caption}</p>
 <pre id="wlog" aria-label="console log"></pre>
 <div id="start-overlay"><button id="start-btn">▶ 点击启动</button></div>
 <script type="module">
@@ -168,7 +168,7 @@ CONSOLE_TEMPLATE = """<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>pygame-rs · {name}</title>
+<title>pygamest · {name}</title>
 <style>
   html, body {{ margin: 0; height: 100%; background: #000; color: #ccc;
     font: 14px/1.7 monospace; display: flex; flex-direction: column;
@@ -184,7 +184,7 @@ CONSOLE_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
 <div>
-  <p>【pygame-rs】{caption}</p>
+  <p>【pygamest】{caption}</p>
   <p>输出在浏览器控制台：<b>F12 → Console</b>（Rust print 重定向到 console）</p>
 </div>
 <div id="start-overlay"><button id="start-btn">▶ 点击启动</button></div>
@@ -261,7 +261,7 @@ def build_one(name, build_ts):
 
 
 def main():
-    ap = argparse.ArgumentParser(description='pygame-rs Web 构建（toml 驱动；入口自动发现）')
+    ap = argparse.ArgumentParser(description='pygamest Web 构建（toml 驱动；入口自动发现）')
     ap.add_argument('targets', nargs='*', help='案例名 / 路径（web 须 examples 注册的案例——games/ 形态待通用 runner）')
     ap.add_argument('--all', action='store_true', help='构建 pack/*.web.toml 全部')
     ap.add_argument('--init', metavar='名', help='仅生成 pack/<名>.web.toml 模板（首次打包自动落盘，一般无需）')

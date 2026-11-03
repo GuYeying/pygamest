@@ -1,26 +1,22 @@
 [package]
-name = "pygame-rs"
+name = "pygamest"
 version = "0.3.61"
 edition = "2024"
 description = "starfish 的 Python 绑定层：RustPython 内嵌壳 + pygame 绑定面（独立 crate，starfish 本体零 Python 资产）"
 
 [features]
 # ── 外接客人库开关（2026-10-24 feature 化；基座 + 维度细化）──
+# 全部为**能力轴**（可选依赖的有无），与宿主方向无关——dev/runtime
+# 两宿主同一张 pygame 模块面（2026-11-02 定约：宿主方向 feature
+# 废除，net/dialog 无条件注册）。
 # gui：与维度无关的 UI 库开关。
 # physics：基座（拉依赖 + 公共桥）；实际维度开 physics2d / physics3d
 #   （可同时开——rapier crate 的 dim2/dim3 命名空间天然并存）。
 #   只开 physics 不开维度 = 仅依赖图就位，Python 面无 rapier 模块。
 # 缺省 2D 全开保持现状；--no-default-features 轻量构建下对应 Python
 # 子模块随之消失（import 即 AttributeError）。
-default = ["runtime", "gui", "physics2d"]
-# runtime：生产模块集基座（白名单——游戏运行所需的最小 pygame.* 面）。
-# dev：+ 调试模块面（pygame.dialog / pygame.net）——开发宿主启用；
-#   打包构建只开 runtime，生产二进制 import 即"生产构建未启用"。
-#   starfish-dialog/net 是 pygame-rs 自有依赖（非可选）——feature 只
-#   门控 Python 模块注册面，不直接引用 starfish crate（2026-10-31 定约）
-runtime = []
+default = ["gui", "physics2d"]
 stdlib-full = ["rustpython-pylib/freeze-full"]
-dev = ["runtime"]
 gui = ["dep:egui-starfish-we", "dep:egui-wgpu"]
 physics = ["dep:rapier-starfish-debug"]
 physics2d = ["physics", "rapier-starfish-debug/2d"]
@@ -104,7 +100,11 @@ name = "binding_probe_android"
 path = "examples/binding_probe.rs"
 crate-type = ["cdylib"]
 
-# ── 逐模块独立测试案例迁移（2026-10-26 定约）：脚本形态归 pygame-rs-dev
+# ── 逐模块独立测试案例迁移（2026-10-26 定约）：脚本形态归 pygamest-dev
 # （python.exe examples/<名>.py 直跑）；APK 壳（*_android cdylib）随迁
-# pygame-rs-dev/examples/——本仓 example 仅存 Rust 级 API 探针
+# pygamest-dev/examples/——本仓 example 仅存 Rust 级 API 探针
 #（rp_hello / sig_probe / binding_probe）
+# Web：异步 IO 桥（step_coro 的 fetch spawn_local——异步化批次1）
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { version = "0.2", default-features = false }
+wasm-bindgen-futures = "0.4"

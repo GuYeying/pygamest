@@ -368,9 +368,9 @@ AudioMixer/MusicPlayer/SFX）——多线程归编译型语言用户自理。
 
 ---
 
-## 五、工程拓扑（独立 crate：pygame-rs；2026-09-23 六修，反转"不建新 crate"）
+## 五、工程拓扑（独立 crate：pygamest；2026-09-23 六修，反转"不建新 crate"）
 
-**Python 绑定整体抽离为独立 crate `pygame-rs/`**（starfish 仓库根下，独立
+**Python 绑定整体抽离为独立 crate `pygamest/`**（starfish 仓库根下，独立
 lockfile/target，非 workspace 成员）——starfish 回归零 Python 资产的纯引擎。
 原"单 crate + feature 组件化"方案（五修）随抽离作废：feature 门控不再需要
 （资产物理移出后，starfish 默认图**天然**零 Python 依赖）。
@@ -380,15 +380,15 @@ lockfile/target，非 workspace 成员）——starfish 回归零 Python 资产�
 | crate | 内容 | 外部依赖 | 分发 |
 |---|---|---|---|
 | `starfish` | base 引擎本体（渲染/窗口/循环/audio/time/…），**零 Python 资产** | 与 pygame/rpy 无关 | 纯 Rust 用户直用 |
-| `pygame-rs` | 绑定层整体：`src/rpy`（内嵌 RustPython 壳）→ `src/pygame`（语义层，RP-free）→ starfish（path 依赖） | rustpython-vm/pylib = **vendor main 本地路径**（0.6.0-dev 快照,M0+M3 锁定,去 host_env;见 §九.6） | 引擎 wasm/APK/桌面二进制 |
-| `launcher`（M5，落 pygame-rs） | CPython 微型 bootstrap：`python -m starfish game.py` | pyo3（折入 `extension-module`） | maturin wheel（附 `pygame-rs/python/` 资产，建议 abi3） |
+| `pygamest` | 绑定层整体：`src/rpy`（内嵌 RustPython 壳）→ `src/pygame`（语义层，RP-free）→ starfish（path 依赖） | rustpython-vm/pylib = **vendor main 本地路径**（0.6.0-dev 快照,M0+M3 锁定,去 host_env;见 §九.6） | 引擎 wasm/APK/桌面二进制 |
+| `launcher`（M5，落 pygamest） | CPython 微型 bootstrap：`python -m starfish game.py` | pyo3（折入 `extension-module`） | maturin wheel（附 `pygamest/python/` 资产，建议 abi3） |
 
-- **依赖方向**：`pygame-rs → starfish` 单向；crate 内部 `rpy → pygame →
+- **依赖方向**：`pygamest → starfish` 单向；crate 内部 `rpy → pygame →
   starfish::base`——pygame 语义层不背解释器（解释器仅存在于 rpy 模块，
   wasm 门控 `#[cfg(not(target_arch = "wasm32"))]`，M3 落地时调整）。
 - **纯 Rust demo 保证**：starfish 源码树内零 pygame/rpy/python 路径——
   隔离从"cfg 纪律 + CI 检查"升级为**物理隔离**（编译器无需参与执法）。
-- base↔pygame 颜色桥接住在 pygame-rs 的 `pygame/color.rs`（base 本体不反向
+- base↔pygame 颜色桥接住在 pygamest 的 `pygame/color.rs`（base 本体不反向
   依赖 pygame 的既有纪律不变）。
 - **双绑定模块（2026-09-23 定案）**：Python 侧两种使用形式——① `pygame`
   绑定 = 状态机形式（`pygame.run` 生成器门,现有兼容层）；② `starfish`
@@ -409,7 +409,7 @@ lockfile/target，非 workspace 成员）——starfish 回归零 Python 资产�
 starfish/（仓库根：引擎本体 + 独立绑定 crate）
 ├── src/                   # base 全模块 + HookApp + app_entry!        [已有 ✓]
 │                          #   零 pygame/rpy/python 路径(物理隔离)
-├── pygame-rs/             # ★ Python 绑定层（独立 crate，cd 操作）
+├── pygamest/             # ★ Python 绑定层（独立 crate，cd 操作）
 │   ├── pygame/            #   绑定① 接口面（纯 .pyi,零 .py）         [已有 ✓]
 │   │   ├── __init__.pyi   #     包根契约:常量/Event/init 阶梯/run     [已有 ✓]
 │   │   ├── display/event/draw/time.pyi    #   子模块契约              [已有 ✓]
@@ -450,7 +450,7 @@ starfish/（仓库根：引擎本体 + 独立绑定 crate）
 - **构建关系**：独立 crate、自带 lockfile/target——根 Cargo.toml 保持单包；
   依赖经 `starfish = { path = ".." }` 单向（`wgpu`/`serde` 系以同版本需求
   与 starfish 合并为同一实例，特性并集不受扰动）。
-- **xtask**：M4 的 Android 入口与 M3 的 wasm 打包落 pygame-rs 侧再议
+- **xtask**：M4 的 Android 入口与 M3 的 wasm 打包落 pygamest 侧再议
   （`FEATURE_ANDROID_SUPPORT` 的 `rpy` 行随 M4 处理）。
 - ** launcher 产物**：maturin wheel = 微型 bootstrap 扩展（`starfish/_launcher`
   或经 `python -m` 入口）+ `pygame/` + `starfish/` stub 包；abi3 一份通吃。
@@ -575,7 +575,7 @@ material 等随实现批次增长),直接描述公开模块面(批次 26 全原�
    **零魔改承诺**:vendor 装载脚本只做"解压原样 + symlink 材料化",RP 源码
    零修改(wasm 修复全在 features 声明侧);切回 crates.io = 依赖行改版本号,
    一行完成。切回操作步骤见 `reference/vendor与crates切换指南.md`。
-7. ~~PyPI 发行名~~ **已定：`pygame-rs`**（用户定案；import 名恒 pygame，`pygame` 被原版占用）
+7. ~~PyPI 发行名~~ **已定：`pygamest`**（用户定案；import 名恒 pygame，`pygame` 被原版占用）
 8. `.pyi` 维护演进（契约优先手写；stub-gen 为漂移缩减选项）
 9. 面 B 导出批次表（随 M6 逐批冻结进桩）
 10. ~~CPython 入口形态~~ **已定：`python -m starfish game.py`**（稳健路线；首行接管 `import starfish` + `os._exit` 作为进阶用法后补）

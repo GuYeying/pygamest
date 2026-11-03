@@ -1,0 +1,14 @@
+== E3 实测：rustpython-vm@23fcb8d9 → aarch64-linux-android（--emit=llvm-ir，230 个 crate IR）==
+llvm.threadlocal 内建引用:        0
+pthread_setspecific 调用点:       132
+pthread_getspecific 调用点:       176
+LazyKey 引用:                     243
+os-flavor TLS 全局(8B key 槽+析构ptr): 14
+含 setspecific 的 crate 文件数:   18
+
+== 样本：INT_FREELIST 的 TLS 存储全局定义 ==
+@_RNvNCNvNtNtCsevLehxxqn1z_13rustpython_vm8builtins3int12INT_FREELIST023___RUST_STD_INTERNAL_VAL = global <{ [8 x i8], ptr }> <{ [8 x i8] zeroinitializer, ptr @_RINvNtNtNtCsBjcKnHemaZ_3std3sys12thread_local2os13destroy_valueINtNtCs6TP2fQJueZm_4core4cell4CellINtNtNtCsevLehxxqn1z_13rustpython_vm6object4core8FreeListNtNtNtB1E_8builtins3int5PyIntEEKj8_EB1E_ }>, align 8
+
+== E3 对照：同代码同 lockfile → x86_64-pc-windows-msvc（145 个 crate IR）==
+llvm.threadlocal 内建引用:        3174
+LazyKey 引用:                     0

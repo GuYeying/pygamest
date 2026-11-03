@@ -48,7 +48,7 @@ async def main():
     sm = pygame.transform.smoothscale(tile, (80, 80))     # 批次 L：平滑缩放
     sm.set_alpha(128)                                     # 表面级半透明
     tsurf = font.render("Surface!", True, (255, 255, 255))
-    line1 = cjk.render("pygame-rs 中文渲染" if has_cjk else "Hello pygame-rs!",
+    line1 = cjk.render("pygamest 中文渲染" if has_cjk else "Hello pygamest!",
                        True, (255, 255, 0))
     line2 = ctry.render("Canterbury 中文渲染", True, (120, 200, 255)) if has_ctry else None
     # ── 诊断打印（stdout 取证；None 守卫——Web 上可选字体回退后为 None）──

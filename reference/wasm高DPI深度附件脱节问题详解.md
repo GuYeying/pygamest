@@ -1,7 +1,7 @@
 # wasm 高 DPI 深度/颜色附件脱节问题详解
 
 > 本文回答：**Web 端报 `BeginRenderPass` 校验失败、`depth ... does not match ... base plane` 的报错，根子在哪、为什么难查、怎么修对的。**
-> 阅读前提：了解 pygame-rs 的 set_mode / Screen / swapchain 基本概念即可；不要求浏览器/前端知识。
+> 阅读前提：了解 pygamest 的 set_mode / Screen / swapchain 基本概念即可；不要求浏览器/前端知识。
 > 姊妹篇：`wasm运行时生命周期与尺寸竞态问题详解.md`（wasm 执行周期）、`wasm编译改动清单与踩坑经验.md`（坑清单）。
 > 对应 changelog：`starfish_changelog_2026-09-30.md` 批次三十七。
 

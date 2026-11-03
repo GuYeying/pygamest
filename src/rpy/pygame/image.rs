@@ -23,8 +23,10 @@ use std::cell::Cell;
             sf_image::get_extended()
         }
 
-        /// 桌面：路径加载（std::fs）。Web 无文件系统——用 load_from_bytes。
-        #[cfg(not(target_arch = "wasm32"))]
+        /// 路径加载（**全平台同语义**，2026-11-02 定约——Web 由壳启动期
+        /// 预载表承载字节，starfish_io::read_sync 命中即解密返回）：缺
+        /// 资源不崩溃定约 = 占位图顶上（品红棋盘格）；严格模式（
+        /// STARFISH_STRICT_ASSETS）恢复真异常供 CI 测漏
         #[pyfunction]
         fn load(path: String, vm: &VirtualMachine) -> PyResult<PyRef<PySurface>> {
             match sf_image::load(&path) {
@@ -44,13 +46,6 @@ use std::cell::Cell;
                     .into_ref(&vm.ctx))
                 }
             }
-        }
-
-        /// Web：路径加载不可用（无文件系统），显式报错指路 load_from_bytes
-        #[cfg(target_arch = "wasm32")]
-        #[pyfunction]
-        fn load(_path: String, vm: &VirtualMachine) -> PyResult<PyRef<PySurface>> {
-            Err(vm.new_value_error("Web 无文件系统——用 image.load_from_bytes(bytes)"))
         }
 
         /// PNG/JPEG/BMP/GIF/WebP 按内容解码（Web 首选入口）

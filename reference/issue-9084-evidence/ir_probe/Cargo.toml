@@ -1,0 +1,7 @@
+[package]
+name = "rp_ir_probe"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rustpython-vm = { path = "D:/Projects/Rust/pygamest/src/rpy/dependencies/RustPython-main/crates/vm", default-features = false, features = ["compiler", "wasmbind", "gc", "stdio", "importlib", "encodings", "freeze-stdlib"] }

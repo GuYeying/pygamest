@@ -8,9 +8,9 @@
 //!
 //! 渲染走 ADR-5 with 语法：脚本 `with screen.render():` 内 draw_*。
 //!
-//! 运行：`cargo run --release -p pygame-rs --example binding_probe`
+//! 运行：`cargo run --release -p pygamest --example binding_probe`
 
-use pygame_rs::rpy;
+use pygamest::rpy;
 use starfish_we::next_frame;
 use starfish_pygame::display;
 use std::cell::RefCell;

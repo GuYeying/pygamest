@@ -84,6 +84,14 @@ use std::cell::Cell;
 
         /// SysFont(name, size)：系统字体查找未实现，一律用内嵌默认字体
         /// （pygame 常用形态的占位语义）。
+        /// load_from_bytes(bytes, size)：统一 sync 字节构造（三线同规范）
+        #[pyfunction]
+        fn load_from_bytes(bytes: Vec<u8>, size: i32, vm: &VirtualMachine) -> PyResult<PyFontRef> {
+            let font = sf_font::Font::from_bytes(bytes, size.max(0) as u32)
+                .map_err(|e| vm.new_value_error(format!("字体解码失败: {e:?}")))?;
+            Ok(PyFont { inner: font }.into_ref(&vm.ctx))
+        }
+
         #[pyfunction]
         #[allow(non_snake_case)]
         fn SysFont(_name: PyObjectRef, size: i32, vm: &VirtualMachine) -> PyResult<PyRef<PyFont>> {

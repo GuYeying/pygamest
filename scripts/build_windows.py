@@ -153,7 +153,7 @@ def build_one(toml_path: Path, main_py: Path) -> None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="pygame-rs 桌面打包（python.exe 形态；入口自动发现——免 --init）")
+    ap = argparse.ArgumentParser(description="pygamest 桌面打包（python.exe 形态；入口自动发现——免 --init）")
     ap.add_argument("targets", nargs="*", help="游戏名 / 路径（目录含 main.py 或 .py 文件）；无参 = games/ 全部")
     ap.add_argument("--init", metavar="名", help="仅生成 pack/<名>.windows.toml 模板（一般无需——首次打包自动落盘）")
     args = ap.parse_args()
