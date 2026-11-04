@@ -7,7 +7,7 @@
 
 #### <span class="c-func">get_pos() -> tuple[int, int]</span>
 
-光标位置（客户区物理像素，y 向下；事件泵前为 `(0, 0)`）。
+光标位置（**逻辑中心系**——原点屏幕中心、y 向上；事件泵前为 `(0, 0)`）。
 
 - :rtype: tuple[int, int]
 

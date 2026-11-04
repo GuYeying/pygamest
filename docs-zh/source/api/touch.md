@@ -21,7 +21,7 @@
 
 #### <span class="c-func">get_pos(finger_id) -> tuple[int, int] | None</span>
 
-指定手指的位置（客户区物理像素，y 向下）；无该手指 = `None`。
+指定手指的位置（**逻辑中心系**——原点屏幕中心、y 向上）；无该手指 = `None`。
 
 - :param finger_id: 手指 id
 - :type finger_id: int

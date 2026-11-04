@@ -74,8 +74,8 @@ for e in pygame.event.get():
 
 ##### <span class="c-attr">x / y</span>
 
-鼠标/触摸坐标（物理点已映射至 display 逻辑坐标，HiDPI 安全）；
-非指针事件 = 0。
+鼠标/触摸坐标（**逻辑中心系**——原点屏幕中心、y 向上；物理点经
+泵层统一换算，HiDPI / letterbox 安全）；非指针事件 = 0。
 
 ##### <span class="c-attr">button</span>
 

@@ -5,22 +5,63 @@
 `with screen.render() as r:`（会话方法见 Screen / Surface）。
 
 ```{note}
-[相机定约] 相机**全局唯一**——Screen / Surface 无相机字段，全部绘制
-按全局相机状态解 MVP。`Auto` = 按目标尺寸隐式（resize 天然跟随）；
-`Manual` = `set_default_camera()` override，一处设置全体生效。
+[相机定约] 相机选择是**会话级**——`f.set_camera(camera)` 后本会话
+剩余绘制全走该相机（`reset_camera()` 回 Auto 兜底）；每会话/每目标
+独立持有，互不串线。`Auto` = 按目标尺寸隐式（resize 天然跟随）。
+**同画布多相机** = 会话内多次 `set_camera` 分段绘制（段级相机切换）。
 
-[严格精细控制] **引擎不做相机兜底**——自管相机 buffer 由用户全权管理
-（同帧多 raw 会话须各持独立 buffer，共享会被后写覆盖）。
+[坐标系] **中心原点、y 向上**——`Camera::ortho` 视野 =
+`(-w/2, -h/2) .. (w/2, h/2)`，与 3D 透视相机（看向原点）、物理米制系
+**三方同构**；鼠标/触摸/事件坐标由泵层统一换算到中心系。
+
+[严格精细控制] 自建管线（raw_render）**引擎不做相机兜底**——相机
+buffer 由用户全权管理（同帧多 raw 会话须各持独立 buffer，共享会被
+后写覆盖）。
 
 [wgpu 红线] wgpu 裸对象（Device / Queue / Buffer / TextureView）**零出
 Python 界**——一切经本模块句柄类安全收参。
 ```
 
+## <span class="c-func">会话状态机（相机/变换）</span>
+
+会话对象（`with screen.render() as f:` 的 `f`）上的绘制状态机——
+per-draw 相机与变换的统一入口（Surface / MRT 会话同构）。
+
+#### <span class="c-func">set_camera(camera)</span>
+
+会话相机切换（后续 push 进新段；仅本会话生效）。
+
+- :param camera: 相机（`camera_ortho` / `camera_perspective` 产物）
+- :type camera: Camera
+
+#### <span class="c-func">reset_camera()</span>
+
+回 Auto 兜底相机（按目标尺寸现算）。
+
+#### <span class="c-func">set_transform(model)</span>
+
+会话变换——后续绘制的顶点按此矩阵 **CPU 烘**（2D 仿射 / 3D 模型
+矩阵统一入口；Mat4 经 `pygame.math` 的 `mat4_*` 组合）。
+
+- :param model: 模型矩阵
+- :type model: Mat4
+
+#### <span class="c-func">reset_transform()</span>
+
+回恒等变换。
+
+#### <span class="c-func">draw_surface(src)</span> / <span class="c-func">draw_surface_centered(src, center)</span>
+
+画离屏面（渲染统一 draw 面的 texture 通道——**旧 blit 家族退役**）：
+源面 quad 按会话 transform 变换放置（2D 仿射 / 3D 空间放置同一口；
+深度会话下与 3D 场景正确遮挡）。centered = 中心锚便捷形态。
+
 ## <span class="c-func">函数</span>
 
 #### <span class="c-func">camera_ortho(width, height) -> Camera</span>
 
-2D 正交相机——像素坐标直入（`(0,0)` 左上 / `(w,h)` 右下，y 向下）。
+2D 正交相机——**中心原点、y 向上**：视野
+`(-w/2, -h/2) .. (w/2, h/2)`（与 3D 透视/物理米制系同构）。
 
 - :rtype: Camera
 
@@ -29,10 +70,6 @@ Python 界**——一切经本模块句柄类安全收参。
 3D 透视相机（fov 度数制；右手系，看向 `-Z`；位姿接 `.with_view()`）。
 
 - :rtype: Camera
-
-#### <span class="c-func">set_default_camera(camera)</span>
-
-全局相机 override（后续全部渲染生效）。
 
 #### <span class="c-func">camera_mvp() -> Mat4</span>
 
@@ -47,12 +84,6 @@ Python 界**——一切经本模块句柄类安全收参。
 画布。
 
 - :rtype: Mat4
-
-#### <span class="c-func">camera_state() -> str</span>
-
-相机状态：`"auto2d"` / `"auto3d"` / `"manual"`。
-
-- :rtype: str
 
 #### <span class="c-func">init(dim=None, fov=None, near=None, far=None, cull=None, blend=None)</span>
 
