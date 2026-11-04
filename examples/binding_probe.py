@@ -1,5 +1,8 @@
 # M1 绑定面探针（架构 §九 单形态定约）：
-# with screen.render() as r: → r.rect/circle/line/polygon/blit（会话显式绘制）。
+# with screen.render() as r: → r.rect/circle/line/polygon/draw_surface（会话显式
+# 绘制）；相机/变换 = 会话状态机（set_camera/set_transform/set_pos——渲染统一
+# draw 面）。⚠️ 坐标系 = 中心原点、y 向上（本探针为接口探针，视觉坐标未逐一
+# 适配中心系——不影响 [selftest] 断言）。
 # 生成器门：yield = 帧边界（Web 端 rAF 节流；原生端 vsync）。
 #
 # ── 性能定约（批次 F/G 真机实测）──
@@ -138,8 +141,10 @@ async def main():
     # mask.from_surface：影子快路径（表面 alpha 影子）三端同步零回读
     try:
         _fs = pygame.Surface((8, 8))
-        _fs.fill((255, 255, 255, 255))   # 不透明面 → 全部置位（全透明面 count=0 是正确语义）
+        _fs.fill((255, 255, 255, 255))   # 不透明面 → 全部置位
+        _fs.flush()                      # GPU 出生面回读路径——batch 先落盘再回读
         _mf = pygame.mask.from_surface(_fs, 127)
+        print("[diag] mask.from_surface count =", _mf.count())
         _st("mask.from_surface", _mf.count() == 64 and _mf.get_size() == (8, 8))
     except Exception as _e:
         _st("mask.from_surface", False); print("    [selftest] 异常:", _e)
@@ -192,8 +197,9 @@ async def main():
     try:
         _ba = pygame.Surface((32, 16)); _ba.fill((90, 200, 255))
         with screen.render() as r:
-            r.blit_area(_ba, (100, 500), (0, 0, 16, 16))          # 源左上 16×16 子区域
-            r.quad(_ba, [(600, 480), (660, 490), (650, 540), (590, 530)],
+            r.set_pos(-300, -200)
+            r.draw_surface_uv(_ba, [0.0, 0.0, 1.0, 0.5], None)          # 源左上 16×16 子区域
+            r.quad(_ba, [(200, -180), (260, -190), (250, -240), (190, -230)],
                    [(0, 0), (1, 0), (1, 1), (0, 1)], (255, 255, 255))
         _st("withbatch.direct", True)
     except Exception as _e:
@@ -296,7 +302,7 @@ async def main():
     print("[selftest] 汇总:", "全部通过" if not _st_fail
           else "失败项 " + repr(_st_fail))
 
-    x = 370
+    x = -30
     while True:
         for e in pygame.event.get():
             if e.type == pygame.event.QUIT:
@@ -309,7 +315,7 @@ async def main():
                 return
 
         
-        box = (x, 270, 60, 60)              # 区域元组（Rect 已退役——碰撞/触发器归物理引擎）
+        box = (x, 30, 60, 60)              # 区域元组（Rect 已退役——碰撞/触发器归物理引擎）
         # ── 批次 K 数学驱动视觉自证（图元承载，零新建 GPU 表面——
         #  ADR-5 延迟提交红线）：四元数旋转的手 + lerp 脉冲圆 ──
         _ang = (pygame.time.get_ticks() // 6) % 360           # ~2.16s/圈
@@ -325,41 +331,41 @@ async def main():
             # （Space 按住 → 描边变红；左键按住 → 方块上出现标记点）
             _space = pygame.key.get_pressed().get(pygame.key.K_SPACE)
             _lmb = pygame.mouse.get_pressed()[0]
-            r.rect((255, 80, 80) if _space else (255, 255, 255), (x, 430, 60, 60), 4)
+            r.rect((255, 80, 80) if _space else (255, 255, 255), (x, -130, 60, 60), 4)
             if _lmb:
-                r.circle((80, 255, 120), (x, 270), 8)
+                r.circle((80, 255, 120), (x, 30), 8)
             r.rect((0, 200, 90), box)
             # 文字表面 blit（预渲染一次）。注意：内嵌 Antonio 为拉丁字体——
             # 中文字形不存在会被跳过（demo 文案用纯拉丁；CJK 见 line1）
             if line2 is not None:
-                r.blit(line2, (10, 60))                           # 哥特风（通用字体）
-            r.circle((255, 200, 0), (400, 300), 40)
-            r.line((200, 60, 60), (x, 0), (x + 60, 600))
+                r.set_pos(-390, 240); r.draw_surface(line2)          # 哥特风（通用字体）
+            r.circle((255, 200, 0), (0, 0), 40)
+            r.line((200, 60, 60), (x - 400, 300), (x - 340, -300))
             # 批次 K：quat_from_axis_angle → Mat4 → transform_point3 的指针；
             # Vector3.lerp 三角波驱动脉冲圆半径（旋转/缩放全程数学值承载。
             # 注：数学产物为 float，绘制坐标收 int——SfPoint 契约严格拒 float）
-            r.line((255, 120, 120), (260, 220),
-                   (260 + int(_hand.x), 220 + int(_hand.y)), 2)
-            r.circle((255, 120, 120), (260, 220), 4)
-            r.circle((100, 220, 255), (620, 300), max(2, int(_pulse.x * 30)))
-            r.rect((100, 220, 255), (600, 280, 40, 40), 2)        # 脉冲圆的外框参照
+            r.line((255, 120, 120), (-140, 80),
+                   (-140 + int(_hand.x), 80 + int(_hand.y)), 2)
+            r.circle((255, 120, 120), (-140, 80), 4)
+            r.circle((100, 220, 255), (220, 0), max(2, int(_pulse.x * 30)))
+            r.rect((100, 220, 255), (200, 20, 40, 40), 2)        # 脉冲圆的外框参照
             # gfxdraw 兼容面（批次 30）：SDL_gfx 签名（目标在前/坐标分离/
             # 颜色在后），实现与 r.circle 同一 batch 零额外成本
-            pygame.gfxdraw.circle(r, 700, 300, 26, (255, 120, 120))
-            pygame.gfxdraw.hline(r, 660, 740, 342, (120, 200, 255))
-            pygame.gfxdraw.filled_circle(r, 700, 382, 16, (120, 255, 160))
-            pygame.gfxdraw.box(r, (660, 420, 80, 46), (60, 60, 90))
-            r.polygon((90, 120, 220), [(100, 100), (180, 80), (200, 160), (120, 170)])
-            r.ellipse((60, 180, 120), (420, 380, 140, 80))                # 批次 L：椭圆
-            r.arc((255, 160, 60), (420, 470, 120, 80), 0.0, 3.14159)      # 批次 L：弧（弧度制）
-            r.rect(color=(90, 200, 255), rect=(x, 120, 60, 60))   # kwargs 形态（批次 A）
-            r.blit(tile, (500, 100))                              # Surface 贴图（批次 F）
-            r.blit(rot, (560, 90))                                # transform.rotate（批次 F）
-            r.blit(sm, (640, 420))                                # 半透明平滑缩放（批次 L）
-            r.blit(tsurf, (300, 20))                              # 文字表面一等化（批次 F）
+            pygame.gfxdraw.circle(r, 300, 0, 26, (255, 120, 120))
+            pygame.gfxdraw.hline(r, 260, 340, -42, (120, 200, 255))
+            pygame.gfxdraw.filled_circle(r, 300, -82, 16, (120, 255, 160))
+            pygame.gfxdraw.box(r, (260, -120, 80, 46), (60, 60, 90))
+            r.polygon((90, 120, 220), [(-300, 200), (-220, 220), (-200, 140), (-280, 130)])
+            r.ellipse((60, 180, 120), (20, -80, 140, 80))                # 批次 L：椭圆
+            r.arc((255, 160, 60), (20, -170, 120, 80), 0.0, 3.14159)      # 批次 L：弧（弧度制）
+            r.rect(color=(90, 200, 255), rect=(x, 180, 60, 60))   # kwargs 形态（批次 A）
+            r.set_pos(100, 200); r.draw_surface(tile)             # Surface 贴图（批次 F）
+            r.set_pos(160, 210); r.draw_surface(rot)               # transform.rotate（批次 F）
+            r.set_pos(240, -120); r.draw_surface(sm)               # 半透明平滑缩放（批次 L）
+            r.set_pos(-100, 280); r.draw_surface(tsurf)             # 文字表面一等化（批次 F）
             if line1 is not None:
-                r.blit(line1, (10, 10))                           # 预渲染黄字（中文能力）
+                r.set_pos(-390, 290); r.draw_surface(line1)          # 预渲染黄字（中文能力）
         pygame.display.flip()
 
-        x = 0 if x >= 730 else x + 4
+        x = 0 if x >= 330 else x + 4
         await pygame.next_frame()

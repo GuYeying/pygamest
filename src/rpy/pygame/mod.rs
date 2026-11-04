@@ -126,6 +126,13 @@ pub mod pygame {
             Ok(())
         }
 
+        /// flush()：显式提交点（mask 回读 / blit 源自动触发外的手动口）
+        #[pymethod]
+        fn flush(&self, vm: &VirtualMachine) {
+            self.surface.flush();
+            let _ = vm;
+        }
+
         /// draw_surface_tf(src, mat)：Surface 按显式矩阵贴图（离屏对
         /// 离屏——位置/旋转/缩放/3D 放置全在 mat；self 贴图会 panic——
         /// starfish assert_not_self，文档标注）
@@ -301,6 +308,27 @@ pub mod pygame {
                 &*self.surface,
                 &src.surface,
                 (center.0 as f32, center.1 as f32),
+            );
+            let _ = vm;
+            Ok(())
+        }
+
+        /// draw_surface_uv(src, uv, tint=None)：子区域画面（area 语义
+        /// 继任——位置由会话 transform 承载）。uv = [u0, v0, u1, v1]。
+        #[pymethod]
+        fn draw_surface_uv(
+            &self,
+            src: PyRef<PySurface>,
+            uv: Vec<f32>,
+            tint: Option<SfColor>,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            use starfish_pygame::render::DrawTarget;
+            DrawTarget::draw_surface_uv(
+                &*self.surface,
+                &src.surface,
+                [uv[0], uv[1], uv[2], uv[3]],
+                tint.map(|c| c.0).unwrap_or([255, 255, 255, 255]),
             );
             let _ = vm;
             Ok(())
@@ -724,6 +752,28 @@ pub mod pygame {
                     t,
                     &src.surface,
                     (center.0 as f32, center.1 as f32),
+                )
+            })
+        }
+
+        /// draw_surface_uv(src, uv, tint=None)：子区域画面（area 语义继任
+        /// ——src 的 uv 子矩形贴为等像素尺寸 quad，位置由会话 transform
+        /// 承载）。uv = [u0, v0, u1, v1] 归一 0..1。
+        #[pymethod]
+        fn draw_surface_uv(
+            &self,
+            src: PyRef<PySurface>,
+            uv: Vec<f32>,
+            tint: Option<SfColor>,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            bridge::with_session(vm, |t| {
+                use starfish_pygame::render::DrawTarget;
+                DrawTarget::draw_surface_uv(
+                    t,
+                    &src.surface,
+                    [uv[0], uv[1], uv[2], uv[3]],
+                    tint.map(|c| c.0).unwrap_or([255, 255, 255, 255]),
                 )
             })
         }
