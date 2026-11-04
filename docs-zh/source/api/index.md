@@ -3,6 +3,9 @@
 ```{note}
 📌 文档持续铺开中。**已完成**：``pygame.event`` / ``pygame.key``。
 其余模块已站桩（页到位，内容随后补齐）。
+
+**顶层独立模块**（与 pygame 平级，非 `pygame.*` 子模块）：
+[pygame_gui](../pygame_gui.md) · [pygame_physics](../pygame_physics.md)
 ```
 
 **<span class="c-func">分类着色图例</span>**
@@ -45,6 +48,4 @@ touch <touch>
 transform <transform>
 version <version>
 video <video>
-pygame_gui <pygame_gui>
-pygame_physics <pygame_physics>
 ```

@@ -126,4 +126,6 @@
 :hidden:
 
 api/index
+pygame_gui
+pygame_physics
 ```
