@@ -16,6 +16,8 @@
 读资源全部字节（`.sfx` 密文自动解密，明文资源原样透传）。
 **[差异]** Web 端调用报错——v1 不提供同步 io。
 
+- :param path: 资源路径
+- :type path: str
 - :returns: 资源字节
 - :rtype: bytes
 
@@ -23,20 +25,34 @@
 
 读文本（UTF-8，非法序列替换）。
 
+- :param path: 资源路径
+- :type path: str
 - :rtype: str
 
 #### <span class="c-func">write(path, data)</span>
 
-覆盖写（`bytes` 或 `str`——str 按 UTF-8 编码）。**[差异]** Web 端不可用。
+覆盖写（str 按 UTF-8 编码）。**[差异]** Web 端不可用。
+
+- :param path: 目标路径
+- :type path: str
+- :param data: 写入内容
+- :type data: bytes | str
 
 #### <span class="c-func">write_text(path, text)</span>
 
 覆盖写文本（UTF-8）。**[差异]** Web 端不可用。
 
+- :param path: 目标路径
+- :type path: str
+- :param text: 文本内容
+- :type text: str
+
 #### <span class="c-func">exists(path) -> bool</span>
 
 路径存在性。**[差异]** Web 端不可用。
 
+- :param path: 资源路径
+- :type path: str
 - :rtype: bool
 
 ## <span class="c-func">函数</span>（续）——异步统一口
@@ -50,6 +66,8 @@ async def main():
     data = await pygame.io.fetch("assets/map.json")
 ```
 
+- :param path: 资源路径
+- :type path: str
 - :rtype: bytes
 
 #### <span class="c-func">payload_list() -> list</span>
@@ -68,6 +86,8 @@ async def main():
 
 该路径的异步结果是否已入完成表（恢复判据）。
 
+- :param path: 资源路径
+- :type path: str
 - :rtype: bool
 
 #### <span class="c-func">io_take(path) -> bytes</span>
@@ -75,8 +95,13 @@ async def main():
 按路径取走异步 IO 结果（恢复前必已就绪，调用方须先过 `io_ready`；
 多任务并发 io 按路径隔离不串数据）。
 
+- :param path: 资源路径
+- :type path: str
 - :rtype: bytes
 
 #### <span class="c-func">io_pending_append(path)</span>
 
 任务级 io 挂起压队（tick 收 io_read 挂起时调用——每帧排空并发起 fetch）。
+
+- :param path: 资源路径
+- :type path: str

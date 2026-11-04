@@ -24,4 +24,5 @@
 指定手指的位置（客户区物理像素，y 向下）；无该手指 = `None`。
 
 - :param finger_id: 手指 id
+- :type finger_id: int
 - :rtype: tuple[int, int] | None

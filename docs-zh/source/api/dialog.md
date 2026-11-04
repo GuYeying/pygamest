@@ -19,7 +19,9 @@ if f is not None:
 ```
 
 - :param title: 对话框标题（None = 系统默认）
-- :param filters: 过滤项 `[(展示名, [扩展名, ...]), ...]`
+- :type title: str | None
+- :param filters: 过滤项
+- :type filters: list[tuple[str, list[str]]] | None
 - :returns: 选取的文件；用户取消 = None
 - :rtype: PickedFile | None
 
@@ -28,7 +30,9 @@ if f is not None:
 另存为对话框——把字节存到用户指定位置。
 
 - :param file_name: 建议文件名
-- :param data: `bytes` 或 `str`（str 按 UTF-8 编码）
+- :type file_name: str
+- :param data: 内容（str 按 UTF-8 编码）
+- :type data: bytes | str
 - :returns: True = 已保存 / False = 用户取消
 - :rtype: bool
 

@@ -22,7 +22,8 @@ conn = pygame.net.TCP("127.0.0.1:9000")
 # Web: pygame.net.TCP("ws://127.0.0.1:9000")
 ```
 
-- :param addr: `"host:port"`（Web = `"ws://host:port"`）
+- :param addr: 连接地址（Web = `"ws://host:port"`）
+- :type addr: str
 
 ##### <span class="c-func">send(data)</span>
 
@@ -53,7 +54,8 @@ conn = pygame.net.TCP("127.0.0.1:9000")
 
 绑定本地端口。
 
-- :param local_addr: `"host:port"`
+- :param local_addr: 本地绑定地址
+- :type local_addr: str
 
 ##### <span class="c-func">send_to(data, peer)</span>
 

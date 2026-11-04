@@ -29,9 +29,12 @@ rapier 睡眠状态编码，非 bug。
 2D 物理状态 → 线段流（每帧渲染前调用；sink 内部先清后收，零分配
 复用）。
 
-- :param world: `PhysicsWorld`
-- :param draw: `DebugDraw`
-- :param sink: `LineSink`
+- :param world: 物理世界
+- :type world: PhysicsWorld
+- :param draw: 渲染内容位集
+- :type draw: DebugDraw
+- :param sink: 线段收集器
+- :type sink: LineSink
 
 #### <span class="c-func">collect3d(world, draw, sink)</span>
 

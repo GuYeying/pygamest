@@ -33,6 +33,7 @@ video = vs.open("cutscene.mp4")
 推进解码。
 
 - :param dt: 距上次调用的秒数
+- :type dt: float
 
 #### <span class="c-func">size() -> tuple[int, int]</span>
 

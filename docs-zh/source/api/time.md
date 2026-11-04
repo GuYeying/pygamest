@@ -38,6 +38,7 @@ while True:
 推进一帧 + 上限节流，返回本帧真实间隔（**毫秒**，pygame 语义）。
 
 - :param fps: 目标帧率上限（0 = 不节流）
+- :type fps: int
 - :returns: 本帧间隔毫秒
 - :rtype: float
 

@@ -23,6 +23,7 @@ async def main():
 ```
 
 - :param path: 资源路径
+- :type path: str
 - :returns: Surface
 - :rtype: Surface
 
@@ -31,6 +32,7 @@ async def main():
 按内容解码（Web 首选入口——`io.fetch` 取回字节后接这里）。
 
 - :param bytes: 图片原始字节
+- :type bytes: bytes
 - :rtype: Surface
 
 #### <span class="c-func">save(surf, path)</span>
@@ -38,8 +40,10 @@ async def main():
 Surface 落盘（格式按扩展名，无扩展名默认 PNG）。**[差异]** 桌面专用
 ——Web 端调用抛 `NotImplementedError`（`save_async` 异步语义后续批次）。
 
-- :param surf: 目标 Surface
+- :param surf: 目标
+- :type surf: Surface
 - :param path: 输出路径
+- :type path: str
 
 #### <span class="c-func">get_extended() -> bool</span>
 

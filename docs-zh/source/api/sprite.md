@@ -26,8 +26,8 @@ player = (
 group.add(player)
 ```
 
-- :param img: 单帧 `Surface` 或 `[Surface, ...]` 多帧（帧动画，
-  fps 由 `set_fps` 定，缺省 4）；空列表报错
+- :param img: 帧序列（帧动画 fps 由 `set_fps` 定，缺省 4；空列表报错）
+- :type img: Surface | list[Surface]
 
 ##### <span class="c-func">at(x, y) -> self</span>
 
@@ -125,7 +125,8 @@ group.add(player)
 
 推进帧动画 / 时序。
 
-- :param dt: 秒
+- :param dt: 帧间隔秒数
+- :type dt: float
 
 ##### <span class="c-func">draw()</span>
 

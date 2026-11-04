@@ -13,7 +13,8 @@ numpy 数组）。
 
 Sound → 样本数组：立体声 `[(L, R), ...]` / 单声道 `[(v,), ...]`。
 
-- :param sound: `pygame.mixer.Sound`
+- :param sound: 音效对象
+- :type sound: Sound
 - :rtype: list
 
 #### <span class="c-func">make_sound(array) -> Sound</span>
@@ -29,5 +30,6 @@ beep = pygame.sndarray.make_sound(
 ```
 
 - :param array: 嵌套 list（元素 float，-1.0 .. 1.0）
+- :type array: list[list[float]]
 - :returns: Sound
 - :rtype: Sound

@@ -23,5 +23,6 @@ if pygame.permission.ensure(pygame.permission.MICROPHONE):
     ...
 ```
 
-- :param permission: `MICROPHONE` / `INTERNET`
+- :param permission: 权限标识
+- :type permission: int（`MICROPHONE` / `INTERNET`）
 - :rtype: bool

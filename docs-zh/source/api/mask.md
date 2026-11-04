@@ -13,8 +13,10 @@
 
 离屏面 → 位面（`alpha > threshold` 置位）。
 
-- :param surface: 源 Surface
+- :param surface: 源
+- :type surface: Surface
 - :param threshold: alpha 阈值（默认 127）
+- :type threshold: int
 - :rtype: Mask
 
 ## <span class="c-class">类</span>
@@ -25,8 +27,10 @@
 
 构造位面。
 
-- :param size: `(w, h)`
+- :param size: 位面尺寸
+- :type size: tuple[int, int]
 - :param fill: 初始全置位（默认全空）
+- :type fill: bool
 
 ##### <span class="c-func">get_at(pos) -> bool</span>
 

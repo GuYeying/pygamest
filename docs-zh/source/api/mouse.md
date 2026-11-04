@@ -49,4 +49,5 @@ left, mid, right = pygame.mouse.get_pressed()
 warp 光标到指定位置。**[垫底]** 仅更新状态表——不扭曲真实光标、
 无合成事件（starfish-window v1 无光标扭曲能力）。
 
-- :param pos: `(x, y)`
+- :param pos: 目标位置
+- :type pos: tuple[int, int]

@@ -27,7 +27,9 @@ async def main():
 字节构造字体（三线同规范）。
 
 - :param bytes: TTF 原始字节
+- :type bytes: bytes
 - :param size: 字号（像素）
+- :type size: int
 - :rtype: Font
 
 #### <span class="c-func">SysFont(name, size) -> Font</span>
@@ -54,7 +56,9 @@ font = pygame.font.Font(ttf_bytes, 24)     # bytes
 ```
 
 - :param font: `None`（默认字体）/ 名字 / 路径 / `bytes` 四形态
+- :type font: str | bytes | None
 - :param size: 字号
+- :type size: int
 
 ##### <span class="c-func">size(text) -> tuple[int, int]</span>
 
@@ -72,8 +76,11 @@ surf = font.render("得分 1200", True, (255, 220, 0))
 ```
 
 - :param text: 渲染文本
+- :type text: str
 - :param antialias: 抗锯齿（默认开）
+- :type antialias: bool
 - :param color: 文字颜色
+- :type color: tuple[int, int, int] | tuple[int, int, int, int]
 - :returns: 文字表面
 - :rtype: Surface
 

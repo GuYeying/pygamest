@@ -116,6 +116,7 @@ if pygame.key.get_pressed().get(pygame.key.K_ESCAPE):
     return
 ```
 
-- :param key: `K_*` 常量（`Key` 实例）
+- :param key: `K_*` 常量
+- :type key: Key
 - :returns: 该键是否按下
 - :rtype: bool

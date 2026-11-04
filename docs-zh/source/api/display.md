@@ -31,8 +31,10 @@ screen = pygame.display.set_mode(
     (0, 0), [pygame.display.FULLSCREEN, pygame.display.RESIZABLE])
 ```
 
-- :param size: 逻辑尺寸 `(w, h)`
-- :param flags: 旗标位集（int 或序列）
+- :param size: 逻辑尺寸
+- :type size: tuple[int, int]
+- :param flags: 旗标位集
+- :type flags: int | list[int]
 - :returns: Screen 绘制目标
 - :rtype: Screen
 
