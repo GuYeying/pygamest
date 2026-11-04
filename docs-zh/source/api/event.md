@@ -9,10 +9,9 @@
 `pygame.event.K_*` 不存在。
 ```
 
-## 常量
+## <span class="c-const">常量</span>
 
-<span class="tag attr">attr</span> 事件类型标签（字符串形态）——
-`Event.type` 字段的比对值。
+事件类型标签（字符串形态）—— `Event.type` 字段的比对值。
 
 | 常量 | 值 | 携带字段 |
 |---|---|---|
@@ -26,9 +25,9 @@
 `suspend` / `resume` / `user` / `other` 标签事件存在但常量未暴露——比对时
 直接写字符串即可。
 
-## 函数
+## <span class="c-func">函数</span>
 
-#### <span class="bd bd-ok">函数</span> `get() -> list[Event]`
+#### <span class="c-func">get() -> list[Event]</span>
 
 排空事件队列，返回**全部**待处理事件（非阻塞）。
 
@@ -41,67 +40,67 @@ for e in pygame.event.get():
 - :returns: 本帧全部事件
 - :rtype: list[Event]
 
-#### <span class="bd bd-ok">函数</span> `poll() -> Event | None`
+#### <span class="c-func">poll() -> Event | None</span>
 
 弹出队首事件（其余留在队列——与 `get()` 的全量排空互补）。
 
 - :returns: 队首事件，队列空时 None
 - :rtype: Event | None
 
-#### <span class="bd bd-ok">函数</span> `clear()`
+#### <span class="c-func">clear()</span>
 
 清空事件队列。
 
-## 类
+## <span class="c-class">类</span>
 
-### Event —— 事件对象
+### <span class="c-class">Event —— 事件对象</span>
 
 `get()` / `poll()` 产物。**[差异]** 由引擎创建，Python 侧无
 `__init__`（不可手工构造）；全保真载荷——`pygame_gui.event(e)`
 等逐条消费者可重建完整原始输入。
 
-##### <span class="bd bd-magic">魔术方法</span> `__repr__() -> str`
+##### <span class="c-magic">__repr__() -> str</span>
 
 `<Event keydown key=K_ESCAPE pos=(0, 0) button=0>` 形态的可读字符串。
 
-##### <span class="bd bd-ok">属性</span> `type`
+##### <span class="c-attr">type</span>  }
 
 事件类型标签——字符串形态（`"keydown"` 等），比对上方常量表。
 
-##### <span class="bd bd-ok">属性</span> `key`
+##### <span class="c-attr">key</span>  }
 
 键盘事件 = `pygame.key.Key` 实例，值语义相等可比对
 （`e.key == pygame.key.K_x` ✓）；非键盘事件 = `int 0`。
 
-##### <span class="bd bd-ok">属性</span> `x` / `y`
+##### `x` / `y`  }
 
 鼠标/触摸坐标（物理点已映射至 display 逻辑坐标，HiDPI 安全）；
 非指针事件 = 0。
 
-##### <span class="bd bd-ok">属性</span> `button`
+##### <span class="c-attr">button</span>  }
 
 鼠标按键序号；非鼠标事件 = 0。
 
-##### <span class="bd bd-ok">属性</span> `mod`
+##### <span class="c-attr">mod</span>  }
 
 修饰键位集（KMOD 位；仅 keydown/keyup 携带，其余 0）。
 
-##### <span class="bd bd-ok">属性</span> `repeat`
+##### <span class="c-attr">repeat</span>  }
 
 自动重复标记（仅 keydown；其余 False）。
 
-##### <span class="bd bd-ok">属性</span> `text`
+##### <span class="c-attr">text</span>  }
 
 文本输入内容（仅 textinput；其余 `""`）。
 
-##### <span class="bd bd-ok">属性</span> `w` / `h`
+##### `w` / `h`  }
 
 窗口新尺寸（仅 resized；其余 0）。
 
-### Key —— 类型化键值
+### <span class="c-class">Key —— 类型化键值</span>
 
 `e.key` 的载体；K_* 常量全表在 [pygame.key](key.md)。
 
-##### <span class="bd bd-magic">魔术方法</span> `__eq__() -> bool`
+##### <span class="c-magic">__eq__() -> bool</span>
 
 值语义相等比对：`e.key == pygame.key.K_x` ✓。
