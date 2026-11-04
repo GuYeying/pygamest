@@ -59,7 +59,7 @@ for e in pygame.event.get():
 `__init__`（不可手工构造）；全保真载荷——`pygame_gui.event(e)`
 等逐条消费者可重建完整原始输入。
 
-##### <span class="c-magic">__repr__() -> str</span>
+##### <span class="c-magic">\_\_repr\_\_() -> str</span>
 
 `<Event keydown key=K_ESCAPE pos=(0, 0) button=0>` 形态的可读字符串。
 

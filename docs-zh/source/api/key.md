@@ -98,7 +98,7 @@ pygame.key.name(pygame.key.K_UP)    # "ArrowUp"
 `Event.key` 的载体、`K_*` 常量的类型。**[差异]** 不可哈希
 （不能作 dict / set 键）——值比较走 `==`。
 
-##### <span class="c-magic">__eq__() -> bool</span>
+##### <span class="c-magic">\_\_eq\_\_() -> bool</span>
 
 值语义相等比对：`e.key == pygame.key.K_x` ✓；与 `int` 比对恒 False
 （真 pygame 的整数键码在这里不存在）。

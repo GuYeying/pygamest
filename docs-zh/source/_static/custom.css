@@ -23,7 +23,14 @@
     border-color: #8250df !important;
 }
 
-/* 侧边菜单 */
+/* 侧边菜单：先全部收成淡紫透明底（清掉 RTD 默认灰） */
+.wy-menu-vertical a,
+.wy-menu-vertical li,
+.wy-menu-vertical li ul li a,
+.wy-menu-vertical li.current ul {
+    background: transparent !important;
+}
+
 .wy-menu-vertical a {
     color: #4a4062 !important;
 }
@@ -48,7 +55,10 @@
     background-color: #e0d5f8 !important;
 }
 
+.wy-menu-vertical li.toctree-l2.current > a,
 .wy-menu-vertical li.toctree-l2 li.current > a {
+    background: #e0d5f8 !important;
+    color: #2e2450 !important;
     box-shadow: inset 3px 0 0 #8250df;
 }
 
