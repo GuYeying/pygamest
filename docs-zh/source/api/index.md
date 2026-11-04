@@ -4,8 +4,9 @@
 📌 文档持续铺开中。**已完成**：``pygame.event`` / ``pygame.key``。
 其余模块已站桩（页到位，内容随后补齐）。
 
-**顶层独立模块**（与 pygame 平级，非 `pygame.*` 子模块）：
-[pygame_gui](../pygame_gui.md) · [pygame_physics](../pygame_physics.md)
+**顶层独立模块**（`import pygame_gui`，非 `pygame.*` 子模块，与 pygame
+平级收在同一 API 节下）：[pygame_gui](pygame_gui.md) ·
+[pygame_physics](pygame_physics.md)
 ```
 
 **<span class="c-func">分类着色图例</span>**
@@ -25,27 +26,7 @@ API 页的成员标题按类别**着色 + 同色淡调底线**；标题缩进即
 ```{toctree}
 :maxdepth: 1
 
-event <event>
-key <key>
-display <display>
-font <font>
-image <image>
-io <io>
-mixer <mixer>
-mouse <mouse>
-time <time>
-dialog <dialog>
-gamepad <gamepad>
-gfxdraw <gfxdraw>
-mask <mask>
-math <math>
-net <net>
-permission <permission>
-render <render>
-sndarray <sndarray>
-sprite <sprite>
-touch <touch>
-transform <transform>
-version <version>
-video <video>
+pygame <pygame>
+pygame_gui <pygame_gui>
+pygame_physics <pygame_physics>
 ```
