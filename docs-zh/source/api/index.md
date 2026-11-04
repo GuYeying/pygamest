@@ -1,12 +1,9 @@
 # API
 
 ```{note}
-📌 文档持续铺开中。**已完成**：``pygame.event`` / ``pygame.key``。
-其余模块已站桩（页到位，内容随后补齐）。
-
-**顶层独立模块**（`import pygame_gui`，非 `pygame.*` 子模块，与 pygame
-平级收在同一 API 节下）：[pygame_gui](pygame_gui.md) ·
-[pygame_physics](pygame_physics.md)
+📌 **pygame.* 子模块文档已全量铺开**（对照绑定源逐一成文）。
+顶层独立模块 [pygame_gui](pygame_gui.md) / [pygame_physics](pygame_physics.md)
+（`import` 顶层名，非 `pygame.*` 子模块）待下一批。
 ```
 
 **<span class="c-func">分类着色图例</span>**

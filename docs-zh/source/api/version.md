@@ -1,6 +1,17 @@
 # pygame.version
 
-```{note}
-🚧 模块文档待铺开——API 已随绑定可用（`import pygame` 即取），本页内容随后补齐。
-着色与缩进约定见 [API 索引](index.md)。
-```
+版本信息。
+
+## <span class="c-const">常量</span>
+
+| 常量 | 语义 |
+|---|---|
+| ver | starfish pygame 层版本字符串（= crate 版本）|
+
+## <span class="c-func">函数</span>
+
+#### <span class="c-func">get_version() -> tuple[int, int, int]</span>
+
+版本三元组 `(major, minor, patch)`。
+
+- :rtype: tuple[int, int, int]

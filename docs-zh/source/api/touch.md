@@ -1,6 +1,27 @@
 # pygame.touch
 
-```{note}
-🚧 模块文档待铺开——API 已随绑定可用（`import pygame` 即取），本页内容随后补齐。
-着色与缩进约定见 [API 索引](index.md)。
-```
+触摸输入查询——多指快照与指位查询（移动端主用；桌面恒空）。
+
+## <span class="c-func">函数</span>
+
+#### <span class="c-func">get_count() -> int</span>
+
+当前按住的手指数（0 = 无触摸；桌面恒 0）。
+
+- :rtype: int
+
+#### <span class="c-func">get_fingers() -> list[dict]</span>
+
+活动手指快照，按 `id` 升序——`[{"id", "x", "y", "phase"}, ...]`。
+
+**[差异]** `phase` 仅 `"started"` / `"moved"` 两态——抬起的手指即出表
+（Ended / Cancelled 不驻留）。
+
+- :rtype: list[dict]
+
+#### <span class="c-func">get_pos(finger_id) -> tuple[int, int] | None</span>
+
+指定手指的位置（客户区物理像素，y 向下）；无该手指 = `None`。
+
+- :param finger_id: 手指 id
+- :rtype: tuple[int, int] | None
