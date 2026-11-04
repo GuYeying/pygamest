@@ -1,65 +1,70 @@
 /* ==========================================
-   Rust 风格主题（2026-11-04 弃 pygame 绿 → Rust 色调）
-   炭黑侧栏 + Rust 橙 accent + 纸白内容区
+   淡紫主题（2026-11-04 二次换肤：炭黑 → 淡紫）
+   淡紫侧栏 + 深紫 accent + 紫调纸白内容区
    ========================================== */
 
-/* ── 左侧导航栏：炭黑 ── */
+/* ── 左侧导航栏：淡紫 ── */
 .wy-nav-side {
-    background: #1e2226 !important;
+    background: #ebe4fa !important;
 }
 
-/* 侧边顶部搜索头：更深炭黑 */
+/* 侧边顶部搜索头：稍深一档的淡紫 */
 .wy-side-nav-search {
-    background: #14171a !important;
+    background: #ddd2f4 !important;
 }
 
 .wy-side-nav-search > a,
 .wy-side-nav-search .wy-dropdown > a {
-    color: #ffffff !important;
+    color: #3d2f63 !important;
     font-weight: bold;
 }
 
 .wy-side-nav-search input[type="text"] {
-    border-color: #ce422b !important;
+    border-color: #8250df !important;
 }
 
 /* 侧边菜单 */
 .wy-menu-vertical a {
-    color: #b9bfc6 !important;
+    color: #4a4062 !important;
 }
 
 .wy-menu-vertical a:hover {
-    color: #ffffff !important;
-    background-color: #2d3339 !important;
+    color: #2e2450 !important;
+    background-color: #e0d5f8 !important;
 }
 
 .wy-menu-vertical li.current > a {
-    background: #2d3339 !important;
-    color: #ffffff !important;
-    box-shadow: inset 3px 0 0 #ce422b;
+    background: #e0d5f8 !important;
+    color: #2e2450 !important;
+    box-shadow: inset 3px 0 0 #8250df;
 }
 
 .wy-menu-vertical li.toctree-l2 a {
-    color: #9aa2a9 !important;
+    color: #6b6284 !important;
 }
 
 .wy-menu-vertical li.toctree-l2 a:hover {
-    color: #ffffff !important;
-    background-color: #2d3339 !important;
+    color: #2e2450 !important;
+    background-color: #e0d5f8 !important;
 }
 
 .wy-menu-vertical li.toctree-l2 li.current > a {
-    box-shadow: inset 3px 0 0 #ce422b;
+    box-shadow: inset 3px 0 0 #8250df;
+}
+
+/* 侧栏分组标题（caption） */
+.wy-menu-vertical .caption {
+    color: #7a6f9b !important;
 }
 
 /* ==========================================
-   右侧内容区：纸白
+   右侧内容区：紫调纸白
    ========================================== */
 
 .wy-body-for-nav,
 .wy-nav-content-wrap,
 .wy-nav-content {
-    background-color: #faf9f7 !important;
+    background-color: #fbfaff !important;
 }
 
 .rst-content {
@@ -67,11 +72,11 @@
 }
 
 .rst-content h1 {
-    border-bottom: 2px solid #ce422b;
+    border-bottom: 2px solid #8250df;
 }
 
 .rst-content h2 {
-    border-bottom: 1px solid #e3ddd6;
+    border-bottom: 1px solid #e5dcf6;
 }
 
 /* ==========================================
@@ -88,6 +93,48 @@
 
 .rst-content h5 {
     margin-left: 4.5rem;
+}
+
+/* ==========================================
+   成员标题下划线：分类色淡调
+   （魔术方法紫线 / 函数橙线 / 属性青线……缺省淡紫灰）
+   ========================================== */
+
+.rst-content h3,
+.rst-content h4,
+.rst-content h5 {
+    padding-bottom: 2px;
+    border-bottom: 1px solid #e5dcf6;
+}
+
+.rst-content h3:has(> span.c-const),
+.rst-content h4:has(> span.c-const),
+.rst-content h5:has(> span.c-const) {
+    border-bottom-color: #c9ced4;   /* 常量：石墨灰淡调 */
+}
+
+.rst-content h3:has(> span.c-func),
+.rst-content h4:has(> span.c-func),
+.rst-content h5:has(> span.c-func) {
+    border-bottom-color: #f0b7aa;   /* 函数：Rust 橙淡调 */
+}
+
+.rst-content h3:has(> span.c-class),
+.rst-content h4:has(> span.c-class),
+.rst-content h5:has(> span.c-class) {
+    border-bottom-color: #e3bfa8;   /* 类：焦橙棕淡调 */
+}
+
+.rst-content h3:has(> span.c-magic),
+.rst-content h4:has(> span.c-magic),
+.rst-content h5:has(> span.c-magic) {
+    border-bottom-color: #c9acf2;   /* 魔术方法：紫淡调 */
+}
+
+.rst-content h3:has(> span.c-attr),
+.rst-content h4:has(> span.c-attr),
+.rst-content h5:has(> span.c-attr) {
+    border-bottom-color: #9fd8e4;   /* 属性：深青淡调 */
 }
 
 /* ==========================================
@@ -108,7 +155,7 @@
     object-fit: contain;
     padding: 6px;
     border-radius: 999px;
-    background-color: #f6ddd3;
+    background-color: #e8def9;
 }
 
 .sd-card ul {
@@ -124,17 +171,17 @@
 
 .sd-card li a,
 .sd-card li a:visited {
-    color: #b7410e !important;
+    color: #6f42c1 !important;
     text-decoration: none;
 }
 
 .sd-card li a:hover {
-    color: #8a300b !important;
+    color: #5a32a3 !important;
     text-decoration: underline;
 }
 
 .sd-card strong {
-    color: #1e2226;
+    color: #3d2f63;
 }
 
 /* ==========================================
@@ -215,24 +262,24 @@
 }
 
 /* ==========================================
-   代码块：微暖纸底
+   代码块：紫调纸底
    ========================================== */
 
 .highlight {
-    background: #f6f2ee !important;
+    background: #f6f3fc !important;
 }
 
 /* ==========================================
-   全局链接：Rust 氧化橙
+   全局链接：深紫
    ========================================== */
 
 .rst-content a,
 .rst-content a:visited {
-    color: #b7410e;
+    color: #6f42c1;
 }
 
 .rst-content a:hover {
-    color: #8a300b;
+    color: #5a32a3;
 }
 
 
@@ -269,7 +316,7 @@ details.autodoc-details .sd-summary-toggle {
 }
 
 /* ==========================================
-   分类着色（API 成员七级色标，Rust 色调 2026-11-04）
+   分类着色（API 成员七级色标）
    ========================================== */
 
 .c-const { color: #6e7781; }   /* 常量：石墨灰 */
