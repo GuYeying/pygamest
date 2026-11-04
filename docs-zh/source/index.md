@@ -64,12 +64,8 @@
 <strong>社交</strong>
 </div>
 
-- Discord（最活跃的社区）
-- Reddit /r/pythonarcade
-- Twitter @ArcadeLibrary
-- Instagram @PythonArcadeLibrary
-- Facebook @ArcadeLibrary
-- 关于多样性的声明
+- GitHub Issues（问题反馈）
+- GitHub Discussions（讨论区）
 :::
 
 :::{grid-item-card}
@@ -94,9 +90,8 @@
 <strong>API</strong>
 </div>
 
-- 快速 API 索引
-- 完整街机 API 文档
-- 图形用户界面
+- pygame.event 事件系统（已完成）
+- 其余模块持续铺开
 :::
 
 :::{grid-item-card}
@@ -125,3 +120,10 @@
 :::
 
 ::::
+
+```{toctree}
+:maxdepth: 2
+:hidden:
+
+api/index
+```

@@ -29,17 +29,6 @@ toc_object_entries_show_parents = "domain"
 # --------------------------
 # 侧边栏布局，原生Sphinx写法，兼容性最强
 # --------------------------
-html_sidebars = {
-    "**": ["sidebar-nav-bs", "localtoc.html"]
-}
-
-# --------------- 主题配置（只保留稳定可用参数）---------------
-html_theme = "pydata_sphinx_theme"
-html_theme_options = {
-    "collapse_navigation": True,   # ✅ 左侧导航树：支持折叠三角箭头
-    "navigation_depth": 3,
-}
-# ========== 删掉 html_sidebars 这一段！！不要写！！ ==========
 
 
 html_static_path = ['_static']
@@ -60,7 +49,5 @@ myst_enable_extensions = [
 ]
 
 
-# 主题
 html_theme = "sphinx_rtd_theme"
-html_static_path = ["_static"]
 html_css_files = ["custom.css"]
