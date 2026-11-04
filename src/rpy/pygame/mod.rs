@@ -126,16 +126,19 @@ pub mod pygame {
             Ok(())
         }
 
-        /// blit(src, dest)：Surface 贴图（self-blit 会 panic——
+        /// draw_surface_tf(src, mat)：Surface 按显式矩阵贴图（离屏对
+        /// 离屏——位置/旋转/缩放/3D 放置全在 mat；self 贴图会 panic——
         /// starfish assert_not_self，文档标注）
         #[pymethod]
-        fn blit(
+        fn draw_surface_tf(
             &self,
             src: PyRef<PySurface>,
-            dest: SfPoint,
+            mat: PyRef<crate::rpy::pygame::math::math::PyMat4>,
             vm: &VirtualMachine,
         ) -> PyResult<()> {
-            DrawTarget::blit(&*self.surface, &src.surface, (dest.0, dest.1));
+            use starfish_pygame::render::DrawTarget;
+            DrawTarget::draw_surface_tf(&*self.surface, &src.surface, mat.0.get(), None);
+            let _ = vm;
             Ok(())
         }
     }
@@ -273,48 +276,90 @@ pub mod pygame {
             Ok(())
         }
 
+        /// draw_surface(src)：画一张离屏面——**位置/旋转/缩放/3D 放置
+        /// 全由会话 transform（set_transform / set_pos）承载**（渲染统一
+        /// draw 面；旧 blit/blit_transform 退役）。源自动 flush。
         #[pymethod]
-        fn blit(
-            &self,
-            src: PyRef<PySurface>,
-            dest: args::SfPoint,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
+        fn draw_surface(&self, src: PyRef<PySurface>, vm: &VirtualMachine) -> PyResult<()> {
             use starfish_pygame::render::DrawTarget;
-            DrawTarget::blit(&*self.surface, &src.surface, (dest.0, dest.1));
+            DrawTarget::draw_surface(&*self.surface, &src.surface);
             let _ = vm;
             Ok(())
         }
 
-        /// blit_transform(src, mat4, tint=None)：变换 blit（单接口收拢
-        ///——Mat4 承载一切变换：2D 仿射 / 3D 模型矩阵空间放置）
+        /// draw_surface_centered(src, center)：中心锚画面（quad 中心
+        /// 对位 center——仍按会话 transform 复合变换）
         #[pymethod]
-        fn blit_transform(
+        fn draw_surface_centered(
             &self,
             src: PyRef<PySurface>,
-            mat: PyRef<crate::rpy::pygame::math::math::PyMat4>,
-            tint: Option<SfColor>,
+            center: args::SfPoint,
             vm: &VirtualMachine,
         ) -> PyResult<()> {
             use starfish_pygame::render::DrawTarget;
-            DrawTarget::blit_transform(
+            DrawTarget::draw_surface_centered(
                 &*self.surface,
                 &src.surface,
-                mat.0.get(),
-                tint.map(|c| c.0),
+                (center.0 as f32, center.1 as f32),
             );
             let _ = vm;
             Ok(())
         }
 
-        /// set_default_camera(camera)：设置默认相机（`with render()`
-        /// 批绘制的隐式相机 override——全局语义；raw_render 自管不参与）
+        /// set_transform(model)：会话变换（后续绘制的顶点按此矩阵 CPU
+        /// 烘——2D 仿射 / 3D 模型矩阵统一入口；Mat4 经 pygame.math 的
+        /// mat4_* 组合）
         #[pymethod]
-        fn set_default_camera(
+        fn set_transform(
+            &self,
+            model: PyRef<crate::rpy::pygame::math::math::PyMat4>,
+            vm: &VirtualMachine,
+        ) {
+            self.surface.with_batch(|b| b.set_model(model.0.get()));
+            let _ = vm;
+        }
+
+        /// set_pos(x, y, z=0)：会话变换便捷形态（= set_model(平移)——
+        /// 2D 场景主用）
+        #[pymethod]
+        fn set_pos(
+            &self,
+            args: FuncArgs,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            use rustpython_vm::convert::TryFromObject;
+            let x = args.args.first().and_then(|o| f32::try_from_object(vm, o.clone()).ok()).unwrap_or(0.0);
+            let y = args.args.get(1).and_then(|o| f32::try_from_object(vm, o.clone()).ok()).unwrap_or(0.0);
+            let z = args.args.get(2).and_then(|o| f32::try_from_object(vm, o.clone()).ok()).unwrap_or(0.0);
+            self.surface
+                .with_batch(|b| b.set_model(glam::Mat4::from_translation(glam::Vec3::new(x, y, z))));
+            Ok(())
+        }
+
+        /// reset_transform()：回恒等变换
+        #[pymethod]
+        fn reset_transform(&self, vm: &VirtualMachine) {
+            self.surface.with_batch(|b| b.reset_model());
+            let _ = vm;
+        }
+
+        /// set_camera(camera)：会话相机切换（渲染统一 draw 面——同画布
+        /// 多相机 = 多次 set_camera 分段绘制；仅本会话生效）
+        #[pymethod]
+        fn set_camera(
             &self,
             camera: PyRef<crate::rpy::pygame::render::render::PyCamera>,
+            vm: &VirtualMachine,
         ) {
-            starfish_pygame::render::set_default_camera(&camera.0);
+            self.surface.with_batch(|b| b.set_mvp(Some(camera.0.mvp())));
+            let _ = vm;
+        }
+
+        /// reset_camera()：回 Auto 兜底相机（按本面尺寸现算）
+        #[pymethod]
+        fn reset_camera(&self, vm: &VirtualMachine) {
+            self.surface.with_batch(|b| b.reset_mvp());
+            let _ = vm;
         }
 
         /// raw_render(depth=False) -> RawPass：本面底层直绘会话（批次
@@ -369,8 +414,9 @@ pub mod pygame {
             bridge::geometry(&*self.surface, &args, vm)
         }
 
-        /// text(font, text, dest, color)：会话内直接绘制文字
-        /// （目标 = 本 Surface；font.render + blit 融合，批次 F+）
+        /// text(font, text, dest, color)：会话内直接绘制文字（目标 = 本
+        /// Surface；dest 按 **中心系**坐标——与绘制坐标系一致；位置 =
+        /// dest 平移 × 会话 transform 复合，状态不污染）
         #[pymethod]
         fn text(
             &self,
@@ -380,15 +426,37 @@ pub mod pygame {
             color: crate::rpy::args::SfColor,
             vm: &VirtualMachine,
         ) -> PyResult<()> {
-            use rustpython_vm::convert::TryFromObject;
-            use starfish_pygame::render::DrawTarget;
+            
             let t = text
                 .to_str()
                 .ok_or_else(|| vm.new_value_error("文本含非 UTF-8 字符"))?;
             let rendered = font
                 .inner
                 .render(t, true, [color.0[0], color.0[1], color.0[2], color.0[3]]);
-            DrawTarget::blit(&*self.surface, &rendered, (dest.0, dest.1));
+            let (sw, sh) = rendered.size32();
+            let m = self.surface.model()
+                * glam::Mat4::from_translation(glam::Vec3::new(
+                    dest.0 as f32,
+                    dest.1 as f32,
+                    0.0,
+                ));
+            let corner = |x: f32, y: f32| {
+                let p = m.transform_point3(glam::Vec3::new(x, y, 0.0));
+                [p.x, p.y, p.z]
+            };
+            self.surface.with_batch(|b| {
+                b.push_quad_corners_3d(
+                    [
+                        corner(0.0, 0.0),
+                        corner(sw, 0.0),
+                        corner(sw, sh),
+                        corner(0.0, sh),
+                    ],
+                    [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+                    rendered.blit_tint(),
+                    Some(rendered.texture()),
+                );
+            });
             Ok(())
         }
 
@@ -630,38 +698,84 @@ pub mod pygame {
             })
         }
 
-        /// blit(src, dest)：Surface 贴入会话（批次 F）
+        /// draw_surface(src)：画一张离屏面——**位置/旋转/缩放/3D 放置
+        /// 全由会话 transform（set_transform / set_pos）承载**（渲染统一
+        /// draw 面；旧 blit/blit_transform 退役）。源自动 flush。
         #[pymethod]
-        fn blit(&self, src: PyRef<PySurface>, dest: args::SfPoint, vm: &VirtualMachine) -> PyResult<()> {
-            bridge::with_session(vm, |t| t.blit(&src.surface, (dest.0, dest.1)))
-        }
-
-        /// blit_transform(src, mat4, tint=None)：变换 blit（**单接口
-        /// 收拢——Mat4 承载一切变换**）：2D 仿射零拷贝旋转/缩放/镜像
-        ///（替代 transform 烘焙）；3D 模型矩阵空间放置（render_depth
-        /// 会话下与 3D 场景正确遮挡）。
-        #[pymethod]
-        fn blit_transform(
-            &self,
-            src: PyRef<PySurface>,
-            mat: PyRef<crate::rpy::pygame::math::math::PyMat4>,
-            tint: Option<SfColor>,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            use starfish_pygame::render::DrawTarget;
+        fn draw_surface(&self, src: PyRef<PySurface>, vm: &VirtualMachine) -> PyResult<()> {
             bridge::with_session(vm, |t| {
-                DrawTarget::blit_transform(t, &src.surface, mat.0.get(), tint.map(|c| c.0))
+                use starfish_pygame::render::DrawTarget;
+                DrawTarget::draw_surface(t, &src.surface)
             })
         }
 
-        /// set_default_camera(camera)：设置默认相机（`with render()`
-        /// 批绘制的隐式相机 override——全局生效，raw_render 自管不参与）
+        /// draw_surface_centered(src, center)：中心锚画面（quad 中心
+        /// 对位 center——仍按会话 transform 复合变换）。
         #[pymethod]
-        fn set_default_camera(
+        fn draw_surface_centered(
+            &self,
+            src: PyRef<PySurface>,
+            center: args::SfPoint,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            bridge::with_session(vm, |t| {
+                use starfish_pygame::render::DrawTarget;
+                DrawTarget::draw_surface_centered(
+                    t,
+                    &src.surface,
+                    (center.0 as f32, center.1 as f32),
+                )
+            })
+        }
+
+        /// set_transform(model)：会话变换（后续绘制的顶点按此矩阵 CPU
+        /// 烘——2D 仿射 / 3D 模型矩阵统一入口）
+        #[pymethod]
+        fn set_transform(
+            &self,
+            model: PyRef<crate::rpy::pygame::math::math::PyMat4>,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            bridge::with_session(vm, |t| t.set_transform(model.0.get()))
+        }
+
+        /// set_pos(x, y, z=0)：会话变换便捷形态（= set_transform(平移)）
+        #[pymethod]
+        fn set_pos(
+            &self,
+            args: FuncArgs,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            use rustpython_vm::convert::TryFromObject;
+            let x = args.args.first().and_then(|o| f32::try_from_object(vm, o.clone()).ok()).unwrap_or(0.0);
+            let y = args.args.get(1).and_then(|o| f32::try_from_object(vm, o.clone()).ok()).unwrap_or(0.0);
+            let z = args.args.get(2).and_then(|o| f32::try_from_object(vm, o.clone()).ok()).unwrap_or(0.0);
+            bridge::with_session(vm, |t| {
+                t.set_transform(glam::Mat4::from_translation(glam::Vec3::new(x, y, z)))
+            })
+        }
+
+        /// reset_transform()：回恒等变换
+        #[pymethod]
+        fn reset_transform(&self, vm: &VirtualMachine) -> PyResult<()> {
+            bridge::with_session(vm, |t| t.reset_transform())
+        }
+
+        /// set_camera(camera)：会话相机切换（渲染统一 draw 面——同画布
+        /// 多相机 = 多次 set_camera 分段绘制；仅本会话生效）
+        #[pymethod]
+        fn set_camera(
             &self,
             camera: PyRef<crate::rpy::pygame::render::render::PyCamera>,
-        ) {
-            starfish_pygame::render::set_default_camera(&camera.0);
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            bridge::with_session(vm, |t| t.set_camera(&camera.0))
+        }
+
+        /// reset_camera()：回 Auto 兜底相机（按目标尺寸现算）
+        #[pymethod]
+        fn reset_camera(&self, vm: &VirtualMachine) -> PyResult<()> {
+            bridge::with_session(vm, |t| t.reset_camera())
         }
 
         /// raw_render(depth=False) -> RawPass：底层直绘会话（批次 D）
@@ -745,7 +859,35 @@ pub mod pygame {
             let surface = font
                 .inner
                 .render(t, true, [color.0[0], color.0[1], color.0[2], color.0[3]]);
-            bridge::with_session(vm, |t| t.blit(&surface, (dest.0, dest.1)))
+            // 中心系 dest 平移 × 会话 transform 复合（corners 直算——
+            // 状态不污染）
+            let (sw, sh) = surface.size32();
+            bridge::with_session(vm, |t| {
+                use starfish_pygame::render::DrawTarget;
+                let m = t.model()
+                    * glam::Mat4::from_translation(glam::Vec3::new(
+                        dest.0 as f32,
+                        dest.1 as f32,
+                        0.0,
+                    ));
+                let corner = |x: f32, y: f32| {
+                    let p = m.transform_point3(glam::Vec3::new(x, y, 0.0));
+                    [p.x, p.y, p.z]
+                };
+                t.with_batch(|b| {
+                    b.push_quad_corners_3d(
+                        [
+                            corner(0.0, 0.0),
+                            corner(sw, 0.0),
+                            corner(sw, sh),
+                            corner(0.0, sh),
+                        ],
+                        [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+                        surface.blit_tint(),
+                        Some(surface.texture()),
+                    );
+                });
+            })
         }
     }
 
@@ -1036,9 +1178,8 @@ pub mod pygame {
             let mut wish = starfish_pygame::render::current_wish();
             wish.dim3d = d == 3;
             starfish_pygame::render::store_wish(wish);
-            if starfish_pygame::render::gpu_info().is_some() {
-                starfish_pygame::render::reset_camera();
-            }
+            // Auto 相机种类由 store_wish 内部同步（即时生效——旧
+            // reset_camera 全局口退役）
         }
         (0, 0)
     }
@@ -1092,7 +1233,7 @@ pub mod pygame {
         fn fill(&self, args: args::FillArgs, vm: &VirtualMachine) -> PyResult<()> {
             let rgba = args.color.0;
             bridge::with_mrt_session(vm, |p| {
-                use starfish_pygame::render::DrawTarget;
+                
                 p.fill(rgba);
             })
         }
@@ -1173,44 +1314,34 @@ pub mod pygame {
             })
         }
 
-        /// blit(src, dest)：Surface 贴入 MRT 会话。
+        /// draw_surface(src)：Surface 贴入 MRT 会话（位置/变换由会话
+        /// set_transform/set_pos 承载——渲染统一 draw 面）。
         #[pymethod]
-        fn blit(
-            &self,
-            src: PyRef<PySurface>,
-            dest: args::SfPoint,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
+        fn draw_surface(&self, src: PyRef<PySurface>, vm: &VirtualMachine) -> PyResult<()> {
             bridge::with_mrt_session(vm, |p| {
                 use starfish_pygame::render::DrawTarget;
-                p.blit(&src.surface, (dest.0, dest.1))
+                DrawTarget::draw_surface(p, &src.surface)
             })
         }
 
-        /// blit_transform(src, mat4, tint=None)：变换 blit（单接口收拢
-        ///——Mat4 承载一切变换；MRT 双写目标同变换）。
+        /// set_transform(model)：MRT 会话变换（后续绘制顶点按此矩阵烘）。
         #[pymethod]
-        fn blit_transform(
+        fn set_transform(
             &self,
-            src: PyRef<PySurface>,
-            mat: PyRef<crate::rpy::pygame::math::math::PyMat4>,
-            tint: Option<SfColor>,
+            model: PyRef<crate::rpy::pygame::math::math::PyMat4>,
             vm: &VirtualMachine,
         ) -> PyResult<()> {
-            use starfish_pygame::render::DrawTarget;
-            bridge::with_mrt_session(vm, |p| {
-                DrawTarget::blit_transform(p, &src.surface, mat.0.get(), tint.map(|c| c.0))
-            })
+            bridge::with_mrt_session(vm, |p| p.set_transform(model.0.get()))
         }
 
-        /// set_default_camera(camera)：设置默认相机（全局语义；
-        /// raw_render 自管不参与）。
+        /// set_camera(camera)：MRT 会话相机切换。
         #[pymethod]
-        fn set_default_camera(
+        fn set_camera(
             &self,
             camera: PyRef<crate::rpy::pygame::render::render::PyCamera>,
-        ) {
-            starfish_pygame::render::set_default_camera(&camera.0);
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            bridge::with_mrt_session(vm, |p| p.set_camera(&camera.0))
         }
 
         /// blit_area(src, dest, area, color=None)：UV 子区域贴图

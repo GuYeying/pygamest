@@ -155,12 +155,32 @@ pub(crate) fn blit_area<T: BdTarget>(
     if area.w <= 0 || area.h <= 0 || src.size().0 == 0 || src.size().1 == 0 {
         return Err(vm.new_value_error("area 尺寸须为正且源面非空"));
     }
-    Ok(target.blit_area(
-        &src.surface,
-        (dest.0, dest.1),
-        [area.x, area.y, area.w, area.h],
-        color.map(|c| c.0).unwrap_or([255, 255, 255, 255]),
-    ))
+    let (sw, sh) = src.surface.size32();
+    let (aw, ah) = (area.w as f32, area.h as f32);
+    // dest 平移 × 会话 transform 复合（corners 直算——状态不污染）
+    let m = target.model()
+        * glam::Mat4::from_translation(glam::Vec3::new(dest.0 as f32, dest.1 as f32, 0.0));
+    let corner = |x: f32, y: f32| {
+        let p = m.transform_point3(glam::Vec3::new(x, y, 0.0));
+        [p.x, p.y, p.z]
+    };
+    let tint = color.map(|c| c.0).map(|px| [px[0] as f32 / 255.0, px[1] as f32 / 255.0, px[2] as f32 / 255.0, px[3] as f32 / 255.0]).unwrap_or([1.0, 1.0, 1.0, 1.0]);
+    let mut rgba = src.surface.blit_tint();
+    rgba = [rgba[0] * tint[0], rgba[1] * tint[1], rgba[2] * tint[2], rgba[3] * tint[3]];
+    target.with_batch(|b| {
+        b.push_quad_corners_3d(
+            [corner(0.0, 0.0), corner(aw, 0.0), corner(aw, ah), corner(0.0, ah)],
+            [
+                [area.x as f32 / sw, area.y as f32 / sh],
+                [(area.x + area.w) as f32 / sw, area.y as f32 / sh],
+                [(area.x + area.w) as f32 / sw, (area.y + area.h) as f32 / sh],
+                [area.x as f32 / sw, (area.y + area.h) as f32 / sh],
+            ],
+            rgba,
+            Some(src.surface.texture()),
+        );
+    });
+    Ok(())
 }
 
 /// vertices 收参壳：topo 白名单映射（RP 错误面；点集构建归引擎

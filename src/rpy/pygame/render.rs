@@ -146,15 +146,9 @@ pub(crate) mod render {
         PyCamera(sf::Camera::perspective(fov_degrees, aspect, near, far)).into_ref(&vm.ctx)
     }
 
-    // ── 全局相机（一处设置、全体生效；须 display.set_mode 后）────
+    // ── 相机（Auto 兜底查询；会话级选择走 f.set_camera）────────────
 
-    /// 全局相机 override（后续全部渲染生效直到 reset_camera）。
-    #[pyfunction]
-    fn set_default_camera(camera: PyRef<PyCamera>) {
-        sf::set_default_camera(&camera.0);
-    }
-
-    /// 当前全局 MVP（Auto 状态按主屏尺寸现算——resize 天然跟随）。
+    /// 当前 Auto 兜底 MVP（主屏尺寸现算——resize 天然跟随）。
     #[pyfunction]
     fn camera_mvp(vm: &VirtualMachine) -> PyRef<PyMat4> {
         PyMat4(std::cell::Cell::new(sf::camera_mvp())).into_ref(&vm.ctx)
@@ -171,16 +165,6 @@ pub(crate) mod render {
             starfish_pygame::display::get_screen().present_fit(),
         ))
         .into_ref(&vm.ctx)
-    }
-
-    /// 当前相机状态（"auto2d" | "auto3d" | "manual"）。
-    #[pyfunction]
-    fn camera_state() -> String {
-        match sf::camera_state() {
-            sf::CameraState::Auto2d => "auto2d".into(),
-            sf::CameraState::Auto3d { .. } => "auto3d".into(),
-            sf::CameraState::Manual(_) => "manual".into(),
-        }
     }
 
     // ── render.init：渲染愿望（set_mode 前配置，Gpu 装配消费一次）──
@@ -245,14 +229,9 @@ pub(crate) mod render {
             };
         }
         sf::store_wish(wish);
-        // GPU 槽已建立（宿主壳预置 set_mode 的 pygamest 形态）且相机
-        // 维被改：即时生效——reset_camera 即"回到当前愿望"。cull/blend
-        // 为管线编译期定型，不追溯（下次 set_mode 生效）。
-        if dim.is_some() || fov.is_some() || near.is_some() || far.is_some() {
-            if sf::gpu_info().is_some() {
-                sf::reset_camera();
-            }
-        }
+        // GPU 槽已建立且相机维被改：store_wish 内部已同步更新 Auto 相机
+        // 种类（即时生效——旧 reset_camera 全局口退役）。cull/blend 为
+        // 管线编译期定型，不追溯（下次 set_mode 生效）。
         Ok(())
     }
 
