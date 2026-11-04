@@ -1,9 +1,9 @@
 # API
 
 ```{note}
-📌 **pygame.* 子模块文档已全量铺开**（对照绑定源逐一成文）。
-顶层独立模块 [pygame_gui](pygame_gui.md) / [pygame_physics](pygame_physics.md)
-（`import` 顶层名，非 `pygame.*` 子模块）待下一批。
+📌 **API 文档全量铺开完成**——``pygame.*`` 21 子模块 + 顶层独立模块
+``pygame_gui``（egui 即时 GUI）/ ``pygame_physics``（rapier 米制物理）
+全部对照绑定源成文。
 ```
 
 **<span class="c-func">分类着色图例</span>**
