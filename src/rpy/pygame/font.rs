@@ -24,6 +24,39 @@ use std::cell::Cell;
         // 自定义入口，本模块不重复声明）
         use crate::rpy::pygame::pygame::DEFAULT_FONT;
 
+        /// draw_text(f, font, text, model, color)：文字表面渲染 + 显式
+        /// 矩阵放置（3D 文字牌 / 2D 仿射一步口；会话状态机不经——model
+        /// 全权）。f = 渲染会话（与 gfxdraw 同 route）。
+        #[pyfunction]
+        fn draw_text(
+            f: PyObjectRef,
+            font: PyRef<PyFont>,
+            text: PyStrRef,
+            model: PyRef<crate::rpy::pygame::math::math::PyMat4>,
+            color: crate::rpy::args::SfColor,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            use crate::rpy::pygame::gfxdraw::gfxdraw::{route, Target};
+            use starfish_pygame::render::DrawTarget;
+            let t = text
+                .to_str()
+                .ok_or_else(|| vm.new_value_error("文本含非 UTF-8 字符"))?;
+            let rendered = font.inner.render(
+                t,
+                true,
+                [color.0[0], color.0[1], color.0[2], color.0[3]],
+            );
+            match route(&f, vm)? {
+                Target::Surf(s) => DrawTarget::draw_surface_tf(
+                    &*s.surface, &rendered, model.0.get(), None),
+                Target::Active => bridge::with_session(vm, |t2| DrawTarget::draw_surface_tf(
+                    t2, &rendered, model.0.get(), None))?,
+                Target::Targets => bridge::with_mrt_session(vm, |t2| DrawTarget::draw_surface_tf(
+                    t2, &rendered, model.0.get(), None))?,
+            }
+            Ok(())
+        }
+
         /// pygame.font.Font——payload = starfish Font（内含字形缓存 RefCell，
         /// 单线程；无 Debug → 手写 impl）。
         #[derive(PyPayload)]

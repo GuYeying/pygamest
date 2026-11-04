@@ -104,8 +104,8 @@ async def main():
     try:
         _t = pygame.Surface((64, 64))
         with _t.render() as _tr:
-            _tr.ellipse((255, 0, 0), (8, 8, 48, 48))
-            _tr.arc((0, 255, 0), (8, 8, 48, 48), 0.0, 3.14159)
+            pygame.gfxdraw.filled_ellipse(_tr, 0, 0, 24, 24, (255, 0, 0))
+            pygame.gfxdraw.arc(_tr, 0, 0, 24, 0, 180, (0, 255, 0))
         _st("draw.ellipse_arc", True)
     except Exception as _e:
         _st("draw.ellipse_arc", False)
@@ -174,9 +174,13 @@ async def main():
     # targets：MRT 会话（一次 pass 镜像双写，不抛错 = 接口通）
     try:
         _ta = pygame.Surface((64, 64)); _tb = pygame.Surface((64, 64))
+        _wire = pygame.Surface((64, 64))
+        with _wire.render() as _w:
+            _w.fill((60, 20, 80))
+            pygame.gfxdraw.rectangle(_w, (8, 8, 48, 48), (255, 255, 255))
         with pygame.targets([_ta, _tb]) as t:
             t.fill((60, 20, 80))
-            t.rect((255, 255, 255), (8, 8, 48, 48), 2)
+            pygame.gfxdraw.draw_surface(t, _wire)
         _st("targets.mrt", True)
     except Exception as _e:
         _st("targets.mrt", False); print("    [selftest] 异常:", _e)
@@ -197,8 +201,8 @@ async def main():
     try:
         _ba = pygame.Surface((32, 16)); _ba.fill((90, 200, 255))
         with screen.render() as r:
-            r.set_pos(-300, -200)
-            r.draw_surface_uv(_ba, [0.0, 0.0, 1.0, 0.5], None)          # 源左上 16×16 子区域
+            pygame.gfxdraw.set_pos(r, -300, -200)
+            pygame.gfxdraw.draw_surface_uv(r, _ba, [0.0, 0.0, 1.0, 0.5], None)          # 源左上 16×16 子区域
             r.quad(_ba, [(200, -180), (260, -190), (250, -240), (190, -230)],
                    [(0, 0), (1, 0), (1, 1), (0, 1)], (255, 255, 255))
         _st("withbatch.direct", True)
@@ -208,17 +212,17 @@ async def main():
     # 验证：正路径各形态全绑定执行；负路径参数层先于会话执行拒绝）
     try:
         with screen.render() as r:
-            r.rect((0, 200, 90), (10, 20, 30, 40))                     # 3 元色 + width 缺省
-            r.rect(color=(0, 200, 90, 255), rect=(1, 2, 3, 4), width=4)  # kwargs 全形态
-            r.circle((255, 200, 0), (5, 6), 7)                         # width 缺省
-            r.line((200, 60, 60), (0, 0), (9, 9), 2)                   # width 显式
-            r.polygon((90, 120, 220), [(1, 2), (3, 4), (5, 6)])        # 嵌套点列
-            r.polygon((10, 20, 30), ((1, 2), (3, 4)))                  # tuple 点列
-            r.ellipse((0, 200, 90), (10, 20, 30, 40))                  # width 缺省
-            r.ellipse((0, 200, 90), (1, 2, 3, 4), 2)                   # width 显式
-            r.arc((200, 60, 60), (10, 20, 30, 40), 0.0, 1.5)           # 弧度制
-            r.arc((200, 60, 60), (1, 2, 3, 4), 0, 1)                   # 弧度兼容 int
-            r.rect((0, 200, 90), (1, 2, 3, 4))                         # 序列形态（Rect 已退役）
+            pygame.gfxdraw.box(r, (10, 20, 30, 40), (0, 200, 90))                     # 3 元色 + width 缺省
+            pygame.gfxdraw.rectangle(r, (1, 2, 3, 4), (0, 200, 90, 255))  # kwargs 全形态
+            pygame.gfxdraw.filled_circle(r, 5, 6, 7, (255, 200, 0))                         # width 缺省
+            pygame.gfxdraw.line(r, 0, 0, 9, 9, (200, 60, 60))                   # width 显式
+            pygame.gfxdraw.filled_polygon(r, [(1, 2), (3, 4), (5, 6)], (90, 120, 220))        # 嵌套点列
+            pygame.gfxdraw.filled_polygon(r, ((1, 2), (3, 4)), (10, 20, 30))                  # tuple 点列
+            pygame.gfxdraw.filled_ellipse(r, -395, 290, 15, 10, (0, 200, 90))   # width 缺省（填充）
+            pygame.gfxdraw.ellipse(r, -399, 298, 2, 2, (0, 200, 90))            # width 显式（1px 描边）
+            pygame.gfxdraw.arc(r, -395, 290, 15, 0, 90, (200, 60, 60))       # 度数制
+            pygame.gfxdraw.arc(r, -399, 298, 2, 0, 1, (200, 60, 60))            # 度数制
+            pygame.gfxdraw.box(r, (1, 2, 3, 4), (0, 200, 90))                         # 序列形态（Rect 已退役）
         _ok = True
     except Exception as _e:
         _ok = False; print("    [selftest] 异常:", _e)
@@ -227,13 +231,13 @@ async def main():
     try:
         with screen.render() as r:
             _bad_calls = (
-                lambda: r.rect((0, 200), (0, 0, 1, 1)),            # 颜色分量不足
-                lambda: r.rect((300, 0, 0), (0, 0, 1, 1)),         # 颜色越界
-                lambda: r.rect((0, 0, 0), (1.5, 0, 1, 1)),         # rect 分量 float 严格拒
-                lambda: r.rect((0, 0, 0)),                         # 缺 rect（必填 any）
-                lambda: r.polygon((0, 0, 0), [(1, 2), (3,)]),      # 点长度错
-                lambda: r.rect((0, 0, 0), (0, 0, 1, 1), bogus=1),  # 未知 kwarg
-                lambda: r.arc((200, 60, 60), (10, 20, 30, 40)),    # 缺起止角
+                lambda: pygame.gfxdraw.box(r, (0, 0, 1, 1), (0, 200)),            # 颜色分量不足
+                lambda: pygame.gfxdraw.box(r, (0, 0, 1, 1), (300, 0, 0)),         # 颜色越界
+                lambda: pygame.gfxdraw.box(r, (1.5, 0, 1, 1), (0, 0, 0)),         # rect 分量 float 严格拒
+                lambda: pygame.gfxdraw.box(r, (0, 0, 1, 1)),                      # 缺 color
+                lambda: pygame.gfxdraw.filled_polygon(r, [(1, 2), (3,)], (0, 0, 0)),      # 点长度错
+                lambda: pygame.gfxdraw.rectangle(r),                               # 全缺
+                lambda: pygame.gfxdraw.arc(r, 0, 0, 10),           # 缺起止角（TypeError 面）
             )
             _rejected = 0
             for _bad in _bad_calls:
@@ -295,7 +299,7 @@ async def main():
     try:
         with screen.render() as rd:
             rd.fill((0, 0, 0))
-            rd.rect((0, 200, 90), (10, 10, 50, 50))
+            pygame.gfxdraw.box(rd, (10, 10, 50, 50), (0, 200, 90))
         _st("render_depth 会话", True)
     except Exception as _e:
         _st("render_depth 会话", False); print("    [selftest] 异常:", _e)
@@ -333,38 +337,38 @@ async def main():
             _lmb = pygame.mouse.get_pressed()[0]
             r.rect((255, 80, 80) if _space else (255, 255, 255), (x, -130, 60, 60), 4)
             if _lmb:
-                r.circle((80, 255, 120), (x, 30), 8)
+                pygame.gfxdraw.filled_circle(r, x, 30, 8, (80, 255, 120))
             r.rect((0, 200, 90), box)
             # 文字表面 blit（预渲染一次）。注意：内嵌 Antonio 为拉丁字体——
             # 中文字形不存在会被跳过（demo 文案用纯拉丁；CJK 见 line1）
             if line2 is not None:
-                r.set_pos(-390, 240); r.draw_surface(line2)          # 哥特风（通用字体）
-            r.circle((255, 200, 0), (0, 0), 40)
-            r.line((200, 60, 60), (x - 400, 300), (x - 340, -300))
+                pygame.gfxdraw.set_pos(r, -390, 240); pygame.gfxdraw.draw_surface(r, line2)          # 哥特风（通用字体）
+            pygame.gfxdraw.filled_circle(r, 0, 0, 40, (255, 200, 0))
+            pygame.gfxdraw.line(r, x - 400, 300, x - 340, -300, (200, 60, 60))
             # 批次 K：quat_from_axis_angle → Mat4 → transform_point3 的指针；
             # Vector3.lerp 三角波驱动脉冲圆半径（旋转/缩放全程数学值承载。
             # 注：数学产物为 float，绘制坐标收 int——SfPoint 契约严格拒 float）
             r.line((255, 120, 120), (-140, 80),
                    (-140 + int(_hand.x), 80 + int(_hand.y)), 2)
-            r.circle((255, 120, 120), (-140, 80), 4)
+            pygame.gfxdraw.filled_circle(r, -140, 80, 4, (255, 120, 120))
             r.circle((100, 220, 255), (220, 0), max(2, int(_pulse.x * 30)))
-            r.rect((100, 220, 255), (200, 20, 40, 40), 2)        # 脉冲圆的外框参照
+            pygame.gfxdraw.rectangle(r, (200, 20, 40, 40), (100, 220, 255))  # 原 width=2 描边（gfxdraw 恒 1px）        # 脉冲圆的外框参照
             # gfxdraw 兼容面（批次 30）：SDL_gfx 签名（目标在前/坐标分离/
             # 颜色在后），实现与 r.circle 同一 batch 零额外成本
             pygame.gfxdraw.circle(r, 300, 0, 26, (255, 120, 120))
             pygame.gfxdraw.hline(r, 260, 340, -42, (120, 200, 255))
             pygame.gfxdraw.filled_circle(r, 300, -82, 16, (120, 255, 160))
             pygame.gfxdraw.box(r, (260, -120, 80, 46), (60, 60, 90))
-            r.polygon((90, 120, 220), [(-300, 200), (-220, 220), (-200, 140), (-280, 130)])
-            r.ellipse((60, 180, 120), (20, -80, 140, 80))                # 批次 L：椭圆
-            r.arc((255, 160, 60), (20, -170, 120, 80), 0.0, 3.14159)      # 批次 L：弧（弧度制）
-            r.rect(color=(90, 200, 255), rect=(x, 180, 60, 60))   # kwargs 形态（批次 A）
-            r.set_pos(100, 200); r.draw_surface(tile)             # Surface 贴图（批次 F）
-            r.set_pos(160, 210); r.draw_surface(rot)               # transform.rotate（批次 F）
-            r.set_pos(240, -120); r.draw_surface(sm)               # 半透明平滑缩放（批次 L）
-            r.set_pos(-100, 280); r.draw_surface(tsurf)             # 文字表面一等化（批次 F）
+            pygame.gfxdraw.filled_polygon(r, [(-300, 200), (-220, 220), (-200, 140), (-280, 130)], (90, 120, 220))
+            pygame.gfxdraw.filled_ellipse(r, -310, -100, 70, 40, (60, 180, 120))          # 批次 L：椭圆
+            pygame.gfxdraw.arc(r, -380, -230, 40, 0, 180, (255, 160, 60))     # 批次 L：弧（度数制）
+            pygame.gfxdraw.box(r, (x, 180, 60, 60), (90, 200, 255))   # kwargs 形态（批次 A）
+            pygame.gfxdraw.set_pos(r, 100, 200); pygame.gfxdraw.draw_surface(r, tile)             # Surface 贴图（批次 F）
+            pygame.gfxdraw.set_pos(r, 160, 210); pygame.gfxdraw.draw_surface(r, rot)               # transform.rotate（批次 F）
+            pygame.gfxdraw.set_pos(r, 240, -120); pygame.gfxdraw.draw_surface(r, sm)               # 半透明平滑缩放（批次 L）
+            pygame.gfxdraw.set_pos(r, -100, 280); pygame.gfxdraw.draw_surface(r, tsurf)             # 文字表面一等化（批次 F）
             if line1 is not None:
-                r.set_pos(-390, 290); r.draw_surface(line1)          # 预渲染黄字（中文能力）
+                pygame.gfxdraw.set_pos(r, -390, 290); pygame.gfxdraw.draw_surface(r, line1)          # 预渲染黄字（中文能力）
         pygame.display.flip()
 
         x = 0 if x >= 330 else x + 4

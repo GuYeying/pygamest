@@ -12,28 +12,215 @@ use rustpython_vm::{
 use std::cell::Cell;
 #[pymodule]
     pub mod gfxdraw {
-        use crate::rpy::pygame::pygame::{PyScreenSession, PySurfaceSession};
+        use crate::rpy::pygame::pygame::{PyScreenSession, PySurface, PySurfaceSession, PyTargetsSession};
         use crate::rpy::args::{SfColor, SfPoints, SfRect};
         use crate::rpy::bridge;
-        use rustpython_vm::{PyObjectRef, PyResult, VirtualMachine};
+        use rustpython_vm::{
+            PyObjectRef, PyRef, PyResult, VirtualMachine,
+            function::FuncArgs,
+        };
 
         /// gfxdraw 目标：SurfaceSession 直绘（自有 batch）；Screen 会话
         /// （PyScreenSession）= 当前活跃会话（with_session 路由，须在 with 内）。
-        enum Target<'a> {
+        pub(crate) enum Target<'a> {
             Surf(&'a PySurfaceSession),
             Active,
+            /// MRT 活跃槽（with_mrt_session——镜像双写会话）
+            Targets,
         }
 
-        fn route<'a>(f: &'a PyObjectRef, vm: &VirtualMachine) -> PyResult<Target<'a>> {
+        pub(crate) fn route<'a>(f: &'a PyObjectRef, vm: &VirtualMachine) -> PyResult<Target<'a>> {
             if let Some(ss) = f.downcast_ref::<PySurfaceSession>() {
                 return Ok(Target::Surf(ss));
             }
             if f.downcast_ref::<PyScreenSession>().is_some() {
                 return Ok(Target::Active);
             }
+            if f.downcast_ref::<crate::rpy::pygame::pygame::PyTargetsSession>().is_some() {
+                return Ok(Target::Targets);
+            }
             Err(vm.new_type_error(
                 "gfxdraw 目标应为渲染会话（with ...render() as f 的 f）",
             ))
+        }
+
+        // ── 渲染统一 draw 面：状态机口（相机/变换随 gfx 管线分域；
+        // renderpass 作首参——与 SDL_gfx 签名同构，render 会话保持纯通道）──
+
+        /// set_camera(f, camera)：会话相机切换（后续 gfx 绘制进新段；
+        /// 仅本会话生效）
+        #[pyfunction]
+        fn set_camera(
+            f: PyObjectRef,
+            camera: PyRef<crate::rpy::pygame::render::render::PyCamera>,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            match route(&f, vm)? {
+                Target::Surf(s) => s.surface.with_batch(|b| b.set_mvp(Some(camera.0.mvp()))),
+                Target::Active => bridge::with_session(vm, |t| t.set_camera(&camera.0))?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| t.set_camera(&camera.0))?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| t.set_camera(&camera.0))?,
+            }
+            Ok(())
+        }
+
+        /// reset_camera(f)：回 Auto 兜底相机（按目标尺寸现算）
+        #[pyfunction]
+        fn reset_camera(f: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
+            match route(&f, vm)? {
+                Target::Surf(s) => s.surface.with_batch(|b| b.reset_mvp()),
+                Target::Active => bridge::with_session(vm, |t| t.reset_camera())?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| t.reset_camera())?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| t.reset_camera())?,
+            }
+            Ok(())
+        }
+
+        /// set_transform(f, model)：会话变换（后续绘制顶点按此矩阵 CPU 烘）
+        #[pyfunction]
+        fn set_transform(
+            f: PyObjectRef,
+            model: PyRef<crate::rpy::pygame::math::math::PyMat4>,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            match route(&f, vm)? {
+                Target::Surf(s) => s.surface.with_batch(|b| b.set_model(model.0.get())),
+                Target::Active => bridge::with_session(vm, |t| t.set_transform(model.0.get()))?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| t.set_transform(model.0.get()))?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| t.set_transform(model.0.get()))?,
+            }
+            Ok(())
+        }
+
+        /// set_pos(f, x, y, z=0)：会话变换便捷形态（= set_transform(平移)）
+        #[pyfunction]
+        fn set_pos(
+            f: PyObjectRef,
+            args: FuncArgs,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            use rustpython_vm::convert::TryFromObject;
+            let x = args.args.first().and_then(|o| f32::try_from_object(vm, o.clone()).ok()).unwrap_or(0.0);
+            let y = args.args.get(1).and_then(|o| f32::try_from_object(vm, o.clone()).ok()).unwrap_or(0.0);
+            let z = args.args.get(2).and_then(|o| f32::try_from_object(vm, o.clone()).ok()).unwrap_or(0.0);
+            match route(&f, vm)? {
+                Target::Surf(s) => s.surface.with_batch(|b| {
+                    b.set_model(glam::Mat4::from_translation(glam::Vec3::new(x, y, z)))
+                }),
+                Target::Active => bridge::with_session(vm, |t| {
+                    t.set_transform(glam::Mat4::from_translation(glam::Vec3::new(x, y, z)))
+                })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
+                    t.set_transform(glam::Mat4::from_translation(glam::Vec3::new(x, y, z)))
+                })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
+                    t.set_transform(glam::Mat4::from_translation(glam::Vec3::new(x, y, z)))
+                })?,
+            }
+            Ok(())
+        }
+
+        /// reset_transform(f)：回恒等变换
+        #[pyfunction]
+        fn reset_transform(f: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
+            match route(&f, vm)? {
+                Target::Surf(s) => s.surface.with_batch(|b| b.reset_model()),
+                Target::Active => bridge::with_session(vm, |t| t.reset_transform())?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| t.reset_transform())?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| t.reset_transform())?,
+            }
+            Ok(())
+        }
+
+        /// draw_surface(f, src)：画离屏面（位置/变换由 set_transform 承载）
+        #[pyfunction]
+        fn draw_surface(f: PyObjectRef, src: PyRef<PySurface>, vm: &VirtualMachine) -> PyResult<()> {
+            use starfish_pygame::render::DrawTarget;
+            match route(&f, vm)? {
+                Target::Surf(s) => DrawTarget::draw_surface(&*s.surface, &src.surface),
+                Target::Active => bridge::with_session(vm, |t| DrawTarget::draw_surface(t, &src.surface))?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| DrawTarget::draw_surface(t, &src.surface))?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| DrawTarget::draw_surface(t, &src.surface))?,
+            }
+            Ok(())
+        }
+
+        /// draw_surface_centered(f, src, center)：中心锚画面
+        #[pyfunction]
+        fn draw_surface_centered(
+            f: PyObjectRef,
+            src: PyRef<PySurface>,
+            center: crate::rpy::args::SfPoint,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            use starfish_pygame::render::DrawTarget;
+            match route(&f, vm)? {
+                Target::Surf(s) => DrawTarget::draw_surface_centered(
+                    &*s.surface, &src.surface, (center.0 as f32, center.1 as f32)),
+                Target::Active => bridge::with_session(vm, |t| DrawTarget::draw_surface_centered(
+                    t, &src.surface, (center.0 as f32, center.1 as f32)))?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| DrawTarget::draw_surface_centered(
+                    t, &src.surface, (center.0 as f32, center.1 as f32)))?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| DrawTarget::draw_surface_centered(
+                    t, &src.surface, (center.0 as f32, center.1 as f32)))?,
+            }
+            Ok(())
+        }
+
+        /// draw_surface_uv(f, src, uv, tint=None)：子区域画面（area 语义继任）
+        #[pyfunction]
+        fn draw_surface_uv(
+            f: PyObjectRef,
+            src: PyRef<PySurface>,
+            uv: Vec<f32>,
+            tint: Option<SfColor>,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            use starfish_pygame::render::DrawTarget;
+            match route(&f, vm)? {
+                Target::Surf(s) => DrawTarget::draw_surface_uv(
+                    &*s.surface, &src.surface,
+                    [uv[0], uv[1], uv[2], uv[3]],
+                    tint.map(|c| c.0).unwrap_or([255, 255, 255, 255])),
+                Target::Active => bridge::with_session(vm, |t| DrawTarget::draw_surface_uv(
+                    t, &src.surface,
+                    [uv[0], uv[1], uv[2], uv[3]],
+                    tint.map(|c| c.0).unwrap_or([255, 255, 255, 255])))?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| DrawTarget::draw_surface_uv(
+                    t, &src.surface,
+                    [uv[0], uv[1], uv[2], uv[3]],
+                    tint.map(|c| c.0).unwrap_or([255, 255, 255, 255])))?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| DrawTarget::draw_surface_uv(
+                    t, &src.surface,
+                    [uv[0], uv[1], uv[2], uv[3]],
+                    tint.map(|c| c.0).unwrap_or([255, 255, 255, 255])))?,
+            }
+            Ok(())
+        }
+
+        /// draw_surface_tf(f, src, mat, tint=None)：显式矩阵画面（mat 全权，
+        /// 不复合会话 transform）
+        #[pyfunction]
+        fn draw_surface_tf(
+            f: PyObjectRef,
+            src: PyRef<PySurface>,
+            mat: PyRef<crate::rpy::pygame::math::math::PyMat4>,
+            tint: Option<SfColor>,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            use starfish_pygame::render::DrawTarget;
+            let tint = tint.map(|c| c.0).map(|px| [px[0] as f32 / 255.0, px[1] as f32 / 255.0, px[2] as f32 / 255.0, px[3] as f32 / 255.0]);
+            match route(&f, vm)? {
+                Target::Surf(s) => DrawTarget::draw_surface_tf(
+                    &*s.surface, &src.surface, mat.0.get(), tint),
+                Target::Active => bridge::with_session(vm, |t| DrawTarget::draw_surface_tf(
+                    t, &src.surface, mat.0.get(), tint))?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| DrawTarget::draw_surface_tf(
+                    t, &src.surface, mat.0.get(), tint))?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| DrawTarget::draw_surface_tf(
+                    t, &src.surface, mat.0.get(), tint))?,
+            }
+            Ok(())
         }
 
         /// pixel(f, x, y, color)
@@ -46,6 +233,10 @@ use std::cell::Cell;
                         [x, y, 1, 1], 0)
                 }
                 Target::Active => bridge::with_session(vm, |t| {
+                    starfish_pygame::draw::rect(t, c,
+                        [x, y, 1, 1], 0)
+                })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
                     starfish_pygame::draw::rect(t, c,
                         [x, y, 1, 1], 0)
                 })?,
@@ -96,6 +287,9 @@ use std::cell::Cell;
                 Target::Active => bridge::with_session(vm, |t| {
                     starfish_pygame::draw::line(t, c, (x1, y1), (x2, y2), 1)
                 })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
+                    starfish_pygame::draw::line(t, c, (x1, y1), (x2, y2), 1)
+                })?,
             };
             Ok(())
         }
@@ -132,6 +326,9 @@ use std::cell::Cell;
                 Target::Active => bridge::with_session(vm, |t| {
                     starfish_pygame::draw::circle(t, c, (x, y), r, 1)
                 })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
+                    starfish_pygame::draw::circle(t, c, (x, y), r, 1)
+                })?,
             };
             Ok(())
         }
@@ -166,6 +363,9 @@ use std::cell::Cell;
                 Target::Active => bridge::with_session(vm, |t| {
                     starfish_pygame::draw::circle(t, c, (x, y), r, 0)
                 })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
+                    starfish_pygame::draw::circle(t, c, (x, y), r, 0)
+                })?,
             };
             Ok(())
         }
@@ -186,6 +386,9 @@ use std::cell::Cell;
             match route(&f, vm)? {
                 Target::Surf(s) => starfish_pygame::draw::ellipse(&*s.surface, c, rect, 1),
                 Target::Active => bridge::with_session(vm, |t| {
+                    starfish_pygame::draw::ellipse(t, c, rect, 1)
+                })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
                     starfish_pygame::draw::ellipse(t, c, rect, 1)
                 })?,
             };
@@ -224,6 +427,9 @@ use std::cell::Cell;
                 Target::Active => bridge::with_session(vm, |t| {
                     starfish_pygame::draw::ellipse(t, c, rect, 0)
                 })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
+                    starfish_pygame::draw::ellipse(t, c, rect, 0)
+                })?,
             };
             Ok(())
         }
@@ -250,6 +456,9 @@ use std::cell::Cell;
             match route(&f, vm)? {
                 Target::Surf(sfc) => starfish_pygame::draw::arc(&*sfc.surface, c, rect, s, e, 1),
                 Target::Active => bridge::with_session(vm, |t| {
+                    starfish_pygame::draw::arc(t, c, rect, s, e, 1)
+                })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
                     starfish_pygame::draw::arc(t, c, rect, s, e, 1)
                 })?,
             };
@@ -313,6 +522,9 @@ use std::cell::Cell;
                 Target::Active => bridge::with_session(vm, |t| {
                     starfish_pygame::draw::polygon(t, c, &pts.0, 0)
                 })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
+                    starfish_pygame::draw::polygon(t, c, &pts.0, 0)
+                })?,
             };
             Ok(())
         }
@@ -336,6 +548,9 @@ use std::cell::Cell;
                 Target::Active => bridge::with_session(vm, |t| {
                     starfish_pygame::draw::polygon(t, c, &pts.0, 1)
                 })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
+                    starfish_pygame::draw::polygon(t, c, &pts.0, 1)
+                })?,
             };
             Ok(())
         }
@@ -347,6 +562,9 @@ use std::cell::Cell;
             match route(&f, vm)? {
                 Target::Surf(s) => starfish_pygame::draw::polygon(&*s.surface, c, &points.0, 1),
                 Target::Active => bridge::with_session(vm, |t| {
+                    starfish_pygame::draw::polygon(t, c, &points.0, 1)
+                })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
                     starfish_pygame::draw::polygon(t, c, &points.0, 1)
                 })?,
             };
@@ -373,6 +591,9 @@ use std::cell::Cell;
                 Target::Active => bridge::with_session(vm, |t| {
                     starfish_pygame::draw::polygon(t, c, &points.0, 0)
                 })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
+                    starfish_pygame::draw::polygon(t, c, &points.0, 0)
+                })?,
             };
             Ok(())
         }
@@ -385,6 +606,8 @@ use std::cell::Cell;
             match route(&f, vm)? {
                 Target::Surf(s) => starfish_pygame::draw::rect(&*s.surface, c, r, 1),
                 Target::Active => bridge::with_session(vm, |t| starfish_pygame::draw::rect(t, c, r, 1))?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| starfish_pygame::draw::rect(t, c, r, 1))?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| starfish_pygame::draw::rect(t, c, r, 1))?,
             };
             Ok(())
         }
@@ -397,6 +620,8 @@ use std::cell::Cell;
             match route(&f, vm)? {
                 Target::Surf(s) => starfish_pygame::draw::rect(&*s.surface, c, r, 0),
                 Target::Active => bridge::with_session(vm, |t| starfish_pygame::draw::rect(t, c, r, 0))?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| starfish_pygame::draw::rect(t, c, r, 0))?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| starfish_pygame::draw::rect(t, c, r, 0))?,
             };
             Ok(())
         }
