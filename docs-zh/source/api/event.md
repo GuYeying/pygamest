@@ -27,7 +27,7 @@
 
 ## <span class="c-func">函数</span>
 
-#### <span class="c-func">get() -> list[Event]</span> { #get }
+#### <span class="c-func">get() -> list[Event]</span>
 
 排空事件队列，返回**全部**待处理事件（非阻塞）。
 
@@ -40,14 +40,14 @@ for e in pygame.event.get():
 - :returns: 本帧全部事件
 - :rtype: list[Event]
 
-#### <span class="c-func">poll() -> Event | None</span> { #poll }
+#### <span class="c-func">poll() -> Event | None</span>
 
 弹出队首事件（其余留在队列——与 `get()` 的全量排空互补）。
 
 - :returns: 队首事件，队列空时 None
 - :rtype: Event | None
 
-#### <span class="c-func">clear()</span> { #clear }
+#### <span class="c-func">clear()</span>
 
 清空事件队列。
 
@@ -96,11 +96,3 @@ for e in pygame.event.get():
 ##### <span class="c-attr">w / h</span>
 
 窗口新尺寸（仅 resized；其余 0）。
-
-### <span class="c-class">Key —— 类型化键值</span>
-
-`e.key` 的载体；K_* 常量全表在 [pygame.key](key.md)。
-
-##### <span class="c-magic">__eq__() -> bool</span>
-
-值语义相等比对：`e.key == pygame.key.K_x` ✓。

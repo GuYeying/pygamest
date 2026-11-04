@@ -1,68 +1,93 @@
 /* ==========================================
-   Pygame 风格主题配色
+   Rust 风格主题（2026-11-04 弃 pygame 绿 → Rust 色调）
+   炭黑侧栏 + Rust 橙 accent + 纸白内容区
    ========================================== */
 
-/* 左侧侧边导航栏 #6CED36 */
+/* ── 左侧导航栏：炭黑 ── */
 .wy-nav-side {
-    background: #6CED36 !important;
+    background: #1e2226 !important;
 }
 
-/* 侧边顶部搜索头部 #C1FC35 */
+/* 侧边顶部搜索头：更深炭黑 */
 .wy-side-nav-search {
-    background: #C1FC35 !important;
+    background: #14171a !important;
 }
 
 .wy-side-nav-search > a,
 .wy-side-nav-search .wy-dropdown > a {
-    color: #000000 !important;
+    color: #ffffff !important;
     font-weight: bold;
+}
+
+.wy-side-nav-search input[type="text"] {
+    border-color: #ce422b !important;
 }
 
 /* 侧边菜单 */
 .wy-menu-vertical a {
-    color: #002200 !important;
+    color: #b9bfc6 !important;
 }
 
 .wy-menu-vertical a:hover {
-    color: #0055cc !important;
-    background-color: #bfff80 !important;
+    color: #ffffff !important;
+    background-color: #2d3339 !important;
 }
 
 .wy-menu-vertical li.current > a {
-    background: #C1FC35 !important;
-    color: #000000 !important;
+    background: #2d3339 !important;
+    color: #ffffff !important;
+    box-shadow: inset 3px 0 0 #ce422b;
 }
 
 .wy-menu-vertical li.toctree-l2 a {
-    color: #003300 !important;
+    color: #9aa2a9 !important;
 }
 
 .wy-menu-vertical li.toctree-l2 a:hover {
-    color: #0055cc !important;
-    background-color: #bfff80 !important;
+    color: #ffffff !important;
+    background-color: #2d3339 !important;
 }
 
-.wy-side-nav-search input[type="text"] {
-    border-color: #399900 !important;
+.wy-menu-vertical li.toctree-l2 li.current > a {
+    box-shadow: inset 3px 0 0 #ce422b;
 }
 
 /* ==========================================
-   右侧内容区背景 #ACEDBC
+   右侧内容区：纸白
    ========================================== */
 
 .wy-body-for-nav,
 .wy-nav-content-wrap,
 .wy-nav-content {
-    background-color: #ACEDBC !important;
+    background-color: #faf9f7 !important;
 }
 
 .rst-content {
-    background-color: #ACEDBC !important;
     padding: 1rem;
 }
 
-.document {
-    background-color: #ACEDBC !important;
+.rst-content h1 {
+    border-bottom: 2px solid #ce422b;
+}
+
+.rst-content h2 {
+    border-bottom: 1px solid #e3ddd6;
+}
+
+/* ==========================================
+   标题缩进层级（分类 h2 → 类型 h3 → 成员 h4/h5）
+   ========================================== */
+
+.rst-content h3 {
+    margin-left: 1.5rem;
+}
+
+.rst-content h4 {
+    margin-left: 3rem;
+}
+
+.rst-content h5 {
+    margin-left: 4.5rem;
 }
 
 /* ==========================================
@@ -83,7 +108,7 @@
     object-fit: contain;
     padding: 6px;
     border-radius: 999px;
-    background-color: #d4ff9e;
+    background-color: #f6ddd3;
 }
 
 .sd-card ul {
@@ -99,17 +124,17 @@
 
 .sd-card li a,
 .sd-card li a:visited {
-    color: #0055cc !important;
+    color: #b7410e !important;
     text-decoration: none;
 }
 
 .sd-card li a:hover {
-    color: #003399 !important;
+    color: #8a300b !important;
     text-decoration: underline;
 }
 
 .sd-card strong {
-    color: #111111;
+    color: #1e2226;
 }
 
 /* ==========================================
@@ -128,37 +153,37 @@
 }
 
 .tag.magic {
-    background: #d8c8ff;
-    color: #2b0066;
+    background: #e9dcfe;
+    color: #4b2ba0;
 }
 
 .tag.private {
-    background: #ffd3bc;
-    color: #702000;
+    background: #f6d9cf;
+    color: #8a2f0e;
 }
 
 .tag.internal {
-    background: #ffe8da;
-    color: #702000;
+    background: #fbe7df;
+    color: #8a2f0e;
 }
 
 .tag.attr {
-    background: #e4ffd9;
-    color: #004400;
+    background: #d3ecef;
+    color: #085e6d;
 }
 
 .tag.method {
-    background: #e4ffd9;
-    color: #004400;
+    background: #f9ddd5;
+    color: #8a2418;
 }
 
 .tag.static {
-    background: #d0e8ff;
-    color: #002866;
+    background: #e2e8f0;
+    color: #334155;
 }
 
 .tag.async {
-    border: 2px dashed #7DFFED;
+    border: 2px dashed #8250df;
 }
 
 /* ==========================================
@@ -190,24 +215,24 @@
 }
 
 /* ==========================================
-   代码块
+   代码块：微暖纸底
    ========================================== */
 
 .highlight {
-    background: #e6ffb2 !important;
+    background: #f6f2ee !important;
 }
 
 /* ==========================================
-   全局链接
+   全局链接：Rust 氧化橙
    ========================================== */
 
 .rst-content a,
 .rst-content a:visited {
-    color: #0055cc;
+    color: #b7410e;
 }
 
 .rst-content a:hover {
-    color: #003399;
+    color: #8a300b;
 }
 
 
@@ -244,11 +269,11 @@ details.autodoc-details .sd-summary-toggle {
 }
 
 /* ==========================================
-   分类着色（API 成员七级色标，2026-11-03）
+   分类着色（API 成员七级色标，Rust 色调 2026-11-04）
    ========================================== */
 
-.c-const { color: #7f8c8d; }   /* 常量：灰 */
-.c-func  { color: #27ae60; }   /* 模块函数：绿 */
-.c-class { color: #2980b9; }   /* 类：蓝 */
-.c-magic { color: #8a63d2; }   /* 魔术方法：紫 */
-.c-attr  { color: #27ae60; }   /* 属性：绿 */
+.c-const { color: #6e7781; }   /* 常量：石墨灰 */
+.c-func  { color: #ce422b; }   /* 模块函数：Rust 橙 */
+.c-class { color: #9a3412; }   /* 类：焦橙棕 */
+.c-magic { color: #8250df; }   /* 魔术方法：紫 */
+.c-attr  { color: #0e7490; }   /* 属性：深青 */

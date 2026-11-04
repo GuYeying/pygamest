@@ -48,6 +48,13 @@ myst_enable_extensions = [
     "attrs_block",
 ]
 
+# myst 标题自动锚点（h1–h5）：URL 可深链到任意成员标题，
+# 手写 `{ #id }` 属性语法在 myst 不解析——统一走这里
+myst_heading_anchors = 5
+
+# API 页定约跳级（分类 h2 / 类型 h3 / 成员 h4-h5）是有意的，压掉 header 警告
+suppress_warnings = ["myst.header"]
+
 
 html_theme = "sphinx_rtd_theme"
 html_css_files = ["custom.css"]
