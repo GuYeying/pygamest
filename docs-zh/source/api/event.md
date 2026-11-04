@@ -27,7 +27,7 @@
 
 ## <span class="c-func">函数</span>
 
-#### <span class="c-func">get() -> list[Event]</span>
+#### <span class="c-func">get() -> list[Event]</span> { #get }
 
 排空事件队列，返回**全部**待处理事件（非阻塞）。
 
@@ -40,14 +40,14 @@ for e in pygame.event.get():
 - :returns: 本帧全部事件
 - :rtype: list[Event]
 
-#### <span class="c-func">poll() -> Event | None</span>
+#### <span class="c-func">poll() -> Event | None</span> { #poll }
 
 弹出队首事件（其余留在队列——与 `get()` 的全量排空互补）。
 
 - :returns: 队首事件，队列空时 None
 - :rtype: Event | None
 
-#### <span class="c-func">clear()</span>
+#### <span class="c-func">clear()</span> { #clear }
 
 清空事件队列。
 
@@ -63,37 +63,37 @@ for e in pygame.event.get():
 
 `<Event keydown key=K_ESCAPE pos=(0, 0) button=0>` 形态的可读字符串。
 
-##### <span class="c-attr">type</span>  }
+##### <span class="c-attr">type</span>
 
 事件类型标签——字符串形态（`"keydown"` 等），比对上方常量表。
 
-##### <span class="c-attr">key</span>  }
+##### <span class="c-attr">key</span>
 
 键盘事件 = `pygame.key.Key` 实例，值语义相等可比对
 （`e.key == pygame.key.K_x` ✓）；非键盘事件 = `int 0`。
 
-##### `x` / `y`  }
+##### <span class="c-attr">x / y</span>
 
 鼠标/触摸坐标（物理点已映射至 display 逻辑坐标，HiDPI 安全）；
 非指针事件 = 0。
 
-##### <span class="c-attr">button</span>  }
+##### <span class="c-attr">button</span>
 
 鼠标按键序号；非鼠标事件 = 0。
 
-##### <span class="c-attr">mod</span>  }
+##### <span class="c-attr">mod</span>
 
 修饰键位集（KMOD 位；仅 keydown/keyup 携带，其余 0）。
 
-##### <span class="c-attr">repeat</span>  }
+##### <span class="c-attr">repeat</span>
 
 自动重复标记（仅 keydown；其余 False）。
 
-##### <span class="c-attr">text</span>  }
+##### <span class="c-attr">text</span>
 
 文本输入内容（仅 textinput；其余 `""`）。
 
-##### `w` / `h`  }
+##### <span class="c-attr">w / h</span>
 
 窗口新尺寸（仅 resized；其余 0）。
 
