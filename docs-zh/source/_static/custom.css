@@ -1,11 +1,13 @@
-/* ========== Pygame 风格主题 ========== */
+/* ==========================================
+   Pygame 风格主题配色
+   ========================================== */
 
-/* 左侧侧边导航栏 */
+/* 左侧侧边导航栏 #6CED36 */
 .wy-nav-side {
     background: #6CED36 !important;
 }
 
-/* 侧边顶部搜索头部 */
+/* 侧边顶部搜索头部 #C1FC35 */
 .wy-side-nav-search {
     background: #C1FC35 !important;
 }
@@ -44,7 +46,9 @@
     border-color: #399900 !important;
 }
 
-/* ========== 右侧内容区背景强制改成 #ACEDBC ========== */
+/* ==========================================
+   右侧内容区背景 #ACEDBC
+   ========================================== */
 
 .wy-body-for-nav,
 .wy-nav-content-wrap,
@@ -57,20 +61,20 @@
     padding: 1rem;
 }
 
-/* 页面最外层白色容器也去掉 */
 .document {
     background-color: #ACEDBC !important;
 }
 
-/* 卡片保持白底，这样文字和蓝色链接更清楚 */
-.sd-card {
-    background-color: #ffffff !important;
-}
-
-/* ========== 卡片样式 ========== */
+/* ==========================================
+   卡片样式
+   ========================================== */
 
 .sd-card.sd-h-100 {
     height: 100%;
+}
+
+.sd-card {
+    background-color: #ffffff !important;
 }
 
 .sd-card img {
@@ -93,8 +97,6 @@
     font-size: 0.9rem;
 }
 
-/* ========== 卡片内链接：Pygame 蓝色 ========== */
-
 .sd-card li a,
 .sd-card li a:visited {
     color: #0055cc !important;
@@ -110,8 +112,133 @@
     color: #111111;
 }
 
-/* ========== 代码块 ========== */
+/* ==========================================
+   彩色标签系统
+   ========================================== */
+
+.tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75em;
+    font-weight: bold;
+    margin-right: 6px;
+    vertical-align: middle;
+    line-height: 1.4;
+}
+
+.tag.magic {
+    background: #d8c8ff;
+    color: #2b0066;
+}
+
+.tag.private {
+    background: #ffd3bc;
+    color: #702000;
+}
+
+.tag.internal {
+    background: #ffe8da;
+    color: #702000;
+}
+
+.tag.attr {
+    background: #e4ffd9;
+    color: #004400;
+}
+
+.tag.method {
+    background: #e4ffd9;
+    color: #004400;
+}
+
+.tag.static {
+    background: #d0e8ff;
+    color: #002866;
+}
+
+.tag.async {
+    border: 2px dashed #7DFFED;
+}
+
+/* ==========================================
+   Dropdown 折叠块美化
+   ========================================== */
+
+.dropdown {
+    margin-bottom: 0.5rem;
+    border-radius: 6px;
+}
+
+.dropdown .dropdown-title {
+    font-weight: normal;
+    font-size: 0.95rem;
+}
+
+/* 嵌套 dropdown 缩进 */
+.dropdown .dropdown {
+    margin-left: 1rem;
+}
+
+/* ==========================================
+   警告块
+   ========================================== */
+
+.admonition.warning {
+    background: #fff2b3;
+    border-left: 4px solid #f0ad4e;
+}
+
+/* ==========================================
+   代码块
+   ========================================== */
 
 .highlight {
     background: #e6ffb2 !important;
+}
+
+/* ==========================================
+   全局链接
+   ========================================== */
+
+.rst-content a,
+.rst-content a:visited {
+    color: #0055cc;
+}
+
+.rst-content a:hover {
+    color: #003399;
+}
+
+
+
+
+/* ========== 1. 匹配 autosummary 汇总面板（模块顶层成员这一栏，你截图红框） ========== */
+details.autosummary {
+    open: true !important;
+}
+details.autosummary > summary {
+    pointer-events: none; /* 禁止点击收起 */
+    list-style: none;
+}
+details.autosummary > summary::-webkit-details-marker {
+    display: none !important;
+}
+details.autosummary .sd-summary-toggle {
+    display: none !important;
+}
+
+/* ========== 2. 匹配普通 autodoc 详情面板 ========== */
+details.autodoc-details {
+    open: true !important;
+}
+details.autodoc-details > summary {
+    pointer-events: none;
+    list-style: none;
+}
+details.autodoc-details > summary::-webkit-details-marker {
+    display: none !important;
+}
+details.autodoc-details .sd-summary-toggle {
+    display: none !important;
 }

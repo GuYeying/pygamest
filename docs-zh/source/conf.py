@@ -22,12 +22,25 @@ source_suffix = {
 }
 root_doc = 'index'
 
-html_theme = "sphinx_rtd_theme"
-html_theme_options = {
-    "navigation_depth": 4,
-    "collapse_navigation": False,
-    "sticky_navigation": True,
+# 让autodoc的函数、属性、方法，出现在页面TOC里，支持锚点跳转
+toc_object_entries = True
+toc_object_entries_show_parents = "domain"
+
+# --------------------------
+# 侧边栏布局，原生Sphinx写法，兼容性最强
+# --------------------------
+html_sidebars = {
+    "**": ["sidebar-nav-bs", "localtoc.html"]
 }
+
+# --------------- 主题配置（只保留稳定可用参数）---------------
+html_theme = "pydata_sphinx_theme"
+html_theme_options = {
+    "collapse_navigation": True,   # ✅ 左侧导航树：支持折叠三角箭头
+    "navigation_depth": 3,
+}
+# ========== 删掉 html_sidebars 这一段！！不要写！！ ==========
+
 
 html_static_path = ['_static']
 

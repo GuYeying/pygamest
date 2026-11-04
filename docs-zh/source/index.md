@@ -1,6 +1,8 @@
-# Pygamest
+
+
 
 👣 **从这里开始**
+
 
 ::::{grid} 2
 :gutter: 3
@@ -29,8 +31,8 @@
 <strong>安装</strong>
 </div>
 
-- 窗户
-- 麦克
+- Windows
+- macOS
 - Linux
 - 从源码安装
 :::
@@ -45,7 +47,7 @@
 </div>
 
 - 简单平台游戏
-- 采用Pymunk Physics的平台游戏
+- 采用 Pymunk Physics 的平台游戏
 - 使用视图作为菜单和游戏结束画面
 - 纸牌接龙游戏
 - 灯光
@@ -64,9 +66,9 @@
 
 - Discord（最活跃的社区）
 - Reddit /r/pythonarcade
-- 推特@ArcadeLibrary
-- Instagram@PythonArcadeLibrary
-- Facebook的@ArcadeLibrary
+- Twitter @ArcadeLibrary
+- Instagram @PythonArcadeLibrary
+- Facebook @ArcadeLibrary
 - 关于多样性的声明
 :::
 
@@ -80,7 +82,7 @@
 </div>
 
 - 示例游戏
-- 2020年游戏嘉年华大会
+- 2020 年游戏嘉年华大会
 :::
 
 :::{grid-item-card}
@@ -92,8 +94,8 @@
 <strong>API</strong>
 </div>
 
-- 快速API索引
-- 完整街机API文档
+- 快速 API 索引
+- 完整街机 API 文档
 - 图形用户界面
 :::
 
@@ -106,7 +108,7 @@
 <strong>分发你的游戏</strong>
 </div>
 
-- PyInstaller打包教程
+- PyInstaller 打包教程
 :::
 
 :::{grid-item-card}
@@ -114,11 +116,12 @@
 :class-card: sd-h-100
 
 <div style="display:flex;align-items:center;gap:0.6rem;">
-<img src="_static/icons/performance.png" alt="性能">
-<strong>性能</strong>
+<img src="_static/icons/performance.png" alt="贡献指南">
+<strong>贡献指南</strong>
 </div>
 
-- 性能优化指南
+- 源代码架构
+- 维护宗旨
 :::
 
 ::::

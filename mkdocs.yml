@@ -1,0 +1,28 @@
+site_name: pygamest
+site_description: 次世代 pygame —— Python 游戏开发的原生形态
+site_author: GuYeying
+docs_dir: docs
+theme:
+  name: material
+  language: zh
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - content.code.annotate
+extra_css:
+  - stylesheets/badges.css
+nav:
+  - 首页: index.md
+  - API 参考:
+      - pygame.event: event.md
+markdown_extensions:
+  admonition: {}
+  attr_list: {}
+  pymdownx.superfences: {}
+watch:
+  - docs
