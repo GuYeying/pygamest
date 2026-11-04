@@ -161,12 +161,15 @@ fade / 特效挂载在此。
 `"delay_ms"` / `"feedback"`；`distortion` → `"drive"`；`lowpass` →
 `"cutoff"`。
 
-## <span class="c-class">mixer.music —— 流式 BGM</span>
+## <span class="c-func">mixer.music —— 流式 BGM 子模块</span>
 
-### <span class="c-func">load(path)</span>
+#### <span class="c-func">load(path)</span>
 
 加载 BGM。**[差异]** 缺资源不崩溃 = 静音继续（游戏性不受阻，日志记
 因）；`STARFISH_STRICT_ASSETS=1` 恢复真异常。
+
+- :param path: 音乐文件路径
+- :type path: str
 
 #### <span class="c-func">load_bytes(bytes)</span>
 

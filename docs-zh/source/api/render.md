@@ -215,11 +215,34 @@ GPU 纹理。`rgba` = RGBA8 字节列表（w×h×4，None = 零填充）；`kind
 
 像素尺寸。
 
-### <span class="c-class">透明句柄</span>
+### <span class="c-class">Shader —— 着色器句柄</span>
 
-`Shader` / `Buffer` / `BindGroup` / `Pipeline` / `ComputePipeline` /
-`Sampler` / `ColorAttachment`——无方法的透明句柄（wgpu 裸对象不出
-Python 界）。
+WGSL 着色器（`shader()` 产物；无方法——wgpu 裸对象不出 Python 界）。
+
+### <span class="c-class">Buffer —— 缓冲句柄</span>
+
+raw 缓冲（`buffer()` 产物；无方法）。
+
+### <span class="c-class">BindGroup —— 绑定组句柄</span>
+
+`bind_group()` 产物（无方法）。
+
+### <span class="c-class">Pipeline —— 渲染管线句柄</span>
+
+`pipeline()` 产物（无方法）。
+
+### <span class="c-class">ComputePipeline —— 计算管线句柄</span>
+
+`compute_pipeline()` 产物（无方法）。
+
+### <span class="c-class">Sampler —— 采样器句柄</span>
+
+`sampler()` 产物（无方法）。
+
+### <span class="c-class">ColorAttachment —— 帧颜色附件</span>
+
+`screen_attachment()` 产物——主屏当前帧颜色附件快照（查询 / 未来
+自绘逃生口；不透明句柄）。
 
 ### <span class="c-class">RawPass —— 直绘会话</span>
 

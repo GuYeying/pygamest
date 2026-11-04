@@ -20,6 +20,9 @@ render 会话之后、flip 之前（画家序；放会话内会被游戏 batch �
 
 [rapier 行为] 默认把静止体画暗（亮度 ×0.2）——"物体不动就变暗"是
 rapier 睡眠状态编码，非 bug。
+
+[handle] `insert()` 返回的 handle 是**不透明 int**（黑盒，回传给查询
+方法即可，勿自行解包）；无效 handle 一律 ValueError。
 ```
 
 ## <span class="c-func">函数</span>
@@ -38,7 +41,7 @@ rapier 睡眠状态编码，非 bug。
 
 #### <span class="c-func">collect3d(world, draw, sink)</span>
 
-3D 版（`PhysicsWorld3D` / `DebugDraw3D` / `LineSink3D`）。
+3D 版——`PhysicsWorld3D` / `DebugDraw3D` / `LineSink3D`。
 
 ## <span class="c-class">2D 类面</span>
 
@@ -46,42 +49,100 @@ rapier 睡眠状态编码，非 bug。
 
 #### <span class="c-func">PhysicsWorld(gravity=(0, -9.81), dt=1/60)</span>
 
-建世界（米/秒²，y 向上为正；`dt` 固定步长秒）。
+建世界。`gravity` 米/秒²（y 向上为正）；`dt` 固定步长秒。
 
 ##### <span class="c-func">step_frame(real_dt) -> int</span>
 
 真实帧距累积积分（内部固定步长；上限节流防死亡螺旋）——返回实际
 执行步数，0 = 余量不足一步。碰撞事件仅此路径收集。
 
-##### <span class="c-func">step() / set_dt(dt) / sim_time() -> float</span>
+- :type real_dt: float
+- :rtype: int
 
-手动固定步进一次 / 改步长 / 已仿真时长（与真实时间解耦）。
+##### <span class="c-func">step()</span>
+
+固定步长积分一次（不经事件收集）。
+
+##### <span class="c-func">set_dt(dt)</span>
+
+设固定步长（秒）。
+
+- :type dt: float
+
+##### <span class="c-func">sim_time() -> float</span>
+
+已仿真时长（秒；与真实时间解耦）。
+
+- :rtype: float
 
 ##### <span class="c-func">insert(body_builder, collider_builder) -> tuple[int, int]</span>
 
-插入刚体 + 碰撞体——返回 `(body_handle, collider_handle)`。**handle
-是不透明 int**（黑盒，回传给查询方法即可）。builder **一次性消费**
-（二次 insert 抛 ValueError，重建再插）。
+插入刚体 + 碰撞体——返回 `(body_handle, collider_handle)`。
+builder **一次性消费**（二次 insert 抛 ValueError，重建再插）。
 
-##### <span class="c-func">读面</span>
+##### <span class="c-func">translation(h) -> tuple[float, float]</span>
 
-`translation(h) -> (x, y)`（米）/ `rotation(h) -> float`（弧度）/
-`linvel(h) -> (vx, vy)` / `is_sleeping(h) -> bool`（休眠态）。
+刚体平移（米，世界系）。
 
-##### <span class="c-func">写入面</span>
+##### <span class="c-func">rotation(h) -> float</span>
 
-`set_translation(h, pos)`（瞬移）/ `set_rotation(h, angle)` /
-`set_linvel(h, v)` / `set_angvel(h, w)` / `apply_impulse(h, imp)` /
-`wake_up(h)`——全部**自动唤醒**；`set_gravity(g)`（下一帧生效）；
-`remove_body(h) -> bool`（连带全部碰撞体）。
+刚体姿态（弧度）。
 
-##### <span class="c-func">drain_events() -> list</span>
+##### <span class="c-func">linvel(h) -> tuple[float, float]</span>
+
+线速度（米/秒）。
+
+##### <span class="c-func">is_sleeping(h) -> bool</span>
+
+静止体休眠态。
+
+##### <span class="c-func">set_translation(h, pos)</span>
+
+瞬移（自动唤醒）。
+
+- :type pos: tuple[float, float]
+
+##### <span class="c-func">set_rotation(h, angle)</span>
+
+设姿态（弧度；自动唤醒）。
+
+##### <span class="c-func">set_linvel(h, vel)</span>
+
+设线速度（自动唤醒）。
+
+- :type vel: tuple[float, float]
+
+##### <span class="c-func">set_angvel(h, w)</span>
+
+设角速度（自动唤醒）。
+
+##### <span class="c-func">apply_impulse(h, impulse)</span>
+
+施加冲量（自动唤醒）。
+
+- :type impulse: tuple[float, float]
+
+##### <span class="c-func">wake_up(h)</span>
+
+唤醒休眠体。
+
+##### <span class="c-func">set_gravity(g)</span>
+
+改重力（下一帧生效）。
+
+- :type g: tuple[float, float]
+
+##### <span class="c-func">remove_body(h) -> bool</span>
+
+移除刚体（连带其全部碰撞体）；返回是否存在并已移除。
+
+##### <span class="c-func">drain_events() -> list[tuple[str, int, int]]</span>
 
 排空自上帧以来的碰撞事件——`[(kind, h1, h2), ...]`，`kind` =
 `"started"` / `"stopped"`。**仅 `events=True` 的碰撞体产生事件**
 （传感器触发器同此通道）；每帧调用一次，通道缓冲按步累积。
 
-##### <span class="c-func">cast_ray(origin, dir, max_toi=None) -> tuple | None</span>
+##### <span class="c-func">cast_ray(origin, dir, max_toi=None) -> tuple[int, float] | None</span>
 
 射线查询——命中返回 `(collider_handle, 距离)`。`dir` 非单位向量按其
 模长定射线长；`max_toi` 为其倍数上限（None = 缺省 100.0）。
@@ -96,35 +157,79 @@ rapier 睡眠状态编码，非 bug。
 
 #### <span class="c-func">RigidBodyBuilder(kind, translation=None, rotation=None, linvel=None, angvel=None, can_sleep=True)</span>
 
-`kind`: `"dynamic"` / `"fixed"` / `"kinematic"`；`rotation` 弧度；
-单位：米 / 米每秒。
+- :param kind: 刚体类型——`"dynamic"` / `"fixed"` / `"kinematic"`
+- :type kind: str
+- :param translation: 初始平移（米）
+- :type translation: tuple[float, float] | None
+- :param rotation: 初始姿态（弧度）
+- :type rotation: float | None
+- :param linvel: 初始线速度（米/秒）
+- :type linvel: tuple[float, float] | None
+- :param angvel: 初始角速度（弧度/秒）
+- :type angvel: float | None
+- :param can_sleep: 允许休眠（缺省 True）
+- :type can_sleep: bool
 
 ### <span class="c-class">ColliderBuilder —— 碰撞体 builder</span>
 
 #### <span class="c-func">ColliderBuilder(kind, hx=None, hy=None, radius=None, translation=None, friction=None, restitution=None, density=None, sensor=False, events=False)</span>
 
-`kind`: `"cuboid"`（须给 hx/hy 半尺寸，米）/ `"ball"`（须给 radius）
-——**[差异] v1 仅此两种**。`sensor` = 传感器（只碰不撞）；`events` =
-产生碰撞事件（缺省 false 省开销）。
+- :param kind: 形状——`"cuboid"`（须给 hx/hy 半尺寸，米）/
+  `"ball"`（须给 radius）——**[差异] v1 仅此两种**
+- :type kind: str
+- :param translation: 相对刚体原点的偏移（米）
+- :type translation: tuple[float, float] | None
+- :param sensor: 传感器（只碰不撞，缺省 False）
+- :type sensor: bool
+- :param events: 产生碰撞事件（`drain_events` 只报开启者——触发器 /
+  碰撞检测入口，缺省 False 省开销）
+- :type events: bool
 
-### <span class="c-class">调试渲染三件套</span>
+### <span class="c-class">DebugDraw —— 调试渲染控制面</span>
 
 #### <span class="c-func">DebugDraw(collider_shapes=None, contacts=None, joints=None, aabbs=None, axes=None)</span>
 
 渲染内容位集（缺省 = 形状 + 接触开）。
-`set_mode(...)` 运行期改位（只更新给出的位）。
+
+##### <span class="c-func">set_mode(collider_shapes=, contacts=, joints=, aabbs=, axes=)</span>
+
+运行期改渲染内容位（只更新给出的位，未给的保持不变）。
+
+### <span class="c-class">LineSink —— 线段收集器</span>
 
 #### <span class="c-func">LineSink()</span>
 
-线段收集器——`line_count() -> int` / `is_empty() -> bool` /
-`clear()`（保 capacity）。
+`collect()` 的落点（每帧复用零分配）。
+
+##### <span class="c-func">line_count() -> int</span>
+
+当前线段数（collect 后有效）。
+
+##### <span class="c-func">is_empty() -> bool</span>
+
+是否无线段。
+
+##### <span class="c-func">clear()</span>
+
+清空缓冲（保 capacity）。
+
+### <span class="c-class">DebugLinesRenderer —— 调试线绘制器</span>
 
 #### <span class="c-func">DebugLinesRenderer(ppm=50.0)</span>
 
-调试线绘制器（ortho 相机；GPU 惰性装配——首次 draw 须已 set_mode）。
-`set_camera(ppm)` 改缩放（下次 draw 生效）；`follow_global_camera()`
-切全局相机跟随——**[差异]** 2D 调试线世界坐标为米，Auto2d 全局相机
-按像素正交，米坐标直入会过小——跟随时请配 Manual 相机。
+ortho 相机（像素/米缩放）；GPU 惰性装配——首次 draw 须已 set_mode。
+
+##### <span class="c-func">set_camera(ppm)</span>
+
+改 ortho 缩放（下次 draw 生效）——同时解除全局相机跟随。
+
+- :type ppm: float
+
+##### <span class="c-func">follow_global_camera(enable=True)</span>
+
+切全局相机跟随——draw 前同步引擎全局 MVP。**[差异]** 2D 调试线世界
+坐标为米，Auto2d 全局相机按像素正交，米坐标直入会过小——跟随时请配
+Manual 相机。
 
 #### <span class="c-func">t.draw_debug(renderer, sink)</span>（会话方法）
 
@@ -147,20 +252,44 @@ Surface = flush 收口 / 画中画物理动画）。每帧一次。
 `translation(h) -> (x, y, z)`、`rotation(h) -> (x, y, z, w)` 四元数、
 `set_rotation(h, (rx, ry, rz))` 欧拉角、`apply_impulse(h, (ix, iy, iz))`。
 
-### <span class="c-class">RigidBodyBuilder3D / ColliderBuilder3D</span>
+### <span class="c-class">RigidBodyBuilder3D —— 刚体 builder</span>
 
-`RigidBodyBuilder3D(kind, translation=None, rotation=None, linvel=None,
-angvel=None, can_sleep=True)`——`rotation` 收**欧拉角向量**。
-`ColliderBuilder3D(kind, hx=None, hy=None, hz=None, radius=None, ...)`
-——cuboid 须给 hx/hy/hz 半尺寸；**v1 仅 cuboid / ball**。
+#### <span class="c-func">RigidBodyBuilder3D(kind, translation=None, rotation=None, linvel=None, angvel=None, can_sleep=True)</span>
 
-### <span class="c-class">DebugDraw3D / LineSink3D / DebugLinesRenderer3D</span>
+同 2D 形态——`rotation` 收**欧拉角向量** `(rx, ry, rz)` 弧度；
+`linvel` / `angvel` 三分量。
 
-`DebugDraw3D(...)` 内容位集构造期定格。`LineSink3D()` 同 2D 三方法。
-`DebugLinesRenderer3D(eye=(0, 6, 14), target=(0, 0, 0), fov=1.0)`——
-look-at 透视相机（fov = 垂直视场角**弧度**，1.0 ≈ 57°）；
-`set_camera_lookat(eye, target, fov)` 改机位（宽高比自动跟随）；
-`follow_global_camera()` 切全局跟随（再调 set_camera_lookat 解除）。
+### <span class="c-class">ColliderBuilder3D —— 碰撞体 builder</span>
+
+#### <span class="c-func">ColliderBuilder3D(kind, hx=None, hy=None, hz=None, radius=None, translation=None, friction=None, restitution=None, density=None, sensor=False, events=False)</span>
+
+cuboid 须给 hx/hy/hz 半尺寸（米）；**v1 仅 cuboid / ball**。
+
+### <span class="c-class">DebugDraw3D —— 调试渲染控制面</span>
+
+#### <span class="c-func">DebugDraw3D(collider_shapes=None, contacts=None, joints=None, aabbs=None, axes=None)</span>
+
+内容位集构造期定格（缺省 = 形状 + 接触开）。
+
+### <span class="c-class">LineSink3D —— 线段收集器</span>
+
+#### <span class="c-func">LineSink3D()</span>
+
+方法同 2D：`line_count()` / `is_empty()` / `clear()`。
+
+### <span class="c-class">DebugLinesRenderer3D —— 调试线绘制器</span>
+
+#### <span class="c-func">DebugLinesRenderer3D(eye=(0, 6, 14), target=(0, 0, 0), fov=1.0)</span>
+
+look-at 透视相机（`fov` = 垂直视场角**弧度**，1.0 ≈ 57°）。
+
+##### <span class="c-func">set_camera_lookat(eye, target, fov)</span>
+
+改机位（下次 draw 生效；视口宽高比自动跟随）——同时解除全局跟随。
+
+##### <span class="c-func">follow_global_camera(enable=True)</span>
+
+切全局相机跟随（再调 `set_camera_lookat` 解除）。
 
 #### <span class="c-func">t.draw_debug_3d(renderer, sink)</span>（会话方法）
 

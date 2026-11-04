@@ -162,7 +162,7 @@ def draw(self, ui):
 `ui.horizontal()` 无参形态的返回物（仅供 `with`；不可手工构造）。
 `__exit__` 回填父光标（不抑制块内异常）；跨帧持有报 TypeError。
 
-### <span class="c-class">会话集成 —— 两条绘制通路</span>
+## <span class="c-func">会话集成 —— 两条绘制通路</span>
 
 实现本体在本模块，方法宿主在 render 会话对象上。
 
@@ -172,8 +172,14 @@ def draw(self, ui):
 游戏内容之上、恒单次落屏（帧末统一落屏——HUD 层级语义由结构保证）。
 坐标系 = **逻辑画布**（`set_mode` 语义尺寸，与游戏内容同系）。
 
+- :param panel: 面板（UiBase 子类实例）
+- :type panel: UiBase
+
 #### <span class="c-func">t.draw_ui_on_surface(panel)</span>（t = `with surf.render()` 会话）
 
 离屏绘制通路——**纯展示形态**（画中画 / 游戏内面板）：剥除窗口指针
 事件，面板显示完全由脚本侧变量驱动（变量驱动定约——交互在游戏侧
 判定，传值不回写）。像素即逻辑点（无 DPI 概念）。
+
+- :param panel: 面板（UiBase 子类实例）
+- :type panel: UiBase
