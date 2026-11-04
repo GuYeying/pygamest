@@ -22,7 +22,8 @@ use std::cell::Cell;
             Py, PyObject, PyObjectRef, PyPayload, PyRef, PyResult, VirtualMachine,
             builtins::{PyStr, PyStrRef},
         };
-        use crate::rpy::{bridge, args};
+        use crate::rpy::pygame::key::key::PyKey;
+use crate::rpy::{bridge, args};
 
 
         // ── 常量（tag/键值定约与 bridge.rs 事件映射一致）──
@@ -43,47 +44,6 @@ use std::cell::Cell;
 
 
 
-        // ── Key：类型化键值（K_* 常量的载体；引擎无整数键码表，typed 是
-        //    starfish locals 的既定决策）──
-        #[derive(Debug, PyPayload)]
-        #[pyattr]
-        #[pyclass(module = "pygame", name = "Key", unhashable = true)]
-        pub(crate) struct PyKey(pub(crate) KeyCode);
-
-        #[pyclass(with(Comparable))]
-        impl PyKey {}
-
-        impl Comparable for PyKey {
-            fn cmp(
-                zelf: &Py<Self>,
-                other: &PyObject,
-                op: PyComparisonOp,
-                _vm: &VirtualMachine,
-            ) -> PyResult<PyComparisonValue> {
-                if op == PyComparisonOp::Eq {
-                    if let Some(o) = other.downcast_ref::<PyKey>() {
-                        return Ok(PyComparisonValue::Implemented(zelf.0 == o.0));
-                    }
-                }
-                Ok(PyComparisonValue::NotImplemented)
-            }
-        }
-
-        
-        // ── Pressed：key.get_pressed() 的按键按下视图 ──
-        // 零尺寸视图不持有（starfish Pressed 无 Debug 不满足 payload 约束），
-        // 查询时实时取视图——状态本体在 key 的 thread-local，语义等价。
-        #[derive(Debug, PyPayload)]
-        #[pyclass(no_attr, module = false, name = "Pressed", unhashable = true)]
-        pub(crate) struct PyPressed;
-
-        #[pyclass]
-        impl PyPressed {
-            #[pymethod]
-            fn get(&self, key: PyRef<PyKey>) -> bool {
-                starfish_pygame::key::get_pressed().get(key.0)
-            }
-        }
 
 
 
@@ -300,4 +260,4 @@ use std::cell::Cell;
     }
 
 
-pub(crate) use event::{module_def, PyEvent, PyKey};
+pub(crate) use event::{module_def,PyEvent};

@@ -23,7 +23,6 @@ pub mod pygame {
     };
     use starfish_pygame::color::Color as EngineColor;
     use crate::rpy::args::{SfColor, SfPoint, SfRect};
-    use crate::rpy::pygame::event::PyKey;
     pub(crate) const DEFAULT_FONT: &[u8] = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/resources/fonts/Antonio-Regular.ttf"

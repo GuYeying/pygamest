@@ -12,9 +12,35 @@ use rustpython_vm::{
 use std::cell::Cell;
 #[pymodule]
     pub mod key {
-        use rustpython_vm::{Py, PyPayload, PyRef, PyResult, VirtualMachine, builtins::PyModule, pyclass};
+        use rustpython_vm::{Py, PyObject, PyPayload, PyRef, PyResult, VirtualMachine, builtins::PyModule, function::PyComparisonValue, pyclass, types::{Comparable, PyComparisonOp}};
         use starfish_we::KeyCode;
-        use crate::rpy::pygame::event::PyKey;
+
+        // ── Key：类型化键值（K_* 常量的载体；引擎无整数键码表，typed 是
+        //    starfish locals 的既定决策）──
+        #[derive(Debug, PyPayload)]
+        #[pyattr]
+        #[pyclass(module = "pygame", name = "Key", unhashable = true)]
+        pub(crate) struct PyKey(pub(crate) KeyCode);
+
+        #[pyclass(with(Comparable))]
+        impl PyKey {}
+
+        impl Comparable for PyKey {
+            fn cmp(
+                zelf: &Py<Self>,
+                other: &PyObject,
+                op: PyComparisonOp,
+                _vm: &VirtualMachine,
+            ) -> PyResult<PyComparisonValue> {
+                if op == PyComparisonOp::Eq {
+                    if let Some(o) = other.downcast_ref::<PyKey>() {
+                        return Ok(PyComparisonValue::Implemented(zelf.0 == o.0));
+                    }
+                }
+                Ok(PyComparisonValue::NotImplemented)
+            }
+        }
+
 
         /// K_* 全表（starfish locals::key 的 108 键，typed KeyCode；
         /// SHIFT/CTRL/ALT/META 为左键别名）。module_exec 钩子注册到
@@ -154,4 +180,4 @@ use std::cell::Cell;
     }
 
 
-pub(crate) use key::module_def;
+pub(crate) use key::{module_def};
