@@ -231,10 +231,16 @@ fn pygame_to_we(ev: &starfish_pygame::event::Event) -> Option<starfish_we::Event
         starfish_pygame::event::Event::TextInput { text } => We::TextInput {
             text: text.clone(),
         },
-        starfish_pygame::event::Event::MouseMotion { x, y } => We::MouseMoved {
-            x: *x as f64,
-            y: *y as f64,
-        },
+        starfish_pygame::event::Event::MouseMotion { x, y } => {
+            // 坐标系换算（渲染统一 draw 面）：脚本事件坐标 = **中心原点
+            // y 向上**；egui = 画布域 0..w × 0..h **y 向下**（第三方库
+            // 惯例，egui 内部零感知）——喂入前转回画布域
+            let (lw, lh) = starfish_pygame::display::get_screen().logical_size();
+            We::MouseMoved {
+                x: *x as f64 + lw as f64 / 2.0,
+                y: lh as f64 / 2.0 - *y as f64,
+            }
+        }
         starfish_pygame::event::Event::MouseButtonDown { button, .. } => We::MouseDown {
             button: match *button {
                 1 => Mb::Left,
