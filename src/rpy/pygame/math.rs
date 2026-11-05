@@ -724,6 +724,17 @@ use std::cell::Cell;
                 Self(Cell::new(self.0.get() * other.0.get())).into_ref(&vm.ctx)
             }
 
+            /// to_cols_array() -> tuple[float, ...]：列主序 16 元素（诊断/教学用）
+            #[pymethod]
+            fn to_cols_array(&self, vm: &VirtualMachine) -> PyObjectRef {
+                let cols = self.0.get().to_cols_array();
+                let items: Vec<PyObjectRef> = cols
+                    .iter()
+                    .map(|&v| vm.ctx.new_float(v as f64).into())
+                    .collect();
+                vm.ctx.new_tuple(items).into()
+            }
+
             /// 变换三维点（含透视除法前的位置变换；glam transform_point3）。
             #[pymethod]
             fn transform_point3(&self, v: PyRef<PyVector3>, vm: &VirtualMachine) -> PyRef<PyVector3> {
