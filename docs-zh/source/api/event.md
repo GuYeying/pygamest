@@ -96,3 +96,20 @@ for e in pygame.event.get():
 ##### <span class="c-attr">w / h</span>
 
 窗口新尺寸（仅 resized；其余 0）。
+
+## <span class="c-func">自定义事件</span>
+
+#### <span class="c-func">custom_code() -> int</span>
+
+自定义事件码分配（原子递增，进程内唯一——`post_user` 的配对键）。
+
+- :rtype: int
+
+#### <span class="c-func">post_user(code)</span>
+
+用户事件入队——下次 `get()` / `poll()` 可收：`e.type == "user"` 且
+`e.key == code`。**保一帧定约**：post 后下一帧可见；再不消费随下帧
+pump 丢弃（与引擎事件同寿命）。
+
+- :param code: `custom_code()` 产物
+- :type code: int

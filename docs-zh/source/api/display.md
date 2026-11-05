@@ -57,3 +57,17 @@ screen = pygame.display.set_mode(
 display 初始化态（`set_mode` 是否已调用）。
 
 - :rtype: bool
+
+#### <span class="c-func">quit()</span>
+
+关闭显示（窗口/屏句柄回收——pygame 标准对；`get_init` 归 False，
+可再 `set_mode` 重开）。
+
+#### <span class="c-func">map_point(x, y) -> (lx, ly)</span>
+
+物理点 → **逻辑中心系**点（呈现映射逆变换——letterbox 等比缩放 +
+居中 + y 翻转 + 中心原点化）。脚本自处理原始触点/外部坐标时用；
+泵层事件坐标已自动映射（常规事件流无需此口）。display 未就绪 =
+原样透传。
+
+- :rtype: tuple[float, float]

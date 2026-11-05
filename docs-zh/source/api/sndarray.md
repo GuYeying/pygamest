@@ -33,3 +33,25 @@ beep = pygame.sndarray.make_sound(
 - :type array: list[list[float]]
 - :returns: Sound
 - :rtype: Sound
+
+#### <span class="c-func">frame_count(sound) -> int</span>
+
+音频帧数（一帧 = 一次采样的全部声道——单声道 = 样本数；立体声 =
+每声道样本数）。
+
+- :rtype: int
+
+#### <span class="c-func">mono(samples, rate) -> Sound</span>
+
+原始样本直接构造单声道（程序化音频——正弦/噪声发生器的落点）。
+
+- :param samples: f32 列表（-1.0 .. 1.0）
+- :param rate: 采样率（须 > 0）
+- :rtype: Sound
+
+#### <span class="c-func">stereo(samples, rate) -> Sound</span>
+
+原始样本直接构造立体声（`samples` **交错**排列 L,R,L,R……帧数 =
+样本数 / 2；奇数长度 ValueError）。
+
+- :rtype: Sound

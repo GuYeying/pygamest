@@ -257,6 +257,21 @@ use crate::rpy::{bridge, args};
         fn clear(_vm: &VirtualMachine) {
             starfish_pygame::event::clear();
         }
+
+        /// custom_code() -> int：自定义事件码分配（原子递增，进程内唯一
+        /// ——`post_user` 的配对键：收到的 `e.type == "user"` 且
+        /// `e.key == code`）。
+        #[pyfunction]
+        fn custom_code(_vm: &VirtualMachine) -> u32 {
+            starfish_pygame::event::custom_code()
+        }
+
+        /// post_user(code)：用户事件入队（下次 get()/poll() 可收——
+        /// typ = "user"，code 在 `e.key` 槽）。
+        #[pyfunction]
+        fn post_user(code: u32, _vm: &VirtualMachine) {
+            starfish_pygame::event::post_user(code);
+        }
     }
 
 

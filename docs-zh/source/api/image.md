@@ -50,3 +50,18 @@ Surface 落盘（格式按扩展名，无扩展名默认 PNG）。**[差异]** �
 扩展图像格式支持态。
 
 - :rtype: bool
+
+#### <span class="c-func">placeholder_surface(size) -> Surface</span>
+
+缺资源占位面（size×size 正方形，引擎内建图案）——加载失败兜底/
+美术未到位时的合法 Surface，可 transform / draw 全链可用。
+
+- :param size: 边长（像素）
+- :rtype: Surface
+
+#### <span class="c-func">strict_assets() -> bool</span>
+
+严格资产模式当前态（`STARFISH_STRICT_ASSETS=1` 时 load 链缺资源
+真异常而非静默兜底——CI 测漏用）。
+
+- :rtype: bool

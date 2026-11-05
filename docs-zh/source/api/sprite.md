@@ -137,3 +137,9 @@ group.add(player)
 with screen.render() as r:
     group.draw()
 ```
+
+##### <span class="c-func">is_empty() -> bool</span>
+
+组是否为空（`count() == 0` 的直读形态——每帧批量绘制前的廉价短路）。
+
+- :rtype: bool

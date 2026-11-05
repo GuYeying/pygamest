@@ -121,6 +121,21 @@ use std::cell::Cell;
         fn get_init(_vm: &VirtualMachine) -> bool {
             starfish_pygame::display::get_init()
         }
+
+        /// quit()：关闭显示（清窗口/屏句柄；pygame 标准对——可与 init 态
+        /// 配合做"重开窗口"生命周期）。
+        #[pyfunction]
+        fn quit(_vm: &VirtualMachine) {
+            starfish_pygame::display::quit();
+        }
+
+        /// map_point(x, y) -> (lx, ly)：物理点 → 逻辑点（窗口/屏的呈现
+        /// 映射逆变换——等比缩放 + 居中）。脚本自处理原始触点/外部坐标
+        /// 时用（泵层事件坐标已自动映射，常规事件流无需此口）。
+        #[pyfunction]
+        fn map_point(x: f64, y: f64, _vm: &VirtualMachine) -> (f64, f64) {
+            starfish_pygame::display::map_point(x, y)
+        }
     }
 
 pub(crate) use display::module_def;

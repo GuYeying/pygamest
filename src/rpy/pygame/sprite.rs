@@ -246,6 +246,13 @@ use std::cell::Cell;
                 self.inner.borrow().count()
             }
 
+            /// is_empty() -> bool：组是否为空（count() == 0 的直读形态
+            /// ——每帧批量绘制前的廉价短路）。
+            #[pymethod]
+            fn is_empty(&self) -> bool {
+                self.inner.borrow().is_empty()
+            }
+
             /// position(sprite) -> (x, y) | None。
             #[pymethod]
             fn position(

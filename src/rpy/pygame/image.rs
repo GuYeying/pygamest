@@ -83,6 +83,24 @@ use std::cell::Cell;
         fn save(_surf: PyRef<PySurface>, _path: String, vm: &VirtualMachine) -> PyResult<()> {
             Err(vm.new_not_implemented_error("image.save 桌面专用（Web 须 save_async 异步语义，后续批次）"))
         }
+
+        /// placeholder_surface(size) -> Surface：缺资源占位面（size×size
+        /// 正方形；引擎内建图案——加载失败兜底/美术未到位时的合法 Surface
+        /// ——可 transform/draw，全链可用）。
+        #[pyfunction]
+        fn placeholder_surface(size: u32, vm: &VirtualMachine) -> PyRef<PySurface> {
+            PySurface {
+                surface: std::sync::Arc::new(sf_image::placeholder_surface(size)),
+            }
+            .into_ref(&vm.ctx)
+        }
+
+        /// strict_assets() -> bool：严格资产模式当前态（`STARFISH_STRICT_ASSETS=1`
+        /// 时 load 链缺资源真异常而非静默兜底——CI 测漏用）。
+        #[pyfunction]
+        fn strict_assets(_vm: &VirtualMachine) -> bool {
+            sf_image::strict_assets()
+        }
     }
 
     // ── key：按下视图查询（K_* 常量在 pygame 顶层，见 KEY_TABLE）─────
