@@ -33,6 +33,9 @@ pub mod pygame_spine;
 // pygame_live2d = Live2D/Cubism 运行时（mocari vendored——阶段 4）
 #[cfg(feature = "live2d")]
 pub mod pygame_live2d;
+// pygame_ozz = 3D 骨骼动画（ozz-animation-rs 适配；nightly 专属——阶段 4）
+#[cfg(feature = "ozz")]
+pub mod pygame_ozz;
 pub mod registry;
 pub mod args;
 pub mod bridge;

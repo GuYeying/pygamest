@@ -27,6 +27,8 @@ physics3d = ["physics", "rapier-starfish-debug/3d"]
 spine = ["dep:pygame_spine"]
 # live2d = Live2D/Cubism 运行时（pygame_live2d——mocari vendored，阶段 4）
 live2d = ["dep:pygame_live2d"]
+# ozz = 3D 骨骼动画（pygame_ozz——ozz-animation-rs 适配；上游 std::simd 需 nightly 构建，不入 default）
+ozz = ["dep:pygame_ozz"]
 
 [dependencies]
 starfish-std        = { git = "https://github.com/GuYeying/starfish", features = ["we"] }
@@ -52,6 +54,7 @@ starfish-pygame     = { git = "https://github.com/GuYeying/starfish" }
 rapier-starfish-debug = { git = "https://github.com/GuYeying/rapier-starfish-debug", features = ["2d"], optional = true }
 pygame_spine = { path = "../pygame_spine", optional = true }
 pygame_live2d = { path = "../pygame_live2d", optional = true }
+pygame_ozz = { path = "../pygame_ozz", optional = true }
 # egui 适配层（vendored fork；feature "render" 拉 egui-wgpu + starfish-render
 # 桥 SfEguiRenderer；egui 经它重导出，本 crate 不直依赖 egui）
 egui-starfish-we = { git = "https://github.com/GuYeying/egui-starfish-we", features = ["render"], optional = true }

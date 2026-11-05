@@ -30,6 +30,8 @@ use crate::rpy::pygame_physics;
 use crate::rpy::pygame_spine;
 #[cfg(feature = "live2d")]
 use crate::rpy::pygame_live2d;
+#[cfg(feature = "ozz")]
+use crate::rpy::pygame_ozz;
 
 /// 多阶段 init 后注入 sys.modules（宿主壳统一入口）。
 pub fn install(vm: &VirtualMachine) {
@@ -123,6 +125,9 @@ fn try_install(vm: &VirtualMachine) -> Result<(), String> {
         pygame_live2d::module_def(&vm.ctx),
         "pygame_live2d",
     )?;
+    // pygame_ozz = 3D 骨骼动画（阶段 4 独立顶层模块；nightly 专属）
+    #[cfg(feature = "ozz")]
+    mount_top(vm, &sys_modules, pygame_ozz::module_def(&vm.ctx), "pygame_ozz")?;
     Ok(())
 }
 
