@@ -63,7 +63,19 @@ egui 是否想要键盘输入。未初始化 = False。
 
 #### <span class="c-func">shutdown()</span>
 
-卸载运行时（幂等；未执行的延迟排程由引擎丢弃并安全清理）。
+撤事件监听 + 卸运行时（幂等）。
+
+#### <span class="c-func">set_scale(ppp) / scale() -> float</span>
+
+全局 UI 缩放（pixels_per_point——DPI 适配，Android 高分屏常用；
+`1.0` = 原生像素）与当前值查询。**次帧生效**（egui 愿望值语义）；
+未初始化时 set 静默、scale 返回 `1.0`。
+
+```{note}
+[v3 缓议] egui::Window / SidePanel / TopPanel（ctx 级多面板——现架构 =
+透明 CentralPanel 单通道定约）；Ui 内嵌游戏纹理（ui_image——需引擎层
+Surface 回读口）。此二者为架构级扩展，非词汇缺口。
+```
 
 ## <span class="c-class">类</span>
 
@@ -144,18 +156,64 @@ egui 是否想要键盘输入。未初始化 = False。
 
 - :rtype: int
 
-##### <span class="c-func">horizontal(callback=None)</span>
+##### <span class="c-func">horizontal(callback=None) / vertical(callback=None)</span>
 
-水平布局双形态：`ui.horizontal(cb)` 回调形态（egui 原生，cb 收到新
-`Ui`）；无参返回 `UiRegion` 区域对象——配 `with ui.horizontal():`
-Python 惯用形态。
+水平 / 垂直布局，双形态（horizontal 为 `UiRegion` 的 with 形态，
+vertical 对偶同款）：
 
 ```python
 def draw(self, ui):
     with ui.horizontal():
         ui.label("HP:")
         ui.progress_bar(self.hp / 100)
+    ui.vertical(lambda v: v.label("回调形态纵向区"))
 ```
+
+##### <span class="c-func">scroll_area(cb)</span>
+
+垂直滚动区（**仅回调形态**——clip 计算须闭包内同步完成，egui 即时
+模式本质）。
+
+##### <span class="c-func">group(cb)</span>
+
+边框组（**仅回调形态**；Frame 闭包域）。
+
+##### <span class="c-func">collapsing(text, default_open, cb)</span>
+
+折叠头（**仅回调形态**；展开状态 id 从文本派生——同文本跨帧记忆）。
+
+##### <span class="c-func">monospace(text) / strong(text) / small_heading(text)</span>
+
+等宽 / 加粗 / 小型加粗标题文本。
+
+##### <span class="c-func">colored(text, r, g, b, a=255)</span>
+
+彩色文本（0..255 非预乘语义；`a` 可省略）。
+
+##### <span class="c-func">button(text, tip=None) -> bool</span>
+
+按钮（tip = 悬停提示文本，可省略）。
+
+##### <span class="c-func">spinner(size=None) / hyperlink(text, url)</span>
+
+转圈指示（size = 直径像素，可省略）/ 超链接。
+
+##### <span class="c-func">password(text) -> str / text_edit_multiline(text) -> str</span>
+
+密码单行框（掩码显示）/ 多行文本框（均返回本帧内容——值状态由脚本
+侧保存）。
+
+##### <span class="c-func">slider_int(text, value, min, max) -> int</span>
+
+整数滑条（数量 / 档位属性；返回本帧值）。
+
+##### <span class="c-func">drag_int(text, value, speed=None, min=None, max=None) -> int</span>
+
+整数拖拽（返回本帧值）。
+
+##### <span class="c-func">color_edit(r, g, b, a=None) -> (r, g, b, a)</span>
+
+颜色编辑器（非预乘 0..255；返回本帧值——工具面板配色用）。
 
 ### <span class="c-class">UiRegion —— with 布局区</span>
 

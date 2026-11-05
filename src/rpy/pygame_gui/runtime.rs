@@ -32,7 +32,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use egui_starfish_we::egui;
-use rustpython_derive::pyclass;
+use rustpython_derive::{pyclass, FromArgs};
 use rustpython_vm::builtins::{PyBaseExceptionRef, PyStrRef};
 use rustpython_vm::function::{ArgIntoFloat, FuncArgs};
 use rustpython_vm::{PyObjectRef, PyPayload, PyRef, PyResult, VirtualMachine};
@@ -630,20 +630,42 @@ pub(crate) fn shutdown() {
     });
 }
 
+/// set_scale(ppp)：全局 UI 缩放（pixels_per_point——DPI 适配；Android
+/// 高分屏 / 桌面缩放场景：1.0 = 原生像素，1.5 = 控件放大 1.5 倍）。未
+/// 初始化静默（无运行时可调）。
+pub(crate) fn set_scale(ppp: f32) {
+    EGUI.with(|c| {
+        if let Some(rc) = c.borrow().as_ref() {
+            rc.borrow().ctx.set_pixels_per_point(ppp.max(0.25));
+        }
+    });
+}
+
+/// scale() -> float：当前 UI 缩放（未初始化 = 1.0）。
+pub(crate) fn scale() -> f32 {
+    EGUI.with(|c| {
+        c.borrow()
+            .as_ref()
+            .map_or(1.0, |rc| rc.borrow().ctx.pixels_per_point())
+    })
+}
+
 // ── with 区域（horizontal() 的无回调形态）────────────────────────
 
-/// 开一个水平布局区（`with ui.horizontal():` 的入口）：建子 Ui 压栈、
-/// CURRENT_UI 换到子 Ui；`__exit__` 回填父光标。返回区域对象供 with。
-fn region_begin(vm: &VirtualMachine) -> PyResult<PyRef<PyUiRegion>> {
+/// 开一个布局区（`with ui.horizontal():` / `with ui.vertical():` 的入口）：
+/// 建子 Ui 压栈、CURRENT_UI 换到子 Ui；`__exit__` 回填父光标。返回区域
+/// 对象供 with。
+fn region_begin(vm: &VirtualMachine, vertical: bool) -> PyResult<PyRef<PyUiRegion>> {
     let parent_ptr = CURRENT_UI.with(|u| *u.borrow()).ok_or_else(|| {
         vm.new_type_error("Ui 仅在 draw_ui 的面板 draw 回调栈内有效")
     })?;
     // SAFETY：parent_ptr 在置位窗口内（回调栈中），Ui 存活
-    let child: egui::Ui = unsafe {
-        (*parent_ptr).new_child(egui::UiBuilder::new().layout(egui::Layout::left_to_right(
-            egui::Align::Center,
-        )))
+    let layout = if vertical {
+        egui::Layout::top_down(egui::Align::LEFT)
+    } else {
+        egui::Layout::left_to_right(egui::Align::Center)
     };
+    let child: egui::Ui = unsafe { (*parent_ptr).new_child(egui::UiBuilder::new().layout(layout)) };
     let mut boxed = Box::new(child);
     let child_ptr: *mut egui::Ui = &mut *boxed; // Box 入栈后堆址稳定，指针跨 move 有效
     UI_REGIONS.with(|r| r.borrow_mut().push(boxed));
@@ -700,6 +722,65 @@ fn as_str<'a>(s: &'a PyStrRef, vm: &VirtualMachine) -> PyResult<&'a str> {
         .ok_or_else(|| vm.new_type_error("文本含非 UTF-8 字符"))
 }
 
+// ── 可选尾参收参结构（Option<T> 裸参不可省略——FromArgs + pyarg
+//    optional 才是可省略形态；horizontal 的 HorizontalArgs 同范式）──
+
+#[derive(FromArgs)]
+struct ButtonArgs {
+    text: PyStrRef,
+    #[pyarg(any, optional)]
+    tip: Option<PyStrRef>,
+}
+
+#[derive(FromArgs)]
+struct SpinnerArgs {
+    #[pyarg(any, optional)]
+    size: Option<ArgIntoFloat>,
+}
+
+#[derive(FromArgs)]
+struct ColoredArgs {
+    text: PyStrRef,
+    r: u8,
+    g: u8,
+    b: u8,
+    #[pyarg(any, optional)]
+    a: Option<u8>,
+}
+
+#[derive(FromArgs)]
+struct ColorEditArgs {
+    r: u8,
+    g: u8,
+    b: u8,
+    #[pyarg(any, optional)]
+    a: Option<u8>,
+}
+
+#[derive(FromArgs)]
+struct DragF32Args {
+    text: PyStrRef,
+    value: ArgIntoFloat,
+    #[pyarg(any, optional)]
+    speed: Option<ArgIntoFloat>,
+    #[pyarg(any, optional)]
+    min: Option<ArgIntoFloat>,
+    #[pyarg(any, optional)]
+    max: Option<ArgIntoFloat>,
+}
+
+#[derive(FromArgs)]
+struct DragIntArgs {
+    text: PyStrRef,
+    value: i32,
+    #[pyarg(any, optional)]
+    speed: Option<ArgIntoFloat>,
+    #[pyarg(any, optional)]
+    min: Option<i32>,
+    #[pyarg(any, optional)]
+    max: Option<i32>,
+}
+
 #[pyclass]
 impl PyUi {
     /// heading(text)：一级标题
@@ -720,11 +801,22 @@ impl PyUi {
         })
     }
 
-    /// button(text) -> bool：按钮（本帧被点击 = True）
+    /// button(text, tip=None) -> bool：按钮（本帧被点击 = True；tip =
+    /// 悬停提示文本——Response.on_hover_text）。
     #[pymethod]
-    fn button(&self, text: PyStrRef, vm: &VirtualMachine) -> PyResult<bool> {
-        let t = as_str(&text, vm)?;
-        with_ui(vm, |ui| ui.button(t).clicked())
+    fn button(&self, args: ButtonArgs, vm: &VirtualMachine) -> PyResult<bool> {
+        let t = as_str(&args.text, vm)?;
+        let tip = match &args.tip {
+            Some(s) => Some(as_str(s, vm)?.to_owned()),
+            None => None,
+        };
+        with_ui(vm, |ui| {
+            let mut r = ui.button(t);
+            if let Some(tip) = tip {
+                r = r.on_hover_text(tip);
+            }
+            r.clicked()
+        })
     }
 
     /// separator()：分隔线
@@ -833,21 +925,13 @@ impl PyUi {
     /// drag_f32(text, value, speed, min, max) -> float：拖拽（全位置传参；
     /// 数值（返回本帧值；text 作前缀标签）
     #[pymethod]
-    fn drag_f32(
-        &self,
-        text: PyStrRef,
-        value: ArgIntoFloat,
-        speed: Option<ArgIntoFloat>,
-        min: Option<ArgIntoFloat>,
-        max: Option<ArgIntoFloat>,
-        vm: &VirtualMachine,
-    ) -> PyResult<f64> {
-        let label = as_str(&text, vm)?.to_owned();
-        let speed = speed.map(|s| s.into_float()).unwrap_or(1.0);
-        let min = min.map(|m| m.into_float() as f32);
-        let max = max.map(|m| m.into_float() as f32);
+    fn drag_f32(&self, args: DragF32Args, vm: &VirtualMachine) -> PyResult<f64> {
+        let label = as_str(&args.text, vm)?.to_owned();
+        let speed = args.speed.map(|s| s.into_float()).unwrap_or(1.0);
+        let min = args.min.map(|m| m.into_float() as f32);
+        let max = args.max.map(|m| m.into_float() as f32);
         with_ui(vm, |ui| {
-            let mut v = value.into_float() as f32;
+            let mut v = args.value.into_float() as f32;
             let mut dv = egui::DragValue::new(&mut v)
                 .speed(speed)
                 .prefix(format!("{label}: "));
@@ -897,7 +981,7 @@ impl PyUi {
         vm: &VirtualMachine,
     ) -> PyResult<PyObjectRef> {
         let Some(cb) = args.cb else {
-            let region = region_begin(vm)?;
+            let region = region_begin(vm, false)?;
             return Ok(region.into());
         };
         with_ui(vm, |ui| {
@@ -912,5 +996,230 @@ impl PyUi {
             });
         })?;
         Ok(vm.ctx.none())
+    }
+
+    // ── 词汇扩充 v3（2026-11-05 阶段2：纵向区 / 闭包区三件套 / 文本
+    //    样式 / 整数数值变体 / 颜色编辑 / 密码多行 / 超链接 / 微调）──
+
+    /// vertical(callback=None)：垂直布局（horizontal 对偶，双形态同款）。
+    #[pymethod]
+    fn vertical(
+        &self,
+        args: crate::rpy::args::HorizontalArgs,
+        vm: &VirtualMachine,
+    ) -> PyResult<PyObjectRef> {
+        let Some(cb) = args.cb else {
+            let region = region_begin(vm, true)?;
+            return Ok(region.into());
+        };
+        with_ui(vm, |ui| {
+            ui.vertical(|ui| {
+                let prev = CURRENT_UI.with(|u| u.borrow_mut().replace(ui as *mut egui::Ui));
+                let inner: PyObjectRef = PyUi.into_ref(&vm.ctx).into();
+                if let Err(e) = cb.call((inner,), vm) {
+                    stash_exc(e);
+                }
+                CURRENT_UI.with(|u| *u.borrow_mut() = prev);
+            });
+        })?;
+        Ok(vm.ctx.none())
+    }
+
+    /// scroll_area(cb)：垂直滚动区（**仅回调形态**——clip 计算须闭包内
+    /// 同步完成，with 形态不可行）。
+    #[pymethod]
+    fn scroll_area(&self, cb: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
+        with_ui(vm, |ui| {
+            egui::ScrollArea::vertical().show(ui, |inner| {
+                let prev = CURRENT_UI.with(|u| u.borrow_mut().replace(inner as *mut egui::Ui));
+                let obj: PyObjectRef = PyUi.into_ref(&vm.ctx).into();
+                if let Err(e) = cb.call((obj,), vm) {
+                    stash_exc(e);
+                }
+                CURRENT_UI.with(|u| *u.borrow_mut() = prev);
+            });
+        })
+    }
+
+    /// group(cb)：边框组（**仅回调形态**；Frame 闭包域）。
+    #[pymethod]
+    fn group(&self, cb: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
+        with_ui(vm, |ui| {
+            ui.group(|inner| {
+                let prev = CURRENT_UI.with(|u| u.borrow_mut().replace(inner as *mut egui::Ui));
+                let obj: PyObjectRef = PyUi.into_ref(&vm.ctx).into();
+                if let Err(e) = cb.call((obj,), vm) {
+                    stash_exc(e);
+                }
+                CURRENT_UI.with(|u| *u.borrow_mut() = prev);
+            });
+        })
+    }
+
+    /// collapsing(text, default_open, cb)：折叠头（**仅回调形态**；展开
+    /// 状态 id 从文本派生——同文本跨帧记忆）。
+    #[pymethod]
+    fn collapsing(
+        &self,
+        text: PyStrRef,
+        default_open: bool,
+        cb: PyObjectRef,
+        vm: &VirtualMachine,
+    ) -> PyResult<()> {
+        let t = as_str(&text, vm)?.to_owned();
+        with_ui(vm, |ui| {
+            egui::CollapsingHeader::new(&t)
+                .default_open(default_open)
+                .show(ui, |inner| {
+                    let prev =
+                        CURRENT_UI.with(|u| u.borrow_mut().replace(inner as *mut egui::Ui));
+                    let obj: PyObjectRef = PyUi.into_ref(&vm.ctx).into();
+                    if let Err(e) = cb.call((obj,), vm) {
+                        stash_exc(e);
+                    }
+                    CURRENT_UI.with(|u| *u.borrow_mut() = prev);
+                });
+        })
+    }
+
+    /// monospace(text)：等宽文本。
+    #[pymethod]
+    fn monospace(&self, text: PyStrRef, vm: &VirtualMachine) -> PyResult<()> {
+        let t = as_str(&text, vm)?;
+        with_ui(vm, |ui| {
+            ui.label(egui::RichText::new(t).monospace());
+        })
+    }
+
+    /// strong(text)：加粗文本。
+    #[pymethod]
+    fn strong(&self, text: PyStrRef, vm: &VirtualMachine) -> PyResult<()> {
+        let t = as_str(&text, vm)?;
+        with_ui(vm, |ui| {
+            ui.label(egui::RichText::new(t).strong());
+        })
+    }
+
+    /// small_heading(text)：小标题（小型加粗——0.37 无 small_heading，
+    /// strong+small 组合承载）。
+    #[pymethod]
+    fn small_heading(&self, text: PyStrRef, vm: &VirtualMachine) -> PyResult<()> {
+        let t = as_str(&text, vm)?;
+        with_ui(vm, |ui| {
+            ui.label(egui::RichText::new(t).strong().small());
+        })
+    }
+
+    /// colored(text, r, g, b, a=255)：彩色文本（0..255；非预乘语义）。
+    #[pymethod]
+    fn colored(&self, args: ColoredArgs, vm: &VirtualMachine) -> PyResult<()> {
+        let t = as_str(&args.text, vm)?;
+        let c = egui::Color32::from_rgba_unmultiplied(
+            args.r,
+            args.g,
+            args.b,
+            args.a.unwrap_or(255),
+        );
+        with_ui(vm, |ui| {
+            ui.label(egui::RichText::new(t).color(c));
+        })
+    }
+
+    /// spinner(size=None)：转圈指示（size = 直径像素）。
+    #[pymethod]
+    fn spinner(&self, args: SpinnerArgs, vm: &VirtualMachine) -> PyResult<()> {
+        let d = args.size.map(|s| s.into_float() as f32);
+        with_ui(vm, |ui| {
+            let mut sp = egui::Spinner::new();
+            if let Some(d) = d {
+                sp = sp.size(d);
+            }
+            ui.add(sp);
+        })
+    }
+
+    /// hyperlink(text, url)：超链接（点击打开浏览器）。
+    #[pymethod]
+    fn hyperlink(&self, text: PyStrRef, url: PyStrRef, vm: &VirtualMachine) -> PyResult<()> {
+        let t = as_str(&text, vm)?.to_owned();
+        let u = as_str(&url, vm)?.to_owned();
+        with_ui(vm, |ui| {
+            ui.hyperlink_to(t, u);
+        })
+    }
+
+    /// password(text) -> str：密码单行框（掩码显示；返回本帧内容）。
+    #[pymethod]
+    fn password(&self, text: PyStrRef, vm: &VirtualMachine) -> PyResult<String> {
+        let t = as_str(&text, vm)?.to_owned();
+        with_ui(vm, |ui| {
+            let mut s = t.clone();
+            ui.add(egui::TextEdit::singleline(&mut s).password(true));
+            s
+        })
+    }
+
+    /// text_edit_multiline(text) -> str：多行文本框（返回本帧内容）。
+    #[pymethod]
+    fn text_edit_multiline(&self, text: PyStrRef, vm: &VirtualMachine) -> PyResult<String> {
+        let t = as_str(&text, vm)?.to_owned();
+        with_ui(vm, |ui| {
+            let mut s = t.clone();
+            ui.add(egui::TextEdit::multiline(&mut s));
+            s
+        })
+    }
+
+    /// slider_int(text, value, min, max) -> int：整数滑条（返回本帧值）。
+    #[pymethod]
+    fn slider_int(
+        &self,
+        text: PyStrRef,
+        value: i32,
+        min: i32,
+        max: i32,
+        vm: &VirtualMachine,
+    ) -> PyResult<i32> {
+        let t = as_str(&text, vm)?;
+        with_ui(vm, |ui| {
+            let mut v = value;
+            ui.add(egui::Slider::new(&mut v, min..=max).text(t));
+            v
+        })
+    }
+
+    /// drag_int(text, value, speed=None, min=None, max=None) -> int：整数
+    /// 拖拽（返回本帧值）。
+    #[pymethod]
+    fn drag_int(&self, args: DragIntArgs, vm: &VirtualMachine) -> PyResult<i32> {
+        let label = as_str(&args.text, vm)?.to_owned();
+        let speed = args.speed.map(|s| s.into_float()).unwrap_or(1.0);
+        with_ui(vm, |ui| {
+            let mut v = args.value;
+            let mut dv = egui::DragValue::new(&mut v)
+                .speed(speed)
+                .prefix(format!("{label}: "));
+            if let (Some(lo), Some(hi)) = (args.min, args.max) {
+                dv = dv.range(lo..=hi);
+            }
+            ui.add(dv);
+            v
+        })
+    }
+
+    /// color_edit(r, g, b, a=None) -> (r, g, b, a)：颜色编辑器（非预乘
+    /// 0..255；返回本帧值）。
+    #[pymethod]
+    fn color_edit(&self, args: ColorEditArgs, vm: &VirtualMachine) -> PyResult<(u8, u8, u8, u8)> {
+        let mut c = egui::Color32::from_rgba_unmultiplied(
+            args.r,
+            args.g,
+            args.b,
+            args.a.unwrap_or(255),
+        );
+        with_ui(vm, |ui| {
+            ui.color_edit_button_srgba(&mut c);
+        })?;
+        Ok((c.r(), c.g(), c.b(), c.a()))
     }
 }

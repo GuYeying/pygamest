@@ -126,6 +126,19 @@ class UiBase:
             crate::rpy::pygame_gui::runtime::shutdown()
         }
 
+        /// set_scale(ppp)：全局 UI 缩放（pixels_per_point——DPI 适配，
+        /// Android 高分屏常用；1.0 = 原生像素）。
+        #[pyfunction]
+        fn set_scale(ppp: f32, _vm: &VirtualMachine) {
+            crate::rpy::pygame_gui::runtime::set_scale(ppp)
+        }
+
+        /// scale() -> float：当前 UI 缩放（未初始化 = 1.0）。
+        #[pyfunction]
+        fn scale(_vm: &VirtualMachine) -> f32 {
+            crate::rpy::pygame_gui::runtime::scale()
+        }
+
         // 定约：egui 的**指针交互归 Screen**（窗口指针直通）——多 surface
         // 的 draw_ui 是纯展示（游戏内面板/画中画），事件不做逐 surface
         // 路由（2026-10-24 注入式方案评估后回退：egui 的原生多视口是
