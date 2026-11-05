@@ -92,33 +92,6 @@ use std::cell::Cell;
             Ok(())
         }
 
-        /// set_pos(f, x, y, z=0)：会话变换便捷形态（= set_transform(平移)）
-        #[pyfunction]
-        fn set_pos(
-            f: PyObjectRef,
-            args: FuncArgs,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            use rustpython_vm::convert::TryFromObject;
-            let x = args.args.first().and_then(|o| f32::try_from_object(vm, o.clone()).ok()).unwrap_or(0.0);
-            let y = args.args.get(1).and_then(|o| f32::try_from_object(vm, o.clone()).ok()).unwrap_or(0.0);
-            let z = args.args.get(2).and_then(|o| f32::try_from_object(vm, o.clone()).ok()).unwrap_or(0.0);
-            match route(&f, vm)? {
-                Target::Surf(s) => s.surface.with_batch(|b| {
-                    b.set_model(glam::Mat4::from_translation(glam::Vec3::new(x, y, z)))
-                }),
-                Target::Active => bridge::with_session(vm, |t| {
-                    t.set_transform(glam::Mat4::from_translation(glam::Vec3::new(x, y, z)))
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    t.set_transform(glam::Mat4::from_translation(glam::Vec3::new(x, y, z)))
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    t.set_transform(glam::Mat4::from_translation(glam::Vec3::new(x, y, z)))
-                })?,
-            }
-            Ok(())
-        }
 
         /// reset_transform(f)：回恒等变换
         #[pyfunction]

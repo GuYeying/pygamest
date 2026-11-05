@@ -201,7 +201,7 @@ async def main():
     try:
         _ba = pygame.Surface((32, 16)); _ba.fill((90, 200, 255))
         with screen.render() as r:
-            pygame.gfxdraw.set_pos(r, -300, -200)
+            pygame.gfxdraw.set_transform(r, pygame.math.mat4_translation(-300, -200, 0))
             pygame.gfxdraw.draw_surface_uv(r, _ba, [0.0, 0.0, 1.0, 0.5], None)          # 源左上 16×16 子区域
             r.quad(_ba, [(200, -180), (260, -190), (250, -240), (190, -230)],
                    [(0, 0), (1, 0), (1, 1), (0, 1)], (255, 255, 255))
@@ -342,7 +342,7 @@ async def main():
             # 文字表面 blit（预渲染一次）。注意：内嵌 Antonio 为拉丁字体——
             # 中文字形不存在会被跳过（demo 文案用纯拉丁；CJK 见 line1）
             if line2 is not None:
-                pygame.gfxdraw.set_pos(r, -390, 240); pygame.gfxdraw.draw_surface(r, line2)          # 哥特风（通用字体）
+                pygame.gfxdraw.set_transform(r, pygame.math.mat4_translation(-390, 240, 0)); pygame.gfxdraw.draw_surface(r, line2)          # 哥特风（通用字体）
             pygame.gfxdraw.filled_circle(r, 0, 0, 40, (255, 200, 0))
             pygame.gfxdraw.line(r, x - 400, 300, x - 340, -300, (200, 60, 60))
             # 批次 K：quat_from_axis_angle → Mat4 → transform_point3 的指针；
@@ -363,12 +363,12 @@ async def main():
             pygame.gfxdraw.filled_ellipse(r, -310, -100, 70, 40, (60, 180, 120))          # 批次 L：椭圆
             pygame.gfxdraw.arc(r, -380, -230, 40, 0, 180, (255, 160, 60))     # 批次 L：弧（度数制）
             pygame.gfxdraw.box(r, (x, 180, 60, 60), (90, 200, 255))   # kwargs 形态（批次 A）
-            pygame.gfxdraw.set_pos(r, 100, 200); pygame.gfxdraw.draw_surface(r, tile)             # Surface 贴图（批次 F）
-            pygame.gfxdraw.set_pos(r, 160, 210); pygame.gfxdraw.draw_surface(r, rot)               # transform.rotate（批次 F）
-            pygame.gfxdraw.set_pos(r, 240, -120); pygame.gfxdraw.draw_surface(r, sm)               # 半透明平滑缩放（批次 L）
-            pygame.gfxdraw.set_pos(r, -100, 280); pygame.gfxdraw.draw_surface(r, tsurf)             # 文字表面一等化（批次 F）
+            pygame.gfxdraw.set_transform(r, pygame.math.mat4_translation(100, 200, 0)); pygame.gfxdraw.draw_surface(r, tile)             # Surface 贴图（批次 F）
+            pygame.gfxdraw.set_transform(r, pygame.math.mat4_translation(160, 210, 0)); pygame.gfxdraw.draw_surface(r, rot)               # transform.rotate（批次 F）
+            pygame.gfxdraw.set_transform(r, pygame.math.mat4_translation(240, -120, 0)); pygame.gfxdraw.draw_surface(r, sm)               # 半透明平滑缩放（批次 L）
+            pygame.gfxdraw.set_transform(r, pygame.math.mat4_translation(-100, 280, 0)); pygame.gfxdraw.draw_surface(r, tsurf)             # 文字表面一等化（批次 F）
             if line1 is not None:
-                pygame.gfxdraw.set_pos(r, -390, 290); pygame.gfxdraw.draw_surface(r, line1)          # 预渲染黄字（中文能力）
+                pygame.gfxdraw.set_transform(r, pygame.math.mat4_translation(-390, 290, 0)); pygame.gfxdraw.draw_surface(r, line1)          # 预渲染黄字（中文能力）
         pygame.display.flip()
 
         x = 0 if x >= 330 else x + 4
