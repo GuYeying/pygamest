@@ -173,10 +173,24 @@ u16 列表（0..=65535）。
 `"sampler"`（Sampler 或 None = 默认线性 clamp）/ `"storage"` /
 `"storage_rw"`（storage Buffer）。
 
-##### <span class="c-func">pipeline(shader, mesh, bind_groups, flavor="2d", topo="triangles", cull="none", depth=False, label=None) -> Pipeline</span>
+##### <span class="c-func">pipeline(shader, mesh, bind_groups, topo="triangles", cull="none", depth_mode=None, depth_write=None, blend=None, wireframe=False, alpha_to_coverage=False, vertex_entry=None, fragment_entry=None, label=None) -> Pipeline</span>
 
-渲染管线（按本 access 默认颜色格式建）。`flavor`: `"2d"` / `"3d"`；
-`topo`: `triangles` / `lines`；**`depth=True` 须配 `raw_render(depth=True)`**。
+渲染管线（按本 access 默认颜色格式建——不传可选参数 = 中性基座：
+无深度 / 无剔除 / alpha 混合 / vs_main + fs_main）。
+
+| 参数 | 可选值 | 语义 |
+|---|---|---|
+| topo | triangles / lines | 三角形 / 线段拓扑 |
+| cull | none / back / front | 面剔除 |
+| depth_mode | disabled / standard / reverse | 深度模式（standard = 近0远1；reverse = 近1远0——无限远投影/z-fighting 减少）|
+| depth_write | bool | 深度写入开关（透明物体 / 天空盒：读深度但不写入）|
+| blend | alpha / opaque / additive / multiply / none | 混合模式（additive = 发光/粒子；multiply = 阴影叠加）|
+| wireframe | bool | GPU 线框（需 `Features::POLYGON_MODE_LINE`）|
+| alpha_to_coverage | bool | MSAA A2C（植被 / alpha 裁切）|
+| vertex_entry | str | 顶点着色器入口名（默认 vs_main——同 shader 多入口复用）|
+| fragment_entry | str | 片元着色器入口名（默认 fs_main）|
+
+**`depth_mode` 须配 `raw_render(depth=True)`**（深度目标严格配对）。
 
 ##### <span class="c-func">compute_pipeline(shader, bind_groups, entry="cs_main", label=None) -> ComputePipeline</span>
 
