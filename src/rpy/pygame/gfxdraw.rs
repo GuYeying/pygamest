@@ -14,12 +14,250 @@ use std::cell::Cell;
     pub mod gfxdraw {
         use crate::rpy::pygame::pygame::{PyScreenSession, PySurface, PySurfaceSession, PyTargetsSession};
         use crate::rpy::args::{SfColor, SfPoints, SfRect};
+        use rustpython_derive::FromArgs;
         use crate::rpy::bridge;
         use starfish_pygame::render::DrawTarget;
         use rustpython_vm::{
             PyObjectRef, PyRef, PyResult, VirtualMachine,
-            function::FuncArgs,
+            function::{ArgIntoFloat, FuncArgs},
         };
+
+    // ── 动画运行时渲染集成（阶段5：spine / live2d / ozz 数据流经会话
+    // batch 上屏——渲染中心在 pygame；各适配库自持管线，底层类型走
+    // pygamest）────────────────────────────────────────────────────
+
+    /// mesh(f, surface, positions, uvs, indices, color=None)：任意带贴图
+    /// 三角网格通用口——positions/uvs 扁平 f32（uv 纹理域直传），indices
+    /// 三角索引按 3 展开；外部动画运行时数据流的消费插座。
+    #[pyfunction]
+    fn mesh(
+        f: PyObjectRef,
+        surface: PyRef<PySurface>,
+        positions: Vec<f32>,
+        uvs: Vec<f32>,
+        indices: Vec<u16>,
+        color: Option<SfColor>,
+        vm: &VirtualMachine,
+    ) -> PyResult<()> {
+        let rgba: [f32; 4] = match color {
+            Some(c) => [
+                c.0[0] as f32 / 255.0,
+                c.0[1] as f32 / 255.0,
+                c.0[2] as f32 / 255.0,
+                c.0[3] as f32 / 255.0,
+            ],
+            None => [1.0, 1.0, 1.0, 1.0],
+        };
+        use starfish_pygame::render::DrawTarget;
+        match route(&f, vm)? {
+            Target::Surf(s) => DrawTarget::draw_mesh(
+                &*s.surface, &surface.surface, &positions, &uvs, &indices, rgba,
+            ),
+            Target::Active => bridge::with_session(vm, |t| {
+                DrawTarget::draw_mesh(t, &surface.surface, &positions, &uvs, &indices, rgba)
+            })?,
+            Target::Targets => bridge::with_mrt_session(vm, |t| {
+                DrawTarget::draw_mesh(t, &surface.surface, &positions, &uvs, &indices, rgba)
+            })?,
+        }
+        Ok(())
+    }
+
+    /// draw_spine(f, skeleton, pages)：spine 骨架渲染——chine render()
+    /// 命令流 → mesh 上屏（uv 翻 v：page 域 y 向下 → 引擎 v 向上；
+    /// positions 为 spine 世界坐标——Auto2d 相机域直入）。pages[cmd.page]
+    /// = 图集页 Surface。
+    #[cfg(feature = "spine")]
+    #[pyfunction]
+    fn draw_spine(
+        f: PyObjectRef,
+        skeleton: PyRef<crate::rpy::pygame_spine::pygame_spine::PySpineSkeleton>,
+        pages: Vec<PyRef<PySurface>>,
+        vm: &VirtualMachine,
+    ) -> PyResult<()> {
+        use starfish_pygame::render::DrawTarget;
+        let sk = skeleton.inner.borrow();
+        let cmds = pygame_spine::render::render(&sk);
+        fn draw_cmds<T: DrawTarget + ?Sized>(
+            t: &T,
+            cmds: &[pygame_spine::RenderCommand],
+            pages: &[std::sync::Arc<starfish_pygame::render::Surface>],
+        ) {
+            for c in cmds {
+                let Some(page) = pages.get(c.page) else {
+                    continue; // 图集页越界：跳过（数据面校验在 Python 侧）
+                };
+                let positions: Vec<f32> =
+                    c.positions.iter().flat_map(|p| [p.x, p.y]).collect();
+                let uvs: Vec<f32> = c
+                    .uvs
+                    .chunks_exact(2)
+                    .flat_map(|uv| [uv[0], 1.0 - uv[1]])
+                    .collect();
+                let rgba = [c.color.r, c.color.g, c.color.b, c.color.a];
+                t.draw_mesh(page, &positions, &uvs, &c.triangles, rgba);
+            }
+        }
+        let page_surfaces: Vec<std::sync::Arc<starfish_pygame::render::Surface>> =
+            pages.iter().map(|p| p.surface.clone()).collect();
+        match route(&f, vm)? {
+            Target::Surf(s) => {
+                draw_cmds(&*s.surface, &cmds, &page_surfaces);
+                Ok(())
+            }
+            Target::Active => bridge::with_session(vm, |t| {
+                draw_cmds(t, &cmds, &page_surfaces);
+                Ok(())
+            })?,
+            Target::Targets => bridge::with_mrt_session(vm, |t| {
+                draw_cmds(t, &cmds, &page_surfaces);
+                Ok(())
+            })?,
+        }
+    }
+
+    /// draw_live2d(f, model)：Live2D 模型渲染——RuntimeModel 网格重建
+    /// 产物 → mesh 上屏（纹理惰性 from_rgba8 缓存于 model；uv 翻 v +
+    /// y 翻转：Live2D 画布域 y 向下 → 引擎中心系 y 向上；opacity 乘入
+    /// 顶点色）。
+    #[cfg(feature = "live2d")]
+    #[pyfunction]
+    fn draw_live2d(
+        f: PyObjectRef,
+        model: PyRef<crate::rpy::pygame_live2d::pygame_live2d::PyLive2DRuntime>,
+        vm: &VirtualMachine,
+    ) -> PyResult<()> {
+        use ::pygame_live2d as l2d_crate;
+        use starfish_pygame::render::{DrawTarget, Surface as SfSurface};
+        // 纹理惰性构建（一次——2048{b2} RGBA 每帧重建不可接受）
+        {
+            let mut tc = model.textures.borrow_mut();
+            if tc.is_none() {
+                let rt = model.inner.borrow();
+                let surfaces: Vec<std::sync::Arc<SfSurface>> = rt
+                    .textures()
+                    .iter()
+                    .map(|t| {
+                        std::sync::Arc::new(SfSurface::from_rgba8(
+                            (t.width(), t.height()),
+                            t.rgba(),
+                        ))
+                    })
+                    .collect();
+                *tc = Some(surfaces);
+            }
+        }
+        let texs = model.textures.borrow();
+        let tex_list = texs.as_ref().expect("纹理缓存刚确保");
+        let rt = model.inner.borrow();
+        fn draw_meshes<T: DrawTarget + ?Sized>(
+            t: &T,
+            rt: &l2d_crate::assets::RuntimeModel,
+            tex_list: &[std::sync::Arc<SfSurface>],
+        ) {
+            for m in rt.runtime().meshes() {
+                let tex_i = m.texture_index();
+                let Some(tex) = tex_list.get(tex_i as usize) else {
+                    continue;
+                };
+                let positions: Vec<f32> = m
+                    .vertices()
+                    .iter()
+                    .flat_map(|v| [v.position()[0], -v.position()[1]])
+                    .collect();
+                let uvs: Vec<f32> = m
+                    .vertices()
+                    .iter()
+                    .flat_map(|v| [v.uv()[0], 1.0 - v.uv()[1]])
+                    .collect();
+                let opacity = m.opacity();
+                let indices = m.indices().clone();
+                let rgba = [1.0, 1.0, 1.0, opacity.clamp(0.0, 1.0)];
+                t.draw_mesh(tex, &positions, &uvs, &indices, rgba);
+            }
+        }
+        match route(&f, vm)? {
+            Target::Surf(s) => {
+                draw_meshes(&*s.surface, &rt, tex_list);
+                Ok(())
+            }
+            Target::Active => bridge::with_session(vm, |t| {
+                draw_meshes(t, &rt, tex_list);
+                Ok(())
+            })?,
+            Target::Targets => bridge::with_mrt_session(vm, |t| {
+                draw_meshes(t, &rt, tex_list);
+                Ok(())
+            })?,
+        }
+    }
+
+    /// draw_ozz_bones(f, player, scale=1.0, cx=0.0, cy=0.0)：ozz 骨架骨骼
+    /// 线渲染（父子世界位 xy × scale + 中心偏移——Auto2d 中心系直入；
+    /// ozz y 向上与引擎同构零翻转。蒙皮 mesh 面落地前的骨骼可视化形态）。
+    #[cfg(feature = "ozz")]
+    #[derive(FromArgs)]
+    struct OzzBonesArgs {
+        player: PyRef<crate::rpy::pygame_ozz::pygame_ozz::PyOzzPlayer>,
+        #[pyarg(any, optional)]
+        scale: Option<ArgIntoFloat>,
+        #[pyarg(any, optional)]
+        cx: Option<ArgIntoFloat>,
+        #[pyarg(any, optional)]
+        cy: Option<ArgIntoFloat>,
+    }
+
+    #[pyfunction]
+    fn draw_ozz_bones(f: PyObjectRef, args: OzzBonesArgs, vm: &VirtualMachine) -> PyResult<()> {
+        let (player, scale, cx, cy) = (args.player, args.scale, args.cx, args.cy);
+        use starfish_pygame::render::BatchTopology;
+        let s = scale.map(|v| v.into_float() as f32).unwrap_or(1.0);
+        let ox = cx.map(|v| v.into_float() as f32).unwrap_or(0.0);
+        let oy = cy.map(|v| v.into_float() as f32).unwrap_or(0.0);
+        let pos = player.inner.borrow().joint_positions_xy();
+        let parents = player.inner.borrow().joint_parents();
+        fn draw_bones<T: starfish_pygame::render::DrawTarget + ?Sized>(
+            t: &T,
+            pos: &[(f32, f32)],
+            parents: &[i16],
+            s: f32,
+            ox: f32,
+            oy: f32,
+        ) {
+            let px = |x: f32| (x * s + ox) as i32;
+            let py = |y: f32| (y * s + oy) as i32;
+            for (i, parent) in parents.iter().enumerate() {
+                if *parent < 0 {
+                    continue; // 根关节无父
+                }
+                let Some(ppos) = pos.get(*parent as usize) else {
+                    continue;
+                };
+                let (jx, jy) = pos[i];
+                t.push_points(
+                    BatchTopology::Lines,
+                    None,
+                    &[(px(jx) as f32, py(jy) as f32), (px(ppos.0) as f32, py(ppos.1) as f32)],
+                    [1.0, 0.9, 0.3, 1.0],
+                );
+            }
+        }
+        match route(&f, vm)? {
+            Target::Surf(s2) => {
+                draw_bones(&*s2.surface, &pos, &parents, s, ox, oy);
+                Ok(())
+            }
+            Target::Active => bridge::with_session(vm, |t| {
+                draw_bones(t, &pos, &parents, s, ox, oy);
+                Ok(())
+            })?,
+            Target::Targets => bridge::with_mrt_session(vm, |t| {
+                draw_bones(t, &pos, &parents, s, ox, oy);
+                Ok(())
+            })?,
+        }
+    }
+
 
         /// gfxdraw 目标：SurfaceSession 直绘（自有 batch）；Screen 会话
         /// （PyScreenSession）= 当前活跃会话（with_session 路由，须在 with 内）。

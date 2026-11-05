@@ -75,3 +75,18 @@ drawable 网格数。
 ##### <span class="c-func">mesh_count() -> int / mesh(i)</span>
 
 数据面同 `Live2DModel.mesh`（读重建产物）。
+
+## <span class="c-func">渲染集成 —— gfxdraw.draw_live2d</span>
+
+#### <span class="c-func">pygame.gfxdraw.draw_live2d(f, model)</span>
+
+Live2D 模型渲染——RuntimeModel 网格重建产物内部直推会话 batch（纹理
+惰性 `Surface::from_rgba8` 缓存于 model 对象；uv 翻 v + y 翻转——
+Live2D 画布域 y 向下 → 引擎中心系；opacity 乘入顶点色）。每帧
+`set_parameter_normalized` → `update_meshes` → 本口。
+
+- :param f: 渲染会话
+- :param model: `load_runtime` 产物
+- 资产：Hiyori 官方样例模型已 vendor 至 pygame_live2d 仓
+  `assets/models/Hiyori/`（Live2D Free Material License，经 neocari
+  分发副本）。demo：`pygame-rs-dev/examples/live2d_render_demo.py`

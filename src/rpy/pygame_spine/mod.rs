@@ -353,6 +353,18 @@ use std::sync::Arc;
                 self.inner.borrow_mut().apply(&mut sk);
             }
         }
+
+        /// demo_textured_skeleton() -> SkeletonData：带贴图 region 的
+        /// 程序化骨架（三骨链 + body/hand 两方块 slot + default skin
+        /// ——零资产渲染 demo 的数据源，page0 纹理由调用方供给）。
+        #[pyfunction]
+        fn demo_textured_skeleton(vm: &VirtualMachine) -> PyRef<PySpineSkeletonData> {
+            PySpineSkeletonData {
+                data: sp::demo_textured_skeleton(),
+            }
+            .into_ref(&vm.ctx)
+        }
     }
 
 pub(crate) use self::pygame_spine::module_def;
+pub(crate) use self::pygame_spine::PySpineSkeleton;

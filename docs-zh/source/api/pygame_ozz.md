@@ -51,3 +51,16 @@ playback 测试资产直构（零资产测试链）。
 ##### <span class="c-func">model_matrices() -> list[float]</span>
 
 模型矩阵流（每关节 16 f32 列主——上一次 sample 的缓存）。
+
+## <span class="c-func">渲染集成 —— gfxdraw.draw_ozz_bones</span>
+
+#### <span class="c-func">pygame.gfxdraw.draw_ozz_bones(f, player, scale=1.0, cx=0.0, cy=0.0)</span>
+
+ozz 骨架骨骼线渲染——父子关节世界位 xy × scale + 中心偏移（Auto2d
+中心系直入；ozz y 向上与引擎同构零翻转）。蒙皮 mesh 面落地前的骨骼
+可视化形态；sample(ratio) 每帧先行。
+
+- :param f: 渲染会话
+- :param player: OzzPlayer（sample 后调用）
+- 另有 `joint_positions_xy()` / `joint_parents()` 数据口（自投影 /
+  自绘用）。demo：`pygame-rs-dev/examples/ozz_render_demo.py`

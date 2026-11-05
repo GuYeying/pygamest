@@ -96,3 +96,18 @@ track 0 设当前动画。
 ##### <span class="c-func">apply(skeleton)</span>
 
 姿态写进骨架（写后调 `update_world_transform()` 再查询/渲染）。
+
+## <span class="c-func">渲染集成 —— gfxdraw.draw_spine</span>
+
+#### <span class="c-func">pygame.gfxdraw.draw_spine(f, skeleton, pages)</span>
+
+spine 骨架渲染——`render()` 命令流内部直推会话 batch（渲染中心在
+pygame；uv 翻 v，positions 为 spine 世界坐标直入 Auto2d 中心系）。
+
+- :param f: 渲染会话（`with screen.render() as f`）
+- :param skeleton: 已 update_world_transform 的骨架
+- :param pages: 图集页 Surface 表（`pages[cmd.page]` 索引；demo 的
+  程序化 region = page0 单页）
+- 程序化数据源：`pygame_spine.demo_textured_skeleton()`（三骨链 +
+  body/hand 两 region 方块 + default skin——零资产渲染链）。
+  demo：`pygame-rs-dev/examples/spine_render_demo.py`

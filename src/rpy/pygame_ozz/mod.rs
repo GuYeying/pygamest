@@ -124,6 +124,33 @@ pub mod pygame_ozz {
                 .collect();
             PyObjectRef::from(vm.ctx.new_list(items))
         }
+
+        /// joint_positions_xy() -> list[(x, y)]：关节世界位（上一次
+        /// sample 的缓存——骨骼可视化 / 平面投影的消费形态）。
+        #[pymethod]
+        fn joint_positions_xy(&self, vm: &VirtualMachine) -> PyObjectRef {
+            let items: Vec<PyObjectRef> = self
+                .inner
+                .borrow()
+                .joint_positions_xy()
+                .into_iter()
+                .map(|(x, y)| vm.new_tuple((x as f64, y as f64)).into())
+                .collect();
+            PyObjectRef::from(vm.ctx.new_list(items))
+        }
+
+        /// joint_parents() -> list[int]：父关节索引表（骨序；根 = -1）。
+        #[pymethod]
+        fn joint_parents(&self, vm: &VirtualMachine) -> PyObjectRef {
+            let items: Vec<PyObjectRef> = self
+                .inner
+                .borrow()
+                .joint_parents()
+                .into_iter()
+                .map(|p| vm.ctx.new_int(p as i64).into())
+                .collect();
+            PyObjectRef::from(vm.ctx.new_list(items))
+        }
     }
 
     /// demo_player() -> OzzPlayer：playback 测试资产直构（零资产测试

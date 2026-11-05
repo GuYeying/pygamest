@@ -60,6 +60,9 @@ pub mod pygame_live2d {
     #[pyclass(module = "pygame_live2d", name = "Live2DRuntime", unhashable = true)]
     pub(crate) struct PyLive2DRuntime {
         pub(crate) inner: RefCell<l2d::assets::RuntimeModel>,
+        /// 纹理 Surface 惰性缓存（from_rgba8 一次性构建——2048{b2} RGBA
+        /// 每帧重建不可接受）
+        pub(crate) textures: RefCell<Option<Vec<std::sync::Arc<starfish_pygame::render::Surface>>>>,
     }
 
     impl std::fmt::Debug for PyLive2DRuntime {
@@ -96,7 +99,11 @@ pub mod pygame_live2d {
     fn load_runtime(path: PyStrRef, vm: &VirtualMachine) -> PyResult<PyRef<PyLive2DRuntime>> {
         let p = path_of(path, vm)?;
         match l2d::assets::load_model_runtime(&p) {
-            Ok(m) => Ok(PyLive2DRuntime { inner: RefCell::new(m) }.into_ref(&vm.ctx)),
+            Ok(m) => Ok(PyLive2DRuntime {
+                inner: RefCell::new(m),
+                textures: RefCell::new(None),
+            }
+            .into_ref(&vm.ctx)),
             Err(e) => Err(vm.new_value_error(format!("Live2D 运行时加载失败: {e:?}"))),
         }
     }
@@ -264,4 +271,4 @@ pub mod pygame_live2d {
     }
 }
 
-pub(crate) use self::pygame_live2d::module_def;
+pub(crate) use self::pygame_live2d::{module_def, PyLive2DModel, PyLive2DRuntime};
