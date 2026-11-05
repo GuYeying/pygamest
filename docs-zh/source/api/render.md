@@ -1,60 +1,30 @@
 # pygame.render
 
-底层渲染口——全局相机、自建 WGSL 管线资源工厂、`raw_render()` /
-`raw_compute()` 直绘与计算会话。**进阶专用**：常规游戏绘制走
-`with screen.render() as r:`（会话方法见 Screen / Surface）。
+底层渲染口——自建 WGSL 管线资源工厂、`raw_render()` / `raw_compute()`
+直绘与计算会话、相机构造与查询。**render 会话 = 纯通道**（不承载绘制
+词汇）——绘制走 `pygame.gfxdraw` / `pygame.font` 模块（renderpass 作
+首参）。
 
 ```{note}
-[相机定约] 相机选择是**会话级**——`f.set_camera(camera)` 后本会话
-剩余绘制全走该相机（`reset_camera()` 回 Auto 兜底）；每会话/每目标
-独立持有，互不串线。`Auto` = 按目标尺寸隐式（resize 天然跟随）。
-**同画布多相机** = 会话内多次 `set_camera` 分段绘制（段级相机切换）。
+[纯通道定约] render 会话对象（`with screen.render() as f:` 的 `f`）
+只做目标表达与打包——**不承载任何绘制方法**（旧 rect/circle/blit/
+set_camera 等全剔）。绘制接口按管线分域：图元/贴图/状态机 →
+[pygame.gfxdraw](gfxdraw.md)；文字 → [pygame.font](font.md)。
 
 [坐标系] **中心原点、y 向上**——`Camera::ortho` 视野 =
 `(-w/2, -h/2) .. (w/2, h/2)`，与 3D 透视相机（看向原点）、物理米制系
 **三方同构**；鼠标/触摸/事件坐标由泵层统一换算到中心系。
 
+[相机归属] 相机选择是**会话级**（`pygame.gfxdraw.set_camera(f, cam)`），
+每会话/每目标独立持有，互不串线；`Auto` = 按目标尺寸隐式（resize
+天然跟随）。同画布多相机 = 会话内多次 `set_camera` 分段绘制。
+
 [严格精细控制] 自建管线（raw_render）**引擎不做相机兜底**——相机
-buffer 由用户全权管理（同帧多 raw 会话须各持独立 buffer，共享会被
-后写覆盖）。
+buffer 由用户全权管理（同帧多 raw 会话须各持独立 buffer）。
 
 [wgpu 红线] wgpu 裸对象（Device / Queue / Buffer / TextureView）**零出
 Python 界**——一切经本模块句柄类安全收参。
 ```
-
-## <span class="c-func">会话状态机（相机/变换）</span>
-
-会话对象（`with screen.render() as f:` 的 `f`）上的绘制状态机——
-per-draw 相机与变换的统一入口（Surface / MRT 会话同构）。
-
-#### <span class="c-func">set_camera(camera)</span>
-
-会话相机切换（后续 push 进新段；仅本会话生效）。
-
-- :param camera: 相机（`camera_ortho` / `camera_perspective` 产物）
-- :type camera: Camera
-
-#### <span class="c-func">reset_camera()</span>
-
-回 Auto 兜底相机（按目标尺寸现算）。
-
-#### <span class="c-func">set_transform(model)</span>
-
-会话变换——后续绘制的顶点按此矩阵 **CPU 烘**（2D 仿射 / 3D 模型
-矩阵统一入口；Mat4 经 `pygame.math` 的 `mat4_*` 组合）。
-
-- :param model: 模型矩阵
-- :type model: Mat4
-
-#### <span class="c-func">reset_transform()</span>
-
-回恒等变换。
-
-#### <span class="c-func">draw_surface(src)</span> / <span class="c-func">draw_surface_centered(src, center)</span>
-
-画离屏面（渲染统一 draw 面的 texture 通道——**旧 blit 家族退役**）：
-源面 quad 按会话 transform 变换放置（2D 仿射 / 3D 空间放置同一口；
-深度会话下与 3D 场景正确遮挡）。centered = 中心锚便捷形态。
 
 ## <span class="c-func">函数</span>
 
@@ -63,25 +33,30 @@ per-draw 相机与变换的统一入口（Surface / MRT 会话同构）。
 2D 正交相机——**中心原点、y 向上**：视野
 `(-w/2, -h/2) .. (w/2, h/2)`（与 3D 透视/物理米制系同构）。
 
+- :param width: 画布宽（float）
+- :param height: 画布高（float）
 - :rtype: Camera
 
 #### <span class="c-func">camera_perspective(fov_degrees, aspect, near, far) -> Camera</span>
 
 3D 透视相机（fov 度数制；右手系，看向 `-Z`；位姿接 `.with_view()`）。
 
+- :param fov_degrees: 垂直视场角（度，float）
+- :param aspect: 宽高比（float）
 - :rtype: Camera
 
 #### <span class="c-func">camera_mvp() -> Mat4</span>
 
-当前全局 MVP（Auto 态按主屏尺寸现算）。
+当前 Auto 兜底 MVP（主屏尺寸现算——resize 天然跟随）。
 
 - :rtype: Mat4
 
 #### <span class="c-func">present_fit() -> Mat4</span>
 
-呈现拟合矩阵——自管相机的 letterbox 对齐口（自绘管线左乘它即与主
-绘制同一映射）。桌面 / 全屏恒等；Android 窗口化把自绘内容收进居中
-画布。
+呈现拟合矩阵（NDC 域 clip 空间仿射）——**自管相机的 letterbox
+对齐口**：自绘管线经 write_buffer 直写的矩阵对引擎不透明，脚本自行
+左乘本矩阵即与主绘制同一映射（`present_fit().mul_mat4(cam.mvp())`）。
+桌面/全屏恒等，Android 窗口化把自绘内容收进居中画布。
 
 - :rtype: Mat4
 
@@ -89,17 +64,16 @@ per-draw 相机与变换的统一入口（Surface / MRT 会话同构）。
 
 渲染管线愿望（`set_mode` **前**设置；部分覆盖——未传保留现值，后设
 优先）。`dim`: 2 / 3；`fov` / `near` / `far`：Auto3d 相机参数；
-`cull`: `"none"`（默认——镜像矩阵绕序天然安全）/ `"back"` / `"front"`
-（管线编译期定型，下次 set_mode 生效）；`blend`:
-`"alpha"`（默认）/ `"opaque"` / `"premultiplied"`。
+`cull`: `"none"`（默认）/ `"back"` / `"front"`（管线编译期定型，
+下次 set_mode 生效）；`blend`: `"alpha"`（默认）/ `"opaque"` /
+`"premultiplied"`。
 
 #### <span class="c-func">access(offscreen=False) -> ResourceAccess</span>
 
 底层资源入口（自建管线建造工厂；须 `set_mode` 后，否则 RuntimeError）。
 
 **[差异]** 主屏版默认颜色格式 = 交换链格式（平台漂移：Web/macOS
-Bgra8、Windows Rgba8）；`offscreen=True` 离屏版恒 Rgba8（管线与目标
-格式严格配对）。
+Bgra8、Windows Rgba8）；`offscreen=True` 离屏版恒 Rgba8。
 
 - :rtype: ResourceAccess
 
@@ -146,8 +120,7 @@ MSAA 样本数。
 #### <span class="c-func">screen_probe() -> list</span>
 
 帧缓冲网格回读（**诊断专用**；flip 前调用有效）——
-`[(x, y, r, g, b, a), ...]`，同时落日志行（Android = dev_log.txt
-可取证）。
+`[(x, y, r, g, b, a), ...]`。
 
 - :rtype: list
 
@@ -159,7 +132,7 @@ MSAA 样本数。
 
 ##### <span class="c-func">with_view(view) -> Camera</span>
 
-替换视图矩阵（3D 位姿：look_at 等 Mat4；2D 恒 Identity）。返回新
+替换视图矩阵（3D 位姿：`Mat4::look_at_rh` 等；2D 恒 Identity）。返回新
 Camera。
 
 ##### <span class="c-func">mvp() -> Mat4</span>
@@ -183,9 +156,9 @@ raw 缓冲（字节自管——相机定约 64B）。`usage`:
 
 顶点网格。`layout` 布局预设：`pos3`(3) / `pos3uv2`(5) / `pos3color4`(7)
 / `pos3uv2color4`(9) / `corner2`(2) / `inst_pos2`(2)（GPU 粒子
-instanced 通路——pos 顶点属性直进 VS）；`vertices` 扁平数值列表（按
-布局 stride 校验）；`vertices=None` 须同时给 `floats=N`（零填充容量
-预留——百万级 Python 列表不可行）；`indices` u16 列表（0..=65535）。
+instanced 通路）；`vertices` 扁平数值列表（按布局 stride 校验）；
+`vertices=None` 须同时给 `floats=N`（零填充容量预留）；`indices`
+u16 列表（0..=65535）。
 
 ##### <span class="c-func">update_mesh(mesh, vertices, indices=None)</span>
 
@@ -203,8 +176,7 @@ instanced 通路——pos 顶点属性直进 VS）；`vertices` 扁平数值列�
 ##### <span class="c-func">pipeline(shader, mesh, bind_groups, flavor="2d", topo="triangles", cull="none", depth=False, label=None) -> Pipeline</span>
 
 渲染管线（按本 access 默认颜色格式建）。`flavor`: `"2d"` / `"3d"`；
-`topo`: `triangles` / `lines`；`cull`: none / back / front；
-**`depth=True` 须配 `raw_render(depth=True)`**（深度目标严格配对）。
+`topo`: `triangles` / `lines`；**`depth=True` 须配 `raw_render(depth=True)`**。
 
 ##### <span class="c-func">compute_pipeline(shader, bind_groups, entry="cs_main", label=None) -> ComputePipeline</span>
 
@@ -222,13 +194,12 @@ u32 列表写入（indirect 绘制参数等整数语义数据）。
 ##### <span class="c-func">sampler(mag="linear", min="linear", mipmap="linear", address="clamp", label=None) -> Sampler</span>
 
 采样器。filter = linear / nearest；address = clamp / repeat / mirror /
-border（同时应用 u/v/w）。**compare 语义 v2 再放**。
+border。**compare 语义 v2 再放**。
 
 ##### <span class="c-func">texture(size, rgba=None, kind="sampled", label=None) -> Texture</span>
 
 GPU 纹理。`rgba` = RGBA8 字节列表（w×h×4，None = 零填充）；`kind`:
-`"sampled"` / `"rgba32f"`（空数据纹理——GPU 侧写入，`"texture_data"`
-绑定 + texelFetch 读）。
+`"sampled"` / `"rgba32f"`（空数据纹理——GPU 侧写入）。
 
 ### <span class="c-class">Mesh —— 网格句柄</span>
 
@@ -246,41 +217,16 @@ GPU 纹理。`rgba` = RGBA8 字节列表（w×h×4，None = 零填充）；`kind
 
 像素尺寸。
 
-### <span class="c-class">Shader —— 着色器句柄</span>
+### <span class="c-class">透明句柄</span>
 
-WGSL 着色器（`shader()` 产物；无方法——wgpu 裸对象不出 Python 界）。
-
-### <span class="c-class">Buffer —— 缓冲句柄</span>
-
-raw 缓冲（`buffer()` 产物；无方法）。
-
-### <span class="c-class">BindGroup —— 绑定组句柄</span>
-
-`bind_group()` 产物（无方法）。
-
-### <span class="c-class">Pipeline —— 渲染管线句柄</span>
-
-`pipeline()` 产物（无方法）。
-
-### <span class="c-class">ComputePipeline —— 计算管线句柄</span>
-
-`compute_pipeline()` 产物（无方法）。
-
-### <span class="c-class">Sampler —— 采样器句柄</span>
-
-`sampler()` 产物（无方法）。
-
-### <span class="c-class">ColorAttachment —— 帧颜色附件</span>
-
-`screen_attachment()` 产物——主屏当前帧颜色附件快照（查询 / 未来
-自绘逃生口；不透明句柄）。
+`Shader` / `Buffer` / `BindGroup` / `Pipeline` / `ComputePipeline` /
+`Sampler` / `ColorAttachment`——无方法的透明句柄。
 
 ### <span class="c-class">RawPass —— 直绘会话</span>
 
 `with t.raw_render(depth=False) as p:`（`t` = Screen / Surface；主屏版
-须在 `with screen.render()` 块内，否则 TypeError）。命令记录制——
-`__exit__` 排程到目标提交时点回放，**恒在游戏内容之上**；深度恒清
-1.0（客人叠加定约）。
+须在 `with screen.render()` 块内）。命令记录制——`__exit__` 排程到
+目标提交时点回放，**恒在游戏内容之上**；深度恒清 1.0。
 
 ##### <span class="c-func">set_pipeline(pipeline)</span>
 
@@ -292,11 +238,11 @@ raw 缓冲（`buffer()` 产物；无方法）。
 
 ##### <span class="c-func">set_mesh(mesh) / draw_mesh(mesh)</span>
 
-绑定网格 / 全量绘制便利形态（自动 set_mesh + 按自身计数）。
+绑定网格 / 全量绘制便利形态。
 
 ##### <span class="c-func">draw(first, end) / draw_indexed(first, end)</span>
 
-顶点范围 / 索引范围绘制（须 set_mesh）。
+顶点范围 / 索引范围绘制。
 
 ##### <span class="c-func">set_scissor(x, y, w, h) / set_viewport(x, y, w, h, min_depth, max_depth)</span>
 
@@ -317,7 +263,7 @@ raw 缓冲（`buffer()` 产物；无方法）。
 ### <span class="c-class">RawCompute —— 计算会话</span>
 
 `with t.raw_compute() as p:`（须在 `with screen.render()` 块内）——
-排程到 present 收口，独立 compute pass，恒在渲染内容之后提交。
+排程到 present 收口，独立 compute pass。
 
 ##### <span class="c-func">set_pipeline(pipeline)</span>
 
@@ -325,8 +271,7 @@ raw 缓冲（`buffer()` 产物；无方法）。
 
 ##### <span class="c-func">set_bind_group(index, group)</span>
 
-绑定组。**[差异]** 绑定位按登记序自动排（set_pipeline 后从 0 递增），
-`index` 实际被忽略。
+绑定组。**[差异]** 绑定位按登记序自动排，`index` 实际被忽略。
 
 ##### <span class="c-func">dispatch(x, y=1, z=1)</span>
 
@@ -334,12 +279,11 @@ raw 缓冲（`buffer()` 产物；无方法）。
 
 ##### <span class="c-func">copy_buffer(src, dst, size)</span>
 
-storage → uniform GPU 闭环（顶点段 SSBO 设备相关问题的规避路径）。
+storage → uniform GPU 闭环。
 
 ##### <span class="c-func">copy_mesh_vertices(mesh, src, size)</span>
 
-storage → mesh 顶点缓冲直搬（GPU 粒子 instanced 通路）。尺寸守卫：
-超目标容量 = 截断 + 告警（永不崩溃定约）。
+storage → mesh 顶点缓冲直搬（GPU 粒子 instanced 通路）。
 
 ##### <span class="c-func">copy_buffer_to_texture(src, tex, bytes_per_row, w, h)</span>
 
