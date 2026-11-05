@@ -30,6 +30,9 @@ pub mod pygame_physics;
 // pygame_spine = Spine 2D 骨骼动画（pygame_spine 适配 crate——阶段 4）
 #[cfg(feature = "spine")]
 pub mod pygame_spine;
+// pygame_live2d = Live2D/Cubism 运行时（mocari vendored——阶段 4）
+#[cfg(feature = "live2d")]
+pub mod pygame_live2d;
 pub mod registry;
 pub mod args;
 pub mod bridge;

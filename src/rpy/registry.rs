@@ -28,6 +28,8 @@ use crate::rpy::pygame_gui;
 use crate::rpy::pygame_physics;
 #[cfg(feature = "spine")]
 use crate::rpy::pygame_spine;
+#[cfg(feature = "live2d")]
+use crate::rpy::pygame_live2d;
 
 /// 多阶段 init 后注入 sys.modules（宿主壳统一入口）。
 pub fn install(vm: &VirtualMachine) {
@@ -113,6 +115,14 @@ fn try_install(vm: &VirtualMachine) -> Result<(), String> {
     // pygame_spine = Spine 2D 骨骼动画（阶段 4 独立顶层模块）
     #[cfg(feature = "spine")]
     mount_top(vm, &sys_modules, pygame_spine::module_def(&vm.ctx), "pygame_spine")?;
+    // pygame_live2d = Live2D/Cubism 运行时（阶段 4 独立顶层模块）
+    #[cfg(feature = "live2d")]
+    mount_top(
+        vm,
+        &sys_modules,
+        pygame_live2d::module_def(&vm.ctx),
+        "pygame_live2d",
+    )?;
     Ok(())
 }
 
