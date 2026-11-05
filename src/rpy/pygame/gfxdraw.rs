@@ -87,7 +87,6 @@ use std::cell::Cell;
                 Target::Surf(s) => s.surface.with_batch(|b| b.set_model(model.0.get())),
                 Target::Active => bridge::with_session(vm, |t| t.set_transform(model.0.get()))?,
                 Target::Targets => bridge::with_mrt_session(vm, |t| t.set_transform(model.0.get()))?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| t.set_transform(model.0.get()))?,
             }
             Ok(())
         }
