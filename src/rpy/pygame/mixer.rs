@@ -115,9 +115,16 @@ use std::cell::Cell;
             .into_ref(&vm.ctx))
         }
 
+        /// init(channels=8)：缺省 8 通道（Option 裸参会成必填——pyarg optional 修正）
+        #[derive(rustpython_derive::FromArgs)]
+        struct InitArgs {
+            #[pyarg(any, optional)]
+            channels: Option<u32>,
+        }
+
         #[pyfunction]
-        fn init(channels: Option<u32>, vm: &VirtualMachine) -> PyResult<()> {
-            starfish_pygame::mixer::init(channels.unwrap_or(8))
+        fn init(args: InitArgs, vm: &VirtualMachine) -> PyResult<()> {
+            starfish_pygame::mixer::init(args.channels.unwrap_or(8))
                 .map_err(|e| vm.new_value_error(format!("音频设备初始化失败: {e:?}")))
         }
 
@@ -412,6 +419,57 @@ use std::cell::Cell;
             #[pyfunction]
             fn set_volume(v: f32, vm: &VirtualMachine) -> PyResult<()> {
                 bridge::with_mixer(vm, |m| m.music_set_volume(v.clamp(0.0, 1.0)))
+            }
+
+            /// 音乐音量读取（0..1）
+            #[pyfunction]
+            fn get_volume(vm: &VirtualMachine) -> PyResult<f32> {
+                bridge::with_mixer(vm, |m| m.music_get_volume())
+            }
+
+            /// 音乐总时长（秒；未加载 = 0.0）
+            #[pyfunction]
+            fn get_length(vm: &VirtualMachine) -> PyResult<f32> {
+                bridge::with_mixer(vm, |m| m.music_duration())
+            }
+
+            /// 进度跳转（秒；未加载静默）
+            #[pyfunction]
+            fn set_pos(seconds: f32, vm: &VirtualMachine) -> PyResult<()> {
+                bridge::with_mixer(vm, |m| m.music_seek(seconds))
+            }
+
+            /// 当前播放进度（秒；未加载 = 0.0）
+            #[pyfunction]
+            fn get_pos(vm: &VirtualMachine) -> PyResult<f32> {
+                bridge::with_mixer(vm, |m| m.music_position())
+            }
+
+            /// 回到曲首（set_pos(0) 的惯用形态）
+            #[pyfunction]
+            fn rewind(vm: &VirtualMachine) -> PyResult<()> {
+                bridge::with_mixer(vm, |m| m.music_rewind())
+            }
+
+            /// 淡出停止（毫秒）
+            #[pyfunction]
+            fn fadeout(ms: u32, vm: &VirtualMachine) -> PyResult<()> {
+                bridge::with_mixer(vm, |m| m.music_fade_out(ms))
+            }
+
+            /// 排队下一首（当前曲播完自动接播；load 同源的路径形态）
+            #[pyfunction]
+            fn queue(path: String, vm: &VirtualMachine) -> PyResult<()> {
+                if let Err(e) = bridge::with_mixer(vm, |m| m.music_queue_file(&path)) {
+                    // 与 load 同一定约：缺资源不崩溃（静音继续），严格模式真异常
+                    starfish_debug::log_error!(format!(
+                        "[assets] 音乐排队失败 {path}: {e:?}——静默跳过"
+                    ));
+                    if starfish_pygame::image::strict_assets() {
+                        return Err(e);
+                    }
+                }
+                Ok(())
             }
 
             /// 音乐播放中（不含 SFX——与 mixer.get_busy 分工）

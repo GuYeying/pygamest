@@ -179,13 +179,40 @@ fade / 特效挂载在此。
 
 播放（`-1` 无限循环 / `0` 单次 / `N` 次）。
 
-#### <span class="c-func">stop() / pause() / resume()</span>
+#### <span class="c-func">stop() / pause() / resume() / rewind()</span>
 
-停 / 暂停 / 恢复。
+停 / 暂停 / 恢复 / 回曲首（`rewind` = `set_pos(0)` 惯用形态）。
 
-#### <span class="c-func">set_volume(v)</span>
+#### <span class="c-func">set_volume(v) / get_volume() -> float</span>
 
-音乐音量（`0.0` .. `1.0`）。
+音乐音量（`0.0` .. `1.0`；`get_volume` 读取现值）。
+
+#### <span class="c-func">get_length() -> float</span>
+
+音乐总时长（**秒**；未加载 = `0.0`）。进度条 / 播放器 UI 的分母。
+
+- :rtype: float
+
+#### <span class="c-func">set_pos(seconds) / get_pos() -> float</span>
+
+进度跳转 / 当前进度（**秒**——与 starfish 秒制一致；**[差异]** 真
+pygame `get_pos` 为毫秒制且语义是"已播放时长"，此处是底层设备的
+**真实进度位置**）。`set_pos` 未加载时静默。
+
+- :param seconds: 目标位置（float，秒）
+- :rtype: float
+
+#### <span class="c-func">fadeout(ms)</span>
+
+淡出停止（毫秒）。
+
+#### <span class="c-func">queue(path)</span>
+
+排队下一首（当前曲播完自动接播）。缺资源定约同 `load`：静默跳过
+（严格模式真异常）。
+
+- :param path: 音乐文件路径
+- :type path: str
 
 #### <span class="c-func">get_busy() -> bool</span>
 
