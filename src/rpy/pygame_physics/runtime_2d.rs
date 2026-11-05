@@ -31,7 +31,8 @@ use rapier_starfish_debug::dim2::debug::{collect as sf_collect, DebugDraw as SfD
     LineSink as SfLineSink};
 use rapier_starfish_debug::dim2::prelude::{
     ChannelEventCollector, ColliderBuilder as SfColliderBuilder, ColliderHandle,
-    CollisionEvent, DebugRenderMode, QueryFilter, Ray as SfRay, ActiveEvents as SfActiveEvents,
+    CollisionEvent, ContactForceEvent, DebugRenderMode, QueryFilter, Ray as SfRay,
+    ActiveEvents as SfActiveEvents, Group as SfGroup, InteractionGroups, InteractionTestMode,
     RigidBodyBuilder as SfRigidBodyBuilder, RigidBodyHandle,
 };
 use rapier_starfish_debug::dim2::world::PhysicsWorld as SfPhysicsWorld;
@@ -95,19 +96,22 @@ impl Constructor for PyPhysicsWorld {
         // 碰撞事件通道（step_frame 恒经 collector 步进——触发力/撕裂事件
         // 的 sender 无接收端即静默丢弃）
         let (tx, rx) = std::sync::mpsc::channel();
-        let (ftx, _frx) = std::sync::mpsc::channel();
+        let (ftx, frx) = std::sync::mpsc::channel();
         let (_ttx, _trx) = std::sync::mpsc::channel();
         let collector = ChannelEventCollector::new(tx, ftx, _ttx);
         Ok(Self {
             inner: Rc::new(RefCell::new(world)),
             events_rx: RefCell::new(rx),
+            force_rx: RefCell::new(frx),
             collector: RefCell::new(collector),
         })
     }
 }
 
 /// RigidBodyBuilder(kind="dynamic"|"fixed"|"kinematic", translation=,
-///                  rotation=弧度, linvel=, angvel=, can_sleep=True)
+///                  rotation=弧度, linvel=, angvel=, can_sleep=True,
+///                  linear_damping=, angular_damping=, ccd_enabled=,
+///                  lock_rotations=)
 #[derive(FromArgs)]
 pub(crate) struct RigidBodyBuilderArgs {
     #[pyarg(any)]
@@ -123,6 +127,18 @@ pub(crate) struct RigidBodyBuilderArgs {
     pub(crate) angvel: Option<ArgIntoFloat>,
     #[pyarg(any, optional)]
     pub(crate) can_sleep: Option<bool>,
+    /// 线性阻尼（缺省 0；数值越大停得越快）
+    #[pyarg(any, optional)]
+    pub(crate) linear_damping: Option<ArgIntoFloat>,
+    /// 角阻尼
+    #[pyarg(any, optional)]
+    pub(crate) angular_damping: Option<ArgIntoFloat>,
+    /// 连续碰撞检测（高速穿墙防线）
+    #[pyarg(any, optional)]
+    pub(crate) ccd_enabled: Option<bool>,
+    /// 锁定旋转（不倒翁/角色胶囊）
+    #[pyarg(any, optional)]
+    pub(crate) lock_rotations: Option<bool>,
 }
 
 impl Constructor for PyRigidBodyBuilder {
@@ -156,17 +172,33 @@ impl Constructor for PyRigidBodyBuilder {
             b = b.angvel(w.into_float() as f32);
         }
         b = b.can_sleep(args.can_sleep.unwrap_or(true));
+        if let Some(v) = args.linear_damping {
+            b = b.linear_damping(v.into_float() as f32);
+        }
+        if let Some(v) = args.angular_damping {
+            b = b.angular_damping(v.into_float() as f32);
+        }
+        if let Some(v) = args.ccd_enabled {
+            b = b.ccd_enabled(v);
+        }
+        if args.lock_rotations.unwrap_or(false) {
+            b = b.lock_rotations();
+        }
         Ok(Self {
             builder: RefCell::new(Some(b)),
         })
     }
 }
 
-/// ColliderBuilder(kind="cuboid"|"ball", 半尺寸/半径, friction=,
-///                 restitution=, density=, sensor=, translation=)
+/// ColliderBuilder(kind="cuboid"|"ball"|"capsule"|"segment"|"triangle",
+///                 半尺寸/半径/端点坐标, friction=, restitution=, density=,
+///                 sensor=, translation=, events=,
+///                 groups_memberships=+groups_filter=, force_events=,
+///                 force_threshold=)
 #[derive(FromArgs)]
 pub(crate) struct ColliderBuilderArgs {
-    /// "cuboid"（hx/hy 半尺寸）或 "ball"（radius）
+    /// "cuboid"（hx/hy 半尺寸）/ "ball"（radius）/ "capsule"（half_height
+    /// + radius，纵轴 y）/ "segment"（ax ay bx by）/ "triangle"（六坐标）
     #[pyarg(any)]
     pub(crate) kind: String,
     #[pyarg(any, optional)]
@@ -175,6 +207,30 @@ pub(crate) struct ColliderBuilderArgs {
     pub(crate) hy: Option<ArgIntoFloat>,
     #[pyarg(any, optional)]
     pub(crate) radius: Option<ArgIntoFloat>,
+    /// capsule 半高（总长 = 2×half_height + 2×radius，纵轴 y）
+    #[pyarg(any, optional)]
+    pub(crate) half_height: Option<ArgIntoFloat>,
+    /// segment / triangle 端点坐标
+    #[pyarg(any, optional)]
+    pub(crate) ax: Option<ArgIntoFloat>,
+    #[pyarg(any, optional)]
+    pub(crate) ay: Option<ArgIntoFloat>,
+    #[pyarg(any, optional)]
+    pub(crate) bx: Option<ArgIntoFloat>,
+    #[pyarg(any, optional)]
+    pub(crate) by: Option<ArgIntoFloat>,
+    #[pyarg(any, optional)]
+    pub(crate) x1: Option<ArgIntoFloat>,
+    #[pyarg(any, optional)]
+    pub(crate) y1: Option<ArgIntoFloat>,
+    #[pyarg(any, optional)]
+    pub(crate) x2: Option<ArgIntoFloat>,
+    #[pyarg(any, optional)]
+    pub(crate) y2: Option<ArgIntoFloat>,
+    #[pyarg(any, optional)]
+    pub(crate) x3: Option<ArgIntoFloat>,
+    #[pyarg(any, optional)]
+    pub(crate) y3: Option<ArgIntoFloat>,
     /// 相对刚体原点的偏移（米）
     #[pyarg(any, optional)]
     pub(crate) translation: Option<SfFPoint>,
@@ -191,6 +247,19 @@ pub(crate) struct ColliderBuilderArgs {
     /// 缺省 false 省开销）
     #[pyarg(any, optional)]
     pub(crate) events: Option<bool>,
+    /// 碰撞分组（两者同给生效）：memberships = 本体所属组位集，
+    /// filter = 可碰撞组位集（bit i = 组 i；组 i 物体只与
+    /// filter 含组 i 的物体碰撞——位掩码语义）
+    #[pyarg(any, optional)]
+    pub(crate) groups_memberships: Option<u32>,
+    #[pyarg(any, optional)]
+    pub(crate) groups_filter: Option<u32>,
+    /// 冲击力事件（drain_force_events 产出——撞击力度门槛检测）
+    #[pyarg(any, optional)]
+    pub(crate) force_events: Option<bool>,
+    /// 力事件门槛（总力幅值超过才发事件；缺省用 rapier 默认）
+    #[pyarg(any, optional)]
+    pub(crate) force_threshold: Option<ArgIntoFloat>,
 }
 
 impl Constructor for PyColliderBuilder {
@@ -214,9 +283,38 @@ impl Constructor for PyColliderBuilder {
                 };
                 SfColliderBuilder::ball(r.into_float() as f32)
             }
+            "capsule" => {
+                let (Some(hh), Some(r)) = (args.half_height, args.radius) else {
+                    return Err(vm.new_value_error("capsule 须给 half_height / radius（米）"));
+                };
+                SfColliderBuilder::capsule_y(hh.into_float() as f32, r.into_float() as f32)
+            }
+            "segment" => {
+                let (Some(ax), Some(ay), Some(bx), Some(by)) =
+                    (args.ax, args.ay, args.bx, args.by)
+                else {
+                    return Err(vm.new_value_error("segment 须给 ax ay bx by（线段两端点）"));
+                };
+                SfColliderBuilder::segment(
+                    [ax.into_float() as f32, ay.into_float() as f32].into(),
+                    [bx.into_float() as f32, by.into_float() as f32].into(),
+                )
+            }
+            "triangle" => {
+                let (Some(x1), Some(y1), Some(x2), Some(y2), Some(x3), Some(y3)) = (
+                    args.x1, args.y1, args.x2, args.y2, args.x3, args.y3,
+                ) else {
+                    return Err(vm.new_value_error("triangle 须给 x1 y1 x2 y2 x3 y3（三顶点）"));
+                };
+                SfColliderBuilder::triangle(
+                    [x1.into_float() as f32, y1.into_float() as f32].into(),
+                    [x2.into_float() as f32, y2.into_float() as f32].into(),
+                    [x3.into_float() as f32, y3.into_float() as f32].into(),
+                )
+            }
             other => {
                 return Err(vm.new_value_error(format!(
-                    "kind 须为 'cuboid' / 'ball'（v1），实际 {other:?}"
+                    "kind 须为 'cuboid' / 'ball' / 'capsule' / 'segment' / 'triangle'，实际 {other:?}"
                 )))
             }
         };
@@ -235,8 +333,27 @@ impl Constructor for PyColliderBuilder {
         if args.sensor.unwrap_or(false) {
             c = c.sensor(true);
         }
+        // 碰撞分组（两 kwarg 同给生效——位掩码语义见字段注释）
+        if let (Some(m), Some(f)) = (args.groups_memberships, args.groups_filter) {
+            c = c.collision_groups(InteractionGroups::new(
+                SfGroup::from_bits_truncate(m),
+                SfGroup::from_bits_truncate(f),
+                InteractionTestMode::And,
+            ));
+        }
+        // 事件位集合并（碰撞事件 + 冲击力事件可同开）
+        let mut ev = SfActiveEvents::default();
         if args.events.unwrap_or(false) {
-            c = c.active_events(SfActiveEvents::COLLISION_EVENTS);
+            ev |= SfActiveEvents::COLLISION_EVENTS;
+        }
+        if args.force_events.unwrap_or(false) {
+            ev |= SfActiveEvents::CONTACT_FORCE_EVENTS;
+            if let Some(t) = args.force_threshold {
+                c = c.contact_force_event_threshold(t.into_float() as f32);
+            }
+        }
+        if ev != SfActiveEvents::default() {
+            c = c.active_events(ev);
         }
         Ok(Self {
             builder: RefCell::new(Some(c)),
@@ -557,6 +674,55 @@ impl PyPhysicsWorld {
             out.push(tup);
         }
         Ok(vm.ctx.new_list(out).into())
+    }
+
+    /// drain_force_events() -> [(h1, h2, 总力幅值, 最大接触力幅值)]：冲击
+    /// 力事件排空（collider 须 force_events=True 开启 + force_threshold
+    /// 设门槛——落体撞地伤害判定/击打反馈的判定源）。
+    #[pymethod]
+    fn drain_force_events(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+        let mut out: Vec<PyObjectRef> = Vec::new();
+        loop {
+            let ev = match self.force_rx.borrow_mut().try_recv() {
+                Ok(ev) => ev,
+                Err(_) => break,
+            };
+            let tup: PyObjectRef = vm
+                .new_tuple((
+                    pack_collider(ev.collider1) as i64,
+                    pack_collider(ev.collider2) as i64,
+                    ev.total_force_magnitude as f64,
+                    ev.max_force_magnitude as f64,
+                ))
+                .into();
+            out.push(tup);
+        }
+        Ok(vm.ctx.new_list(out).into())
+    }
+
+    /// set_collider_groups(handle, memberships, filter)：运行时改碰撞
+    /// 分组（句柄取自 drain_events/force_events 事件或 insert 产物；
+    /// 换阵营/临时免伤的运行时开关）。
+    #[pymethod]
+    fn set_collider_groups(
+        &self,
+        handle: u64,
+        memberships: u32,
+        filter: u32,
+        vm: &VirtualMachine,
+    ) -> PyResult<()> {
+        let g = InteractionGroups::new(
+            SfGroup::from_bits_truncate(memberships),
+            SfGroup::from_bits_truncate(filter),
+            InteractionTestMode::And,
+        );
+        match self.inner.borrow_mut().get().colliders.get_mut(unpack_collider(handle)) {
+            Some(co) => {
+                co.set_collision_groups(g);
+                Ok(())
+            }
+            None => Err(vm.new_value_error("collider 句柄无效")),
+        }
     }
 
     /// cast_ray(origin, dir, max_toi) -> None | (collider_handle, 距离)：

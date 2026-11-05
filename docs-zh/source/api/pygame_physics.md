@@ -142,6 +142,17 @@ builder **一次性消费**（二次 insert 抛 ValueError，重建再插）。
 `"started"` / `"stopped"`。**仅 `events=True` 的碰撞体产生事件**
 （传感器触发器同此通道）；每帧调用一次，通道缓冲按步累积。
 
+##### <span class="c-func">drain_force_events() -> list[tuple[int, int, float, float]]</span>
+
+排空冲击力事件——`[(h1, h2, 总力幅值, 最大接触力幅值), ...]`。
+**仅 `force_events=True` 的碰撞体产生**（`force_threshold` 设门槛，
+总力幅值超过才发——落体伤害判定/击打反馈的判定源）。
+
+##### <span class="c-func">set_collider_groups(handle, memberships, filter)</span>
+
+运行时改碰撞分组（句柄取自 `drain_events` / `drain_force_events`
+或 `insert` 产物——换阵营/临时免伤的运行时开关）。
+
 ##### <span class="c-func">cast_ray(origin, dir, max_toi=None) -> tuple[int, float] | None</span>
 
 射线查询——命中返回 `(collider_handle, 距离)`。`dir` 非单位向量按其
@@ -155,7 +166,7 @@ builder **一次性消费**（二次 insert 抛 ValueError，重建再插）。
 
 ### <span class="c-class">RigidBodyBuilder —— 刚体 builder</span>
 
-#### <span class="c-func">RigidBodyBuilder(kind, translation=None, rotation=None, linvel=None, angvel=None, can_sleep=True)</span>
+#### <span class="c-func">RigidBodyBuilder(kind, translation=None, rotation=None, linvel=None, angvel=None, can_sleep=True, linear_damping=None, angular_damping=None, ccd_enabled=None, lock_rotations=None)</span>
 
 - :param kind: 刚体类型——`"dynamic"` / `"fixed"` / `"kinematic"`
 - :type kind: str
@@ -169,13 +180,23 @@ builder **一次性消费**（二次 insert 抛 ValueError，重建再插）。
 - :type angvel: float | None
 - :param can_sleep: 允许休眠（缺省 True）
 - :type can_sleep: bool
+- :param linear_damping: 线性阻尼（缺省 0；数值越大停得越快）
+- :type linear_damping: float | None
+- :param angular_damping: 角阻尼
+- :type angular_damping: float | None
+- :param ccd_enabled: 连续碰撞检测（高速穿墙防线）
+- :type ccd_enabled: bool | None
+- :param lock_rotations: 锁定旋转（不倒翁/角色胶囊）
+- :type lock_rotations: bool | None
 
 ### <span class="c-class">ColliderBuilder —— 碰撞体 builder</span>
 
-#### <span class="c-func">ColliderBuilder(kind, hx=None, hy=None, radius=None, translation=None, friction=None, restitution=None, density=None, sensor=False, events=False)</span>
+#### <span class="c-func">ColliderBuilder(kind, hx=None, hy=None, radius=None, translation=None, friction=None, restitution=None, density=None, sensor=False, events=False, groups_memberships=None, groups_filter=None, force_events=False, force_threshold=None)</span>
 
 - :param kind: 形状——`"cuboid"`（须给 hx/hy 半尺寸，米）/
-  `"ball"`（须给 radius）——**[差异] v1 仅此两种**
+  `"ball"`（须给 radius）/ `"capsule"`（须给 half_height + radius，
+  纵轴 y）/ `"segment"`（须给 ax ay bx by 端点）/ `"triangle"`
+  （须给 x1 y1 x2 y2 x3 y3 三顶点）
 - :type kind: str
 - :param translation: 相对刚体原点的偏移（米）
 - :type translation: tuple[float, float] | None
@@ -184,6 +205,25 @@ builder **一次性消费**（二次 insert 抛 ValueError，重建再插）。
 - :param events: 产生碰撞事件（`drain_events` 只报开启者——触发器 /
   碰撞检测入口，缺省 False 省开销）
 - :type events: bool
+- :param groups_memberships: 碰撞分组——本体所属组位集（与
+  `groups_filter` 同给生效；bit i = 组 i：本体只与 filter 含
+  本体所属组的物体碰撞——阵营互斥/区域门禁）
+- :type groups_memberships: int | None
+- :param groups_filter: 可碰撞组位集
+- :type groups_filter: int | None
+- :param force_events: 产生冲击力事件（`drain_force_events` 产出）
+- :type force_events: bool
+- :param force_threshold: 力事件门槛（总力幅值超过才发）
+- :type force_threshold: float | None
+
+```{note}
+[3D 对应面] `PhysicsWorld3D` / `RigidBodyBuilder3D` / `ColliderBuilder3D`
+同款新增：`capsule` / `cylinder` / `cone`（half_height + radius，纵轴
+y）/ `trimesh`（vertices 扁平 xyz + indices 扁平三角索引——体素地形/
+任意静态网格）；`drain_force_events` / `set_collider_groups` 同名同约。
+3D `rotation` 为欧拉角向量 (rx, ry, rz) 弧度；`lock_rotations` =
+姿态四元数冻结。
+```
 
 ### <span class="c-class">DebugDraw —— 调试渲染控制面</span>
 

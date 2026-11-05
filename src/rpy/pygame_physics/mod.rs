@@ -57,6 +57,10 @@ pub(crate) mod runtime_3d;
             /// 碰撞事件通道（step_frame 恒经 collector 步进；drain_events 排空）
             pub(crate) events_rx:
                 RefCell<std::sync::mpsc::Receiver<rapier_starfish_debug::dim2::prelude::CollisionEvent>>,
+            /// 冲击力事件通道（collider 开 force_events 才有产出；drain_force_events 排空）
+            pub(crate) force_rx: RefCell<
+                std::sync::mpsc::Receiver<rapier_starfish_debug::dim2::prelude::ContactForceEvent>,
+            >,
             pub(crate) collector:
                 RefCell<rapier_starfish_debug::dim2::prelude::ChannelEventCollector>,
         }
@@ -184,6 +188,10 @@ pub(crate) mod runtime_3d;
             /// 碰撞事件通道（step_frame 恒经 collector 步进；drain_events 排空）
             pub(crate) events_rx:
                 RefCell<std::sync::mpsc::Receiver<rapier_starfish_debug::dim3::prelude::CollisionEvent>>,
+            /// 冲击力事件通道（collider 开 force_events 才有产出；drain_force_events 排空）
+            pub(crate) force_rx: RefCell<
+                std::sync::mpsc::Receiver<rapier_starfish_debug::dim3::prelude::ContactForceEvent>,
+            >,
             pub(crate) collector:
                 RefCell<rapier_starfish_debug::dim3::prelude::ChannelEventCollector>,
         }

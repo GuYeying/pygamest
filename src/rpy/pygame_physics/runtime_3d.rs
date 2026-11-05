@@ -24,8 +24,8 @@ use rapier_starfish_debug::dim3::debug::{
 };
 use rapier_starfish_debug::dim3::prelude::{
     ChannelEventCollector, ColliderBuilder as SfColliderBuilder, ColliderHandle,
-    CollisionEvent, DebugRenderMode, QueryFilter, Ray as SfRay3,
-    ActiveEvents as SfActiveEvents3,
+    CollisionEvent, ContactForceEvent, DebugRenderMode, QueryFilter, Ray as SfRay3,
+    ActiveEvents as SfActiveEvents3, Group as SfGroup, InteractionGroups, InteractionTestMode,
     RigidBodyBuilder as SfRigidBodyBuilder, RigidBodyHandle,
 };
 use rapier_starfish_debug::dim3::world::PhysicsWorld as SfPhysicsWorld;
@@ -89,19 +89,22 @@ impl Constructor for PyPhysicsWorld3D {
         // 碰撞事件通道（step_frame 恒经 collector 步进——触发力/撕裂事件
         // 的 sender 无接收端即静默丢弃）
         let (tx, rx) = std::sync::mpsc::channel();
-        let (ftx, _frx) = std::sync::mpsc::channel();
+        let (ftx, frx) = std::sync::mpsc::channel();
         let (_ttx, _trx) = std::sync::mpsc::channel();
         let collector = ChannelEventCollector::new(tx, ftx, _ttx);
         Ok(Self {
             inner: Rc::new(RefCell::new(world)),
             events_rx: RefCell::new(rx),
+            force_rx: RefCell::new(frx),
             collector: RefCell::new(collector),
         })
     }
 }
 
 /// RigidBodyBuilder(kind="dynamic"|"fixed"|"kinematic", translation=,
-///                  rotation=欧拉角向量, linvel=, angvel=, can_sleep=True)
+///                  rotation=欧拉角向量, linvel=, angvel=, can_sleep=True,
+///                  linear_damping=, angular_damping=, ccd_enabled=,
+///                  lock_rotations=)
 #[derive(FromArgs)]
 pub(crate) struct RigidBodyBuilderArgs {
     #[pyarg(any)]
@@ -117,6 +120,18 @@ pub(crate) struct RigidBodyBuilderArgs {
     pub(crate) angvel: Option<SfFPoint3>,
     #[pyarg(any, optional)]
     pub(crate) can_sleep: Option<bool>,
+    /// 线性阻尼（缺省 0）
+    #[pyarg(any, optional)]
+    pub(crate) linear_damping: Option<ArgIntoFloat>,
+    /// 角阻尼
+    #[pyarg(any, optional)]
+    pub(crate) angular_damping: Option<ArgIntoFloat>,
+    /// 连续碰撞检测（高速穿墙防线）
+    #[pyarg(any, optional)]
+    pub(crate) ccd_enabled: Option<bool>,
+    /// 锁定全部旋转（3D = 姿态四元数冻结——方向固定物体）
+    #[pyarg(any, optional)]
+    pub(crate) lock_rotations: Option<bool>,
 }
 
 impl Constructor for PyRigidBodyBuilder3D {
@@ -150,6 +165,18 @@ impl Constructor for PyRigidBodyBuilder3D {
             b = b.angvel([w.0, w.1, w.2].into());
         }
         b = b.can_sleep(args.can_sleep.unwrap_or(true));
+        if let Some(v) = args.linear_damping {
+            b = b.linear_damping(v.into_float() as f32);
+        }
+        if let Some(v) = args.angular_damping {
+            b = b.angular_damping(v.into_float() as f32);
+        }
+        if let Some(v) = args.ccd_enabled {
+            b = b.ccd_enabled(v);
+        }
+        if args.lock_rotations.unwrap_or(false) {
+            b = b.lock_rotations();
+        }
         Ok(Self {
             builder: RefCell::new(Some(b)),
         })
@@ -160,7 +187,9 @@ impl Constructor for PyRigidBodyBuilder3D {
 ///                 restitution=, density=, sensor=, translation=)
 #[derive(FromArgs)]
 pub(crate) struct ColliderBuilderArgs {
-    /// "cuboid"（hx/hy/hz 半尺寸）或 "ball"（radius）
+    /// "cuboid"（hx/hy/hz 半尺寸）/ "ball"（radius）/ "capsule"（
+    /// half_height + radius，纵轴 y）/ "cylinder" / "cone"（同 capsule
+    /// 参数形态）/ "trimesh"（vertices 扁平 xyz + indices 扁平三角索引）
     #[pyarg(any)]
     pub(crate) kind: String,
     #[pyarg(any, optional)]
@@ -171,6 +200,15 @@ pub(crate) struct ColliderBuilderArgs {
     pub(crate) hz: Option<ArgIntoFloat>,
     #[pyarg(any, optional)]
     pub(crate) radius: Option<ArgIntoFloat>,
+    /// capsule / cylinder / cone 半高（纵轴 y）
+    #[pyarg(any, optional)]
+    pub(crate) half_height: Option<ArgIntoFloat>,
+    /// trimesh 顶点（扁平 [x,y,z, ...]）
+    #[pyarg(any, optional)]
+    pub(crate) vertices: Option<Vec<f32>>,
+    /// trimesh 三角索引（扁平 [i0,i1,i2, ...]，长度须为 3 的倍数）
+    #[pyarg(any, optional)]
+    pub(crate) indices: Option<Vec<u32>>,
     /// 相对刚体原点的偏移（米）
     #[pyarg(any, optional)]
     pub(crate) translation: Option<SfFPoint3>,
@@ -187,6 +225,18 @@ pub(crate) struct ColliderBuilderArgs {
     /// 缺省 false 省开销）
     #[pyarg(any, optional)]
     pub(crate) events: Option<bool>,
+    /// 碰撞分组（两者同给生效）：memberships = 本体所属组位集，
+    /// filter = 可碰撞组位集（bit i = 组 i）
+    #[pyarg(any, optional)]
+    pub(crate) groups_memberships: Option<u32>,
+    #[pyarg(any, optional)]
+    pub(crate) groups_filter: Option<u32>,
+    /// 冲击力事件（drain_force_events 产出——撞击力度门槛检测）
+    #[pyarg(any, optional)]
+    pub(crate) force_events: Option<bool>,
+    /// 力事件门槛（总力幅值超过才发事件）
+    #[pyarg(any, optional)]
+    pub(crate) force_threshold: Option<ArgIntoFloat>,
 }
 
 impl Constructor for PyColliderBuilder3D {
@@ -214,9 +264,47 @@ impl Constructor for PyColliderBuilder3D {
                 };
                 SfColliderBuilder::ball(r.into_float() as f32)
             }
+            "capsule" => {
+                let (Some(hh), Some(r)) = (args.half_height, args.radius) else {
+                    return Err(vm.new_value_error("capsule 须给 half_height / radius（米）"));
+                };
+                SfColliderBuilder::capsule_y(hh.into_float() as f32, r.into_float() as f32)
+            }
+            "cylinder" => {
+                let (Some(hh), Some(r)) = (args.half_height, args.radius) else {
+                    return Err(vm.new_value_error("cylinder 须给 half_height / radius（米）"));
+                };
+                SfColliderBuilder::cylinder(hh.into_float() as f32, r.into_float() as f32)
+            }
+            "cone" => {
+                let (Some(hh), Some(r)) = (args.half_height, args.radius) else {
+                    return Err(vm.new_value_error("cone 须给 half_height / radius（米）"));
+                };
+                SfColliderBuilder::cone(hh.into_float() as f32, r.into_float() as f32)
+            }
+            "trimesh" => {
+                let (Some(verts), Some(idx)) = (args.vertices.clone(), args.indices.clone())
+                else {
+                    return Err(vm.new_value_error("trimesh 须给 vertices / indices"));
+                };
+                if verts.len() % 3 != 0 {
+                    return Err(vm.new_value_error("vertices 长度须为 3 的倍数（扁平 xyz）"));
+                }
+                if idx.len() % 3 != 0 {
+                    return Err(vm.new_value_error("indices 长度须为 3 的倍数（三角索引）"));
+                }
+                let points: Vec<_> = verts
+                    .chunks_exact(3)
+                    .map(|p| [p[0], p[1], p[2]].into())
+                    .collect();
+                let tris: Vec<_> = idx.chunks_exact(3).map(|t| [t[0], t[1], t[2]]).collect();
+                SfColliderBuilder::trimesh(points, tris).map_err(|e| {
+                    vm.new_value_error(format!("trimesh 构建失败: {e:?}"))
+                })?
+            }
             other => {
                 return Err(vm.new_value_error(format!(
-                    "kind 须为 'cuboid' / 'ball'（v1），实际 {other:?}"
+                    "kind 须为 'cuboid' / 'ball' / 'capsule' / 'cylinder' / 'cone' / 'trimesh'，实际 {other:?}"
                 )))
             }
         };
@@ -235,8 +323,25 @@ impl Constructor for PyColliderBuilder3D {
         if args.sensor.unwrap_or(false) {
             c = c.sensor(true);
         }
+        if let (Some(m), Some(f)) = (args.groups_memberships, args.groups_filter) {
+            c = c.collision_groups(InteractionGroups::new(
+                SfGroup::from_bits_truncate(m),
+                SfGroup::from_bits_truncate(f),
+                InteractionTestMode::And,
+            ));
+        }
+        let mut ev = SfActiveEvents3::default();
         if args.events.unwrap_or(false) {
-            c = c.active_events(SfActiveEvents3::COLLISION_EVENTS);
+            ev |= SfActiveEvents3::COLLISION_EVENTS;
+        }
+        if args.force_events.unwrap_or(false) {
+            ev |= SfActiveEvents3::CONTACT_FORCE_EVENTS;
+            if let Some(t) = args.force_threshold {
+                c = c.contact_force_event_threshold(t.into_float() as f32);
+            }
+        }
+        if ev != SfActiveEvents3::default() {
+            c = c.active_events(ev);
         }
         Ok(Self {
             builder: RefCell::new(Some(c)),
@@ -598,12 +703,65 @@ impl PyPhysicsWorld3D {
         }
         Ok(vm.ctx.new_list(out).into())
     }
+
+    /// drain_force_events() -> [(h1, h2, 总力幅值, 最大接触力幅值)]：冲击
+    /// 力事件排空（collider 须 force_events=True 开启 + force_threshold
+    /// 设门槛——撞击伤害判定/击碎反馈的判定源）。
+    #[pymethod]
+    fn drain_force_events(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+        let mut out: Vec<PyObjectRef> = Vec::new();
+        loop {
+            let ev = match self.force_rx.borrow_mut().try_recv() {
+                Ok(ev) => ev,
+                Err(_) => break,
+            };
+            let tup: PyObjectRef = vm
+                .new_tuple((
+                    pack_collider(ev.collider1) as i64,
+                    pack_collider(ev.collider2) as i64,
+                    ev.total_force_magnitude as f64,
+                    ev.max_force_magnitude as f64,
+                ))
+                .into();
+            out.push(tup);
+        }
+        Ok(vm.ctx.new_list(out).into())
+    }
+
+    /// set_collider_groups(handle, memberships, filter)：运行时改碰撞
+    /// 分组（换阵营/临时免伤的运行时开关）。
+    #[pymethod]
+    fn set_collider_groups(
+        &self,
+        handle: u64,
+        memberships: u32,
+        filter: u32,
+        vm: &VirtualMachine,
+    ) -> PyResult<()> {
+        let g = InteractionGroups::new(
+            SfGroup::from_bits_truncate(memberships),
+            SfGroup::from_bits_truncate(filter),
+            InteractionTestMode::And,
+        );
+        match self
+            .inner
+            .borrow_mut()
+            .get()
+            .colliders
+            .get_mut(unpack_collider(handle))
+        {
+            Some(co) => {
+                co.set_collision_groups(g);
+                Ok(())
+            }
+            None => Err(vm.new_value_error("collider 句柄无效")),
+        }
+    }
+
     /// 射线查询（dir 非单位向量按其模长定射线长；max_toi 为 dir 模长的
     /// 倍数上限，None = 缺省 100.0——RP 方法参数无缺省，Python 侧显式传
     /// None）。⚠️ 时序契约：insert 后**须至少 step 一次**方可查询
     /// （broad_phase 时序——实测 insert 后立即查询返回 None）。
-    /// ⚠️ 时序契约：insert 后**须至少 step 一次**方可查询（broad_phase
-    /// 时序——实测 insert 后立即查询返回 None）。
     #[pymethod]
     fn cast_ray(
         &self,
