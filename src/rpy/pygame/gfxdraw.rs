@@ -61,7 +61,6 @@ use std::cell::Cell;
                 Target::Surf(s) => s.surface.with_batch(|b| b.set_mvp(Some(camera.0.mvp()))),
                 Target::Active => bridge::with_session(vm, |t| t.set_camera(&camera.0))?,
                 Target::Targets => bridge::with_mrt_session(vm, |t| t.set_camera(&camera.0))?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| t.set_camera(&camera.0))?,
             }
             Ok(())
         }
@@ -72,7 +71,6 @@ use std::cell::Cell;
             match route(&f, vm)? {
                 Target::Surf(s) => s.surface.with_batch(|b| b.reset_mvp()),
                 Target::Active => bridge::with_session(vm, |t| t.reset_camera())?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| t.reset_camera())?,
                 Target::Targets => bridge::with_mrt_session(vm, |t| t.reset_camera())?,
             }
             Ok(())
@@ -100,7 +98,6 @@ use std::cell::Cell;
             match route(&f, vm)? {
                 Target::Surf(s) => s.surface.with_batch(|b| b.reset_model()),
                 Target::Active => bridge::with_session(vm, |t| t.reset_transform())?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| t.reset_transform())?,
                 Target::Targets => bridge::with_mrt_session(vm, |t| t.reset_transform())?,
             }
             Ok(())
@@ -156,7 +153,6 @@ use std::cell::Cell;
                 Target::Surf(s) => DrawTarget::draw_surface(&*s.surface, &src.surface),
                 Target::Active => bridge::with_session(vm, |t| DrawTarget::draw_surface(t, &src.surface))?,
                 Target::Targets => bridge::with_mrt_session(vm, |t| DrawTarget::draw_surface(t, &src.surface))?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| DrawTarget::draw_surface(t, &src.surface))?,
             }
             Ok(())
         }
@@ -174,8 +170,6 @@ use std::cell::Cell;
                 Target::Surf(s) => DrawTarget::draw_surface_centered(
                     &*s.surface, &src.surface, (center.0 as f32, center.1 as f32)),
                 Target::Active => bridge::with_session(vm, |t| DrawTarget::draw_surface_centered(
-                    t, &src.surface, (center.0 as f32, center.1 as f32)))?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| DrawTarget::draw_surface_centered(
                     t, &src.surface, (center.0 as f32, center.1 as f32)))?,
                 Target::Targets => bridge::with_mrt_session(vm, |t| DrawTarget::draw_surface_centered(
                     t, &src.surface, (center.0 as f32, center.1 as f32)))?,
@@ -206,10 +200,6 @@ use std::cell::Cell;
                     t, &src.surface,
                     [uv[0], uv[1], uv[2], uv[3]],
                     tint.map(|c| c.0).unwrap_or([255, 255, 255, 255])))?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| DrawTarget::draw_surface_uv(
-                    t, &src.surface,
-                    [uv[0], uv[1], uv[2], uv[3]],
-                    tint.map(|c| c.0).unwrap_or([255, 255, 255, 255])))?,
             }
             Ok(())
         }
@@ -230,8 +220,6 @@ use std::cell::Cell;
                 Target::Surf(s) => DrawTarget::draw_surface_tf(
                     &*s.surface, &src.surface, mat.0.get(), tint),
                 Target::Active => bridge::with_session(vm, |t| DrawTarget::draw_surface_tf(
-                    t, &src.surface, mat.0.get(), tint))?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| DrawTarget::draw_surface_tf(
                     t, &src.surface, mat.0.get(), tint))?,
                 Target::Targets => bridge::with_mrt_session(vm, |t| DrawTarget::draw_surface_tf(
                     t, &src.surface, mat.0.get(), tint))?,
@@ -597,7 +585,6 @@ use std::cell::Cell;
                 Target::Surf(s) => starfish_pygame::draw::rect(&*s.surface, r, 1),
                 Target::Active => bridge::with_session(vm, |t| starfish_pygame::draw::rect(t, r, 1))?,
                 Target::Targets => bridge::with_mrt_session(vm, |t| starfish_pygame::draw::rect(t, r, 1))?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| starfish_pygame::draw::rect(t, r, 1))?,
             };
             Ok(())
         }
@@ -609,7 +596,6 @@ use std::cell::Cell;
             match route(&f, vm)? {
                 Target::Surf(s) => starfish_pygame::draw::rect(&*s.surface, r, 0),
                 Target::Active => bridge::with_session(vm, |t| starfish_pygame::draw::rect(t, r, 0))?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| starfish_pygame::draw::rect(t, r, 0))?,
                 Target::Targets => bridge::with_mrt_session(vm, |t| starfish_pygame::draw::rect(t, r, 0))?,
             };
             Ok(())
