@@ -26,6 +26,8 @@ use crate::rpy::pygame;
 use crate::rpy::pygame_gui;
 #[cfg(any(feature = "physics2d", feature = "physics3d"))]
 use crate::rpy::pygame_physics;
+#[cfg(feature = "spine")]
+use crate::rpy::pygame_spine;
 
 /// 多阶段 init 后注入 sys.modules（宿主壳统一入口）。
 pub fn install(vm: &VirtualMachine) {
@@ -108,6 +110,9 @@ fn try_install(vm: &VirtualMachine) -> Result<(), String> {
         pygame_physics::module_def(&vm.ctx),
         "pygame_physics",
     )?;
+    // pygame_spine = Spine 2D 骨骼动画（阶段 4 独立顶层模块）
+    #[cfg(feature = "spine")]
+    mount_top(vm, &sys_modules, pygame_spine::module_def(&vm.ctx), "pygame_spine")?;
     Ok(())
 }
 

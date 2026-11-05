@@ -27,6 +27,9 @@ pub mod pygame_gui;
 // 3D 类带 3D 后缀）——任一维度 feature 开启即挂载
 #[cfg(any(feature = "physics2d", feature = "physics3d"))]
 pub mod pygame_physics;
+// pygame_spine = Spine 2D 骨骼动画（pygame_spine 适配 crate——阶段 4）
+#[cfg(feature = "spine")]
+pub mod pygame_spine;
 pub mod registry;
 pub mod args;
 pub mod bridge;

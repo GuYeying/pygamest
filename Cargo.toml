@@ -23,6 +23,8 @@ physics = ["dep:rapier-starfish-debug"]
 physics2d = ["physics", "rapier-starfish-debug/2d"]
 # 预留：3D 绑定面（pygame.rapier3d）随 3D 批次落地
 physics3d = ["physics", "rapier-starfish-debug/3d"]
+# spine = Spine 2D 骨骼动画（pygame_spine 适配 crate——阶段 4）
+spine = ["dep:pygame_spine"]
 
 [dependencies]
 starfish-std        = { git = "https://github.com/GuYeying/starfish", features = ["we"] }
@@ -46,6 +48,7 @@ starfish-pygame     = { git = "https://github.com/GuYeying/starfish" }
 # rapier 物理适配层（2D v1；default 为空，features 必显式；wgpu 版本
 # 契约 30.0.1 与 starfish-render 同源解析）
 rapier-starfish-debug = { git = "https://github.com/GuYeying/rapier-starfish-debug", features = ["2d"], optional = true }
+pygame_spine = { path = "../pygame_spine", optional = true }
 # egui 适配层（vendored fork；feature "render" 拉 egui-wgpu + starfish-render
 # 桥 SfEguiRenderer；egui 经它重导出，本 crate 不直依赖 egui）
 egui-starfish-we = { git = "https://github.com/GuYeying/egui-starfish-we", features = ["render"], optional = true }
