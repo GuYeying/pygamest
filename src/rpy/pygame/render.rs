@@ -34,7 +34,7 @@ pub(crate) mod render {
     use crate::rpy::pygame::pygame::PySurface;
 
     use starfish_pygame::render as sf;
-    use starfish_render::pipeline::{CullMode, DepthMode};
+    use starfish_render::pipeline::{CullMode, DepthMode, BlendMode};
     use starfish_render::render_resource_access::RenderResourceAccess;
     use std::sync::Arc;
 
@@ -326,8 +326,11 @@ pub(crate) mod render {
         label: Option<String>,
     }
 
-    /// access.pipeline(shader, mesh, bind_groups, flavor="2d",
-    /// topo="triangles", cull="none", depth=False, label=None)
+    /// access.pipeline(shader, mesh, bind_groups,
+    /// topo="triangles", cull="none",
+    /// depth_mode=None, depth_write=None, blend=None,
+    /// wireframe=False, alpha_to_coverage=False,
+    /// vertex_entry=None, fragment_entry=None, label=None)
     #[derive(FromArgs)]
     pub(crate) struct PipelineArgs {
         #[pyarg(any)]
@@ -336,16 +339,32 @@ pub(crate) mod render {
         mesh: PyRef<PyMesh>,
         #[pyarg(any)]
         bind_groups: PyObjectRef,
-        /// flavor = "2d"（默认，builder_2d）| "3d"（builder_3d）——builder
-        /// 家族选择（topo/cull/depth 仍可逐项覆盖）
-        #[pyarg(any, optional)]
-        flavor: Option<String>,
         #[pyarg(any, optional)]
         topo: Option<String>,
         #[pyarg(any, optional)]
         cull: Option<String>,
+        /// 混合模式："alpha"（默认随 flavor）/ "opaque" / "additive" /
+        /// "multiply" / "none"
         #[pyarg(any, optional)]
-        depth: Option<bool>,
+        blend: Option<String>,
+        /// 深度写入（须 depth 已启用）
+        #[pyarg(any, optional)]
+        depth_write: Option<bool>,
+        /// 深度模式："standard"（默认）/ "reverse" / "disabled"
+        #[pyarg(any, optional)]
+        depth_mode: Option<String>,
+        /// GPU 线框模式（需 Features::POLYGON_MODE_LINE）
+        #[pyarg(any, optional)]
+        wireframe: Option<bool>,
+        /// MSAA alpha-to-coverage（植被/alpha 裁切用）
+        #[pyarg(any, optional)]
+        alpha_to_coverage: Option<bool>,
+        /// 顶点着色器入口名（默认 "vs_main"）
+        #[pyarg(any, optional)]
+        vertex_entry: Option<String>,
+        /// 片元着色器入口名（默认 "fs_main"）
+        #[pyarg(any, optional)]
+        fragment_entry: Option<String>,
         #[pyarg(any, optional)]
         label: Option<String>,
     }
@@ -720,24 +739,66 @@ pub(crate) mod render {
                     )))
                 }
             };
-            let mut b = match args.flavor.as_deref().unwrap_or("2d") {
-                "2d" => self
-                    .access
-                    .render_pipeline_builder_2d(&args.shader.inner),
-                "3d" => self
-                    .access
-                    .render_pipeline_builder_3d(&args.shader.inner),
-                other => {
-                    return Err(vm.new_value_error(format!(
-                        "flavor 须为 2d/3d，实际 {other:?}"
-                    )))
-                }
+            // 统一 builder 基座（最中性默认：无深度/无剔除/alpha 混合）——
+            // 全靠显式参数设置（flavor 已退役，2d/3d 只是不同的默认值组合）
+            let mut b = self
+                .access
+                .render_pipeline_builder_2d(&args.shader.inner)
+                .topology(topo)
+                .cull(cull);
+
+            // 深度：depth_mode 精细口（底层准确性——无简化缩写）
+            if let Some(dm) = &args.depth_mode {
+                b = match dm.as_str() {
+                    "disabled" => b.depth_mode(DepthMode::Disabled),
+                    "standard" => b.depth_mode(DepthMode::Standard),
+                    "reverse" => b.depth_mode(DepthMode::Reverse),
+                    other => {
+                        return Err(vm.new_value_error(format!(
+                            "depth_mode 须为 disabled/standard/reverse，实际 {other:?}"
+                        )))
+                    }
+                };
             }
-            .topology(topo)
-            .cull(cull);
-            if args.depth.unwrap_or(false) {
-                b = b.depth_mode(DepthMode::Standard).depth_write(true);
+            if let Some(dw) = args.depth_write {
+                b = b.depth_write(dw);
             }
+
+            // 混合模式
+            if let Some(bl) = &args.blend {
+                let mode = match bl.as_str() {
+                    "alpha" => BlendMode::Alpha,
+                    "opaque" => BlendMode::Opaque,
+                    "additive" => BlendMode::Additive,
+                    "multiply" => BlendMode::Multiply,
+                    "none" => BlendMode::None,
+                    other => {
+                        return Err(vm.new_value_error(format!(
+                            "blend 须为 alpha/opaque/additive/multiply/none，实际 {other:?}"
+                        )))
+                    }
+                };
+                b = b.blend(mode);
+            }
+
+            // GPU 线框
+            if let Some(wf) = args.wireframe {
+                b = b.wireframe(wf);
+            }
+
+            // MSAA alpha-to-coverage
+            if let Some(atc) = args.alpha_to_coverage {
+                b = b.alpha_to_coverage(atc);
+            }
+
+            // 着色器入口
+            if let Some(ve) = &args.vertex_entry {
+                b = b.vertex_entry(ve.clone());
+            }
+            if let Some(fe) = &args.fragment_entry {
+                b = b.fragment_entry(fe.clone());
+            }
+
             let refs: Vec<&starfish_pygame::render::BindGroup> =
                 bgs.iter().map(|g| &g.inner).collect();
             let p = b.build(&refs, &args.mesh.inner, args.label.as_deref());

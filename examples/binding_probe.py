@@ -335,10 +335,10 @@ async def main():
             # （Space 按住 → 描边变红；左键按住 → 方块上出现标记点）
             _space = pygame.key.get_pressed().get(pygame.key.K_SPACE)
             _lmb = pygame.mouse.get_pressed()[0]
-            r.rect((255, 80, 80) if _space else (255, 255, 255), (x, -130, 60, 60), 4)
+            pygame.gfxdraw.rectangle(r, (x, -130, 60, 60), (255, 80, 80) if _space else (255, 255, 255))  # 描边（gfxdraw 恒 1px）
             if _lmb:
                 pygame.gfxdraw.filled_circle(r, x, 30, 8, (80, 255, 120))
-            r.rect((0, 200, 90), box)
+            pygame.gfxdraw.box(r, box, (0, 200, 90))
             # 文字表面 blit（预渲染一次）。注意：内嵌 Antonio 为拉丁字体——
             # 中文字形不存在会被跳过（demo 文案用纯拉丁；CJK 见 line1）
             if line2 is not None:
@@ -348,10 +348,9 @@ async def main():
             # 批次 K：quat_from_axis_angle → Mat4 → transform_point3 的指针；
             # Vector3.lerp 三角波驱动脉冲圆半径（旋转/缩放全程数学值承载。
             # 注：数学产物为 float，绘制坐标收 int——SfPoint 契约严格拒 float）
-            r.line((255, 120, 120), (-140, 80),
-                   (-140 + int(_hand.x), 80 + int(_hand.y)), 2)
+            pygame.gfxdraw.line(r, -140, 80, -140 + int(_hand.x), 80 + int(_hand.y), (255, 120, 120))
             pygame.gfxdraw.filled_circle(r, -140, 80, 4, (255, 120, 120))
-            r.circle((100, 220, 255), (220, 0), max(2, int(_pulse.x * 30)))
+            pygame.gfxdraw.filled_circle(r, 220, 0, max(2, int(_pulse.x * 30)), (100, 220, 255))
             pygame.gfxdraw.rectangle(r, (200, 20, 40, 40), (100, 220, 255))  # 原 width=2 描边（gfxdraw 恒 1px）        # 脉冲圆的外框参照
             # gfxdraw 兼容面（批次 30）：SDL_gfx 签名（目标在前/坐标分离/
             # 颜色在后），实现与 r.circle 同一 batch 零额外成本
