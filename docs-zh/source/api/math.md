@@ -66,6 +66,29 @@
 
 缩放矩阵。
 
+#### <span class="c-func">frustum_from_mvp(m) -> Frustum</span>
+
+VP（或 MVP）→ 视锥（Gribb-Hartmann 六平面提取）。**CPU 侧剔除决策
+的判定源**——CPU 烘批架构下"查一下再决定 push 不 push"零额外开销：
+
+```python
+cam = pygame.render.camera_perspective(45.0, w / h, 0.1, 100.0)
+fr = pygame.math.frustum_from_mvp(cam.mvp())     # 每相机建一次（矩阵变则重建）
+for obj in objects:
+    if not fr.intersects_sphere(obj.x, obj.y, obj.z, obj.bound_r):
+        continue                                  # 视锥外 → 不进 batch
+    pygame.gfxdraw.set_transform(t, obj.model())
+    pygame.gfxdraw.draw_surface(t, obj.surface)
+```
+
+**letterbox**：裸 VP（未乘 `present_fit()`）给出**包含**可见区域的保守
+超集视锥——剔除安全方向（不误剔）；要精确画布子矩形传
+`present_fit().mul_mat4(cam.mvp())`。
+
+- :param m: VP / MVP 矩阵（`Camera.mvp()` 直入）
+- :type m: Mat4
+- :rtype: Frustum
+
 ## <span class="c-class">类</span>
 
 ### <span class="c-class">Vector2 —— 二维向量</span>
@@ -180,3 +203,23 @@
 
 `*` 全对称（mat×mat 组合 / mat×标量）；`-x`。`==` 为身份比较（未实现
 分量比较）。
+
+### <span class="c-class">Frustum —— 视锥（剔除）</span>
+
+六平面视锥——**保守语义**：只把"确定在外"判负，跨界/相切一律放行
+（渲染剔除的安全方向：漏剔多画一帧，误剔物体凭空消失）。构造经
+`frustum_from_mvp`（直呼不可实例化）；入参 int/float 兼收。
+
+##### <span class="c-func">contains_point(x, y, z) -> bool</span>
+
+点在视锥内（含边界）——最廉价的成员测试（细点云/粒子）。
+
+##### <span class="c-func">intersects_sphere(x, y, z, r) -> bool</span>
+
+包围球与视锥相交（跨界球放行）——**首选判定形**（物体预算包围球的
+常规形态；r ≥ 0）。
+
+##### <span class="c-func">intersects_aabb(minx, miny, minz, maxx, maxy, maxz) -> bool</span>
+
+轴对齐包围盒与视锥相交（p-vertex 精确判外——任一平面的正顶点在外
+则整盒在外，斜跨盒不误剔）。

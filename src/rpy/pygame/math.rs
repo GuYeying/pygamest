@@ -742,6 +742,83 @@ use std::cell::Cell;
             }
         }
 
+        // ── Frustum（视锥剔除；构造经 frustum_from_mvp，直呼不可实例化）──
+        #[derive(PyPayload)]
+        #[pyattr]
+        #[pyclass(module = "pygame.math", name = "Frustum", unhashable = true)]
+        pub(crate) struct PyFrustum(pub(crate) starfish_pygame::math::Frustum);
+
+        impl std::fmt::Debug for PyFrustum {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("Frustum(<6 planes>)")
+            }
+        }
+
+        #[pyclass]
+        impl PyFrustum {
+            /// contains_point(x, y, z) -> bool：点在视锥内（含边界）。
+            /// 入参 ArgIntoFloat 兼收 int/float（transform.rs 同约定）。
+            #[pymethod]
+            fn contains_point(
+                &self,
+                x: ArgIntoFloat,
+                y: ArgIntoFloat,
+                z: ArgIntoFloat,
+            ) -> bool {
+                self.0.contains_point([
+                    x.into_float() as f32,
+                    y.into_float() as f32,
+                    z.into_float() as f32,
+                ])
+            }
+
+            /// intersects_sphere(x, y, z, r) -> bool：球与视锥相交
+            /// （跨界球放行——保守，零误剔；r ≥ 0）。
+            #[pymethod]
+            fn intersects_sphere(
+                &self,
+                x: ArgIntoFloat,
+                y: ArgIntoFloat,
+                z: ArgIntoFloat,
+                r: ArgIntoFloat,
+            ) -> bool {
+                self.0.intersects_sphere(
+                    [
+                        x.into_float() as f32,
+                        y.into_float() as f32,
+                        z.into_float() as f32,
+                    ],
+                    r.into_float() as f32,
+                )
+            }
+
+            /// intersects_aabb(minx, miny, minz, maxx, maxy, maxz) -> bool：
+            /// 轴对齐盒与视锥相交（p-vertex 精确判外，其余保守放行）。
+            #[pymethod]
+            fn intersects_aabb(
+                &self,
+                minx: ArgIntoFloat,
+                miny: ArgIntoFloat,
+                minz: ArgIntoFloat,
+                maxx: ArgIntoFloat,
+                maxy: ArgIntoFloat,
+                maxz: ArgIntoFloat,
+            ) -> bool {
+                self.0.intersects_aabb(
+                    [
+                        minx.into_float() as f32,
+                        miny.into_float() as f32,
+                        minz.into_float() as f32,
+                    ],
+                    [
+                        maxx.into_float() as f32,
+                        maxy.into_float() as f32,
+                        maxz.into_float() as f32,
+                    ],
+                )
+            }
+        }
+
         // ── 3D 数学模块函数（度数制入口；弧度制走 glam 语义层）─────────
 
         /// 单位四元数。
@@ -840,6 +917,16 @@ use std::cell::Cell;
                 ),
             )))
             .into_ref(&vm.ctx)
+        }
+
+        /// VP（或 MVP）→ 视锥（Gribb-Hartmann 六平面）。
+        /// `camera_perspective/camera_ortho` 的 `.mvp()` 直入——CPU 侧
+        /// 剔除决策（batch 跳 push 的判定源）。letterbox 下裸 VP 为
+        /// 保守超集（不误剔）；精确画布子矩形传 `present_fit().mul_mat4(vp)`。
+        #[pyfunction]
+        fn frustum_from_mvp(m: PyRef<PyMat4>, vm: &VirtualMachine) -> PyRef<PyFrustum> {
+            PyFrustum(starfish_pygame::math::Frustum::from_mvp(&m.0.get()))
+                .into_ref(&vm.ctx)
         }
     }
 
