@@ -32,7 +32,7 @@ use std::cell::Cell;
     #[pyfunction]
     fn mesh(
         f: PyObjectRef,
-        surface: PyRef<PySurface>,
+        surface: Option<PyRef<PySurface>>,
         positions: Vec<f32>,
         uvs: Vec<f32>,
         indices: Vec<u16>,
@@ -48,16 +48,18 @@ use std::cell::Cell;
             ],
             None => [1.0, 1.0, 1.0, 1.0],
         };
+        let tex: Option<&starfish_pygame::render::Surface> =
+            surface.as_deref().map(|s| &*s.surface);
         use starfish_pygame::render::DrawTarget;
         match route(&f, vm)? {
-            Target::Surf(s) => DrawTarget::draw_mesh(
-                &*s.surface, &surface.surface, &positions, &uvs, &indices, rgba,
-            ),
+            Target::Surf(s) => {
+                DrawTarget::draw_mesh(&*s.surface, tex, &positions, &uvs, &indices, rgba)
+            }
             Target::Active => bridge::with_session(vm, |t| {
-                DrawTarget::draw_mesh(t, &surface.surface, &positions, &uvs, &indices, rgba)
+                DrawTarget::draw_mesh(t, tex, &positions, &uvs, &indices, rgba)
             })?,
             Target::Targets => bridge::with_mrt_session(vm, |t| {
-                DrawTarget::draw_mesh(t, &surface.surface, &positions, &uvs, &indices, rgba)
+                DrawTarget::draw_mesh(t, tex, &positions, &uvs, &indices, rgba)
             })?,
         }
         Ok(())
@@ -77,7 +79,8 @@ use std::cell::Cell;
     ) -> PyResult<()> {
         use starfish_pygame::render::DrawTarget;
         let sk = skeleton.inner.borrow();
-        let cmds = pygame_spine::render::render(&sk);
+        let mut scratch = skeleton.scratch.borrow_mut();
+        let cmds = pygame_spine::render::render_with(&sk, &mut scratch);
         fn draw_cmds<T: DrawTarget + ?Sized>(
             t: &T,
             cmds: &[pygame_spine::RenderCommand],
@@ -95,7 +98,7 @@ use std::cell::Cell;
                     .flat_map(|uv| [uv[0], 1.0 - uv[1]])
                     .collect();
                 let rgba = [c.color.r, c.color.g, c.color.b, c.color.a];
-                t.draw_mesh(page, &positions, &uvs, &c.triangles, rgba);
+                t.draw_mesh(Some(page), &positions, &uvs, &c.triangles, rgba);
             }
         }
         let page_surfaces: Vec<std::sync::Arc<starfish_pygame::render::Surface>> =
@@ -173,7 +176,7 @@ use std::cell::Cell;
                 let opacity = m.opacity();
                 let indices = m.indices().clone();
                 let rgba = [1.0, 1.0, 1.0, opacity.clamp(0.0, 1.0)];
-                t.draw_mesh(tex, &positions, &uvs, &indices, rgba);
+                t.draw_mesh(Some(tex), &positions, &uvs, &indices, rgba);
             }
         }
         match route(&f, vm)? {
@@ -187,6 +190,83 @@ use std::cell::Cell;
             })?,
             Target::Targets => bridge::with_mrt_session(vm, |t| {
                 draw_meshes(t, &rt, tex_list);
+                Ok(())
+            })?,
+        }
+    }
+
+    /// draw_ozz_quads(f, player, scale=1.0, cx=0.0, cy=0.0, size=14.0)：
+    /// ozz 关节盒体动画渲染——每骨一个 quad（世界位 + x/y 基方向定向，
+    /// 单次 draw_mesh 纯色路径 None 纹理批量上屏——67 关节 = 单 draw）。
+    #[cfg(feature = "ozz")]
+    #[derive(FromArgs)]
+    struct OzzQuadsArgs {
+        player: PyRef<crate::rpy::pygame_ozz::pygame_ozz::PyOzzPlayer>,
+        #[pyarg(any, optional)]
+        scale: Option<ArgIntoFloat>,
+        #[pyarg(any, optional)]
+        cx: Option<ArgIntoFloat>,
+        #[pyarg(any, optional)]
+        cy: Option<ArgIntoFloat>,
+        #[pyarg(any, optional)]
+        size: Option<ArgIntoFloat>,
+    }
+
+    #[cfg(feature = "ozz")]
+    #[pyfunction]
+    fn draw_ozz_quads(f: PyObjectRef, args: OzzQuadsArgs, vm: &VirtualMachine) -> PyResult<()> {
+        use starfish_pygame::render::{BatchTopology, DrawTarget};
+        let s = args.scale.map(|v| v.into_float() as f32).unwrap_or(1.0);
+        let ox = args.cx.map(|v| v.into_float() as f32).unwrap_or(0.0);
+        let oy = args.cy.map(|v| v.into_float() as f32).unwrap_or(0.0);
+        let hw = args
+            .size
+            .map(|v| v.into_float() as f32)
+            .unwrap_or(14.0)
+            * 0.5
+            * s;
+        let basis = args.player.inner.borrow().joint_basis_2d();
+        let mut positions: Vec<f32> = Vec::with_capacity(basis.len() * 8);
+        let mut uvs: Vec<f32> = Vec::with_capacity(basis.len() * 8);
+        let mut indices: Vec<u16> = Vec::with_capacity(basis.len() * 6);
+        for (i, (jx, jy, rx, ry, ux, uy)) in basis.iter().enumerate() {
+            let (cx0, cy0) = (jx * s + ox, jy * s + oy);
+            let rl = (rx * rx + ry * ry).sqrt().max(1e-6);
+            let ul = (ux * ux + uy * uy).sqrt().max(1e-6);
+            let (r_x, r_y) = (rx / rl * hw, ry / rl * hw);
+            let (u_x, u_y) = (ux / ul * hw, uy / ul * hw);
+            for (dx, dy) in [
+                (-r_x - u_x, -r_y - u_y),
+                (r_x - u_x, r_y - u_y),
+                (r_x + u_x, r_y + u_y),
+                (-r_x + u_x, -r_y + u_y),
+            ] {
+                positions.push(cx0 + dx);
+                positions.push(cy0 + dy);
+            }
+            uvs.extend_from_slice(&[0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0]);
+            let b = i as u16 * 4;
+            indices.extend_from_slice(&[b, b + 1, b + 2, b + 2, b + 3, b]);
+        }
+        fn draw_quads<T: DrawTarget + ?Sized>(
+            t: &T,
+            positions: &[f32],
+            uvs: &[f32],
+            indices: &[u16],
+        ) {
+            t.draw_mesh(None, positions, uvs, indices, [1.0, 0.85, 0.45, 0.92]);
+        }
+        match route(&f, vm)? {
+            Target::Surf(s2) => {
+                draw_quads(&*s2.surface, &positions, &uvs, &indices);
+                Ok(())
+            }
+            Target::Active => bridge::with_session(vm, |t| {
+                draw_quads(t, &positions, &uvs, &indices);
+                Ok(())
+            })?,
+            Target::Targets => bridge::with_mrt_session(vm, |t| {
+                draw_quads(t, &positions, &uvs, &indices);
                 Ok(())
             })?,
         }
@@ -207,6 +287,7 @@ use std::cell::Cell;
         cy: Option<ArgIntoFloat>,
     }
 
+    #[cfg(feature = "ozz")]
     #[pyfunction]
     fn draw_ozz_bones(f: PyObjectRef, args: OzzBonesArgs, vm: &VirtualMachine) -> PyResult<()> {
         let (player, scale, cx, cy) = (args.player, args.scale, args.cx, args.cy);

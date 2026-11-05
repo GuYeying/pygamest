@@ -40,15 +40,16 @@ use std::sync::Arc;
         #[pyattr]
         #[pyclass(module = "pygame_spine", name = "SkeletonData", unhashable = true)]
         pub(crate) struct PySpineSkeletonData {
-            pub(crate) data: Arc<sp::SkeletonData>,
+            /// Arc 可内可变（bind_atlas 期 Arc::get_mut 独占改写）
+            pub(crate) data: RefCell<Arc<sp::SkeletonData>>,
         }
 
         impl std::fmt::Debug for PySpineSkeletonData {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 f.write_str(&format!(
                     "SkeletonData(<{} bones, {} animations>)",
-                    self.data.bones.len(),
-                    self.data.animations.len()
+                    self.data.borrow().bones.len(),
+                    self.data.borrow().animations.len()
                 ))
             }
         }
@@ -70,6 +71,8 @@ use std::sync::Arc;
         #[pyclass(module = "pygame_spine", name = "Skeleton", unhashable = true)]
         pub(crate) struct PySpineSkeleton {
             pub(crate) inner: RefCell<sp::Skeleton>,
+            /// 渲染 scratch 复用（chine render_with——每帧免重分配命令缓冲）
+            pub(crate) scratch: RefCell<sp::clip::RenderScratch>,
         }
 
         impl std::fmt::Debug for PySpineSkeleton {
@@ -86,7 +89,8 @@ use std::sync::Arc;
                 _vm: &VirtualMachine,
             ) -> PyResult<Self> {
                 Ok(Self {
-                    inner: RefCell::new(sp::Skeleton::new(data.data.clone())),
+                    inner: RefCell::new(sp::Skeleton::new(data.data.borrow().clone())),
+                scratch: RefCell::new(sp::clip::RenderScratch::new()),
                 })
             }
         }
@@ -128,7 +132,7 @@ use std::sync::Arc;
                 .to_str()
                 .ok_or_else(|| vm.new_value_error("文本含非 UTF-8 字符"))?;
             match sp::load::from_json(t) {
-                Ok(data) => Ok(PySpineSkeletonData { data: Arc::new(data) }.into_ref(&vm.ctx)),
+                Ok(data) => Ok(PySpineSkeletonData { data: RefCell::new(Arc::new(data)) }.into_ref(&vm.ctx)),
                 Err(e) => Err(vm.new_value_error(format!("Spine JSON 解析失败: {e:?}"))),
             }
         }
@@ -137,7 +141,7 @@ use std::sync::Arc;
         #[pyfunction]
         fn load_binary(bytes: Vec<u8>, vm: &VirtualMachine) -> PyResult<PyRef<PySpineSkeletonData>> {
             match sp::binary::from_binary(&bytes) {
-                Ok(data) => Ok(PySpineSkeletonData { data: Arc::new(data) }.into_ref(&vm.ctx)),
+                Ok(data) => Ok(PySpineSkeletonData { data: RefCell::new(Arc::new(data)) }.into_ref(&vm.ctx)),
                 Err(e) => Err(vm.new_value_error(format!("Spine 二进制解析失败: {e:?}"))),
             }
         }
@@ -147,7 +151,7 @@ use std::sync::Arc;
         #[pyfunction]
         fn demo_skeleton(vm: &VirtualMachine) -> PyRef<PySpineSkeletonData> {
             PySpineSkeletonData {
-                data: sp::demo_skeleton(),
+                data: RefCell::new(sp::demo_skeleton()),
             }
             .into_ref(&vm.ctx)
         }
@@ -167,6 +171,7 @@ use std::sync::Arc;
                     .ok_or_else(|| vm.new_value_error("文本含非 UTF-8 字符"))?;
                 Ok(zelf
                     .data
+                    .borrow()
                     .animations
                     .iter()
                     .find(|a| a.name() == t)
@@ -177,13 +182,13 @@ use std::sync::Arc;
             /// bone_count() -> int：骨骼数。
             #[pymethod]
             fn bone_count(&self) -> usize {
-                self.data.bones.len()
+                self.data.borrow().bones.len()
             }
 
             /// bone_name(i) -> str：骨骼名。
             #[pymethod]
             fn bone_name(&self, i: usize, vm: &VirtualMachine) -> PyResult<String> {
-                self.data.bones.get(i).map(|b| b.name.clone()).ok_or_else(|| {
+                self.data.borrow().bones.get(i).map(|b| b.name.clone()).ok_or_else(|| {
                     vm.new_value_error(format!("骨骼索引越界: {i}"))
                 })
             }
@@ -360,9 +365,35 @@ use std::sync::Arc;
         #[pyfunction]
         fn demo_textured_skeleton(vm: &VirtualMachine) -> PyRef<PySpineSkeletonData> {
             PySpineSkeletonData {
-                data: sp::demo_textured_skeleton(),
+                data: RefCell::new(sp::demo_textured_skeleton()),
             }
             .into_ref(&vm.ctx)
+        }
+        /// load_with_atlas(json_text, atlas_text) -> (SkeletonData, 页数)：
+        /// JSON 骨架 + atlas 元数据一体加载并绑定（crate 侧完成 page/uv
+        /// 重映射——Atlas 类型不外露）。
+        #[pyfunction]
+        fn load_with_atlas(
+            json_text: PyStrRef,
+            atlas_text: PyStrRef,
+            vm: &VirtualMachine,
+        ) -> PyResult<(PyRef<PySpineSkeletonData>, usize)> {
+            let j = json_text
+                .to_str()
+                .ok_or_else(|| vm.new_value_error("文本含非 UTF-8 字符"))?;
+            let a = atlas_text
+                .to_str()
+                .ok_or_else(|| vm.new_value_error("文本含非 UTF-8 字符"))?;
+            match sp::load_with_atlas(j, a) {
+                Ok((data, pages)) => Ok((
+                    PySpineSkeletonData {
+                        data: RefCell::new(data),
+                    }
+                    .into_ref(&vm.ctx),
+                    pages,
+                )),
+                Err(e) => Err(vm.new_value_error(format!("骨架+atlas 加载失败: {e:?}"))),
+            }
         }
     }
 
