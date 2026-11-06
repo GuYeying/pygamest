@@ -53,7 +53,8 @@ Spine 二进制导入（.skel）。
 
 ##### <span class="c-func">set_skin(name)</span>
 
-激活皮肤。
+激活皮肤。⚠️ 校验覆盖 default 皮肤名（chine find_skin 只查命名
+skins 表——default 存独立字段）。
 
 ##### <span class="c-func">update_world_transform()</span>
 
@@ -71,6 +72,12 @@ Spine 二进制导入（.skel）。
 
 骨架整体平移 / 缩放（负值翻转）。
 
+##### <span class="c-func">drain_animation_events() -> list[tuple]</span>
+
+排空动画事件（apply 期触发——脚步/受击帧/音频提示的**反馈通道**）；
+每条 `(name, time, int_value, float_value, string_value)`。每帧调用
+一次，drain 即清（内部缓冲按步累积）。
+
 ##### <span class="c-func">render_commands() -> list</span>
 
 渲染命令流——每条 `(page, r, g, b, a, positions, uvs, triangles)`。
@@ -85,9 +92,23 @@ Spine 二进制导入（.skel）。
 
 状态机实例。
 
-##### <span class="c-func">set_animation(anim, looping=True)</span>
+##### <span class="c-func">set_animation(anim, looping=True, time_scale=None)</span>
 
-track 0 设当前动画。
+track 0 设当前动画。`time_scale` = 播放速度倍率（set 时可调——中途
+调速待上游 track_mut；进度/速度的脚本侧精细化由 track_time 校准）。
+
+##### <span class="c-func">queue_animation(anim, looping=True)</span>
+
+track 0 排队下一动画（当前动画与已排队列播完后接续——**切换动画**
+的队列形态）。
+
+##### <span class="c-func">track_time(track=0) -> float | None</span>
+
+轨道当前时间（秒——**播放进度**查询；空轨 None）。
+
+##### <span class="c-func">clear_track(track=0) / clear()</span>
+
+清指定轨道 / 清全部轨道（**停止动画**）。
 
 ##### <span class="c-func">update(dt)</span>
 
