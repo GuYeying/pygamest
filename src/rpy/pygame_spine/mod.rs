@@ -229,9 +229,12 @@ use std::sync::Arc;
                 let t = name
                     .to_str()
                     .ok_or_else(|| vm.new_value_error("文本含非 UTF-8 字符"))?;
-                match self.inner.borrow_mut().set_skin(t) {
-                    () => Ok(()),
+                // 非法名校验（定约：未知名 ValueError——静默 no-op 会掩盖拼写错误）
+                if self.inner.borrow().data().find_skin(t).is_none() {
+                    return Err(vm.new_value_error(format!("皮肤不存在: {t}")));
                 }
+                self.inner.borrow_mut().set_skin(t);
+                Ok(())
             }
 
             /// update_world_transform()：世界变换解算（pose 变更后、查询

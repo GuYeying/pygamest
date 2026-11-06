@@ -75,7 +75,7 @@ pub mod pygame_ozz {
         }
     }
 
-    #[pyclass]
+    #[pyclass(with(Constructor))]
     impl PyOzzPlayer {
         /// num_joints() -> int：关节数。
         #[pymethod]

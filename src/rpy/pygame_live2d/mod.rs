@@ -25,9 +25,10 @@ use std::path::PathBuf;
 
 #[pymodule(name = "pygame_live2d")]
 pub mod pygame_live2d {
-    use rustpython_derive::pyclass;
+    use rustpython_derive::{pyclass, FromArgs};
     use rustpython_vm::{
-        function::ArgIntoFloat, PyObjectRef, Py, PyPayload, PyRef, PyResult, VirtualMachine,
+        function::{ArgIntoFloat, FuncArgs},
+        PyObjectRef, Py, PyPayload, PyRef, PyResult, VirtualMachine,
         builtins::{PyStrRef, PyType},
     };
     use std::cell::RefCell;
@@ -268,7 +269,121 @@ pub mod pygame_live2d {
                 .ok_or_else(|| vm.new_value_error(format!("网格索引越界: {i}")))?;
             Ok(mesh_tuple(vm, m))
         }
+
     }
+        /// PyLive2DMotion（motion3 资产句柄）
+        #[derive(PyPayload)]
+        #[pyattr]
+        #[pyclass(module = "pygame_live2d", name = "Live2DMotion", unhashable = true)]
+        pub(crate) struct PyLive2DMotion {
+            pub(crate) inner: std::sync::Arc<l2d::Motion3>,
+        }
+
+        impl std::fmt::Debug for PyLive2DMotion {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("Live2DMotion(<motion3>)")
+            }
+        }
+
+        #[pyclass]
+        impl PyLive2DMotion {
+            /// duration() -> float：motion 时长（秒）。
+            #[pymethod]
+            fn duration(&self) -> f32 {
+                self.inner.meta().duration()
+            }
+        }
+
+        /// PyLive2DMotionPlayer（motion 播放器——tick/apply 驱动参数）
+        #[derive(PyPayload)]
+        #[pyattr]
+        #[pyclass(module = "pygame_live2d", name = "Live2DMotionPlayer", unhashable = true)]
+        pub(crate) struct PyLive2DMotionPlayer {
+            pub(crate) inner: RefCell<l2d::MotionPlayer>,
+        }
+
+        impl std::fmt::Debug for PyLive2DMotionPlayer {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("Live2DMotionPlayer(<motion>)")
+            }
+        }
+
+        /// MotionPlayer 收参（looping 缺省 = 跟随 motion 自带 Loop 元数据）
+        #[derive(FromArgs)]
+        struct MotionPlayerArgs {
+            motion: PyRef<PyLive2DMotion>,
+            #[pyarg(any, optional)]
+            looping: Option<bool>,
+        }
+
+        /// load_motion(path) -> Live2DMotion：.motion3.json 加载。
+        #[pyfunction]
+        fn load_motion(path: PyStrRef, vm: &VirtualMachine) -> PyResult<PyRef<PyLive2DMotion>> {
+            let p = path_of(path, vm)?;
+            match l2d::motion::load_motion(&p) {
+                Ok(m) => Ok(PyLive2DMotion {
+                    inner: std::sync::Arc::new(m),
+                }
+                .into_ref(&vm.ctx)),
+                Err(e) => Err(vm.new_value_error(format!("motion 加载失败: {e:?}"))),
+            }
+        }
+
+        /// Live2DMotionPlayer(motion, looping=None)：播放器构造。
+        #[pyfunction]
+        fn motion_player(
+            args: MotionPlayerArgs,
+            vm: &VirtualMachine,
+        ) -> PyResult<PyRef<PyLive2DMotionPlayer>> {
+            let player = match args.looping {
+                Some(l) => l2d::MotionPlayer::with_looping(args.motion.inner.clone(), l),
+                None => l2d::MotionPlayer::new(args.motion.inner.clone()),
+            };
+            Ok(PyLive2DMotionPlayer {
+                inner: RefCell::new(player),
+            }
+            .into_ref(&vm.ctx))
+        }
+
+        #[pyclass]
+        impl PyLive2DMotionPlayer {
+            /// tick(dt)：推进时间轴（秒）。
+            #[pymethod]
+            fn tick(&self, dt: ArgIntoFloat) {
+                self.inner.borrow_mut().tick(dt.into_float() as f32);
+            }
+
+            /// apply(model)：motion 参数写进 runtime（写后 update_meshes）。
+            #[pymethod]
+            fn apply(&self, model: PyRef<PyLive2DRuntime>) {
+                let mut m = model.inner.borrow_mut();
+                self.inner.borrow().apply(m.runtime_mut());
+            }
+
+            /// is_finished() -> bool：非循环 motion 是否播完。
+            #[pymethod]
+            fn is_finished(&self) -> bool {
+                self.inner.borrow().is_finished()
+            }
+
+            /// restart()：回零。
+            #[pymethod]
+            fn restart(&self) {
+                self.inner.borrow_mut().restart();
+            }
+
+            /// time() -> float：当前时间轴。
+            #[pymethod]
+            fn time(&self) -> f32 {
+                self.inner.borrow().time()
+            }
+
+            /// set_weight(w)：混合权重（0..1）。
+            #[pymethod]
+            fn set_weight(&self, w: ArgIntoFloat) {
+                self.inner.borrow_mut().set_weight(w.into_float() as f32);
+            }
+        }
 }
 
-pub(crate) use self::pygame_live2d::{module_def, PyLive2DModel, PyLive2DRuntime};
+pub(crate) use self::pygame_live2d::{module_def, PyLive2DMotion, PyLive2DMotionPlayer, PyLive2DModel, PyLive2DRuntime};
