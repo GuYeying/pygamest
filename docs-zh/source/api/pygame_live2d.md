@@ -1,92 +1,14 @@
-# pygame_live2d
+# pygame_live2d（已归档——独立库）
 
-Live2D/Cubism 绑定——上游 [mocari](https://github.com/Eatgrapes/Mocari)
-v0.4.0（MIT，纯 Rust Cubism 兼容运行时；上游仓已删，vendored 溯源见
-pygame_live2d 仓 README）。**独立顶层 Python 模块**
-（`import pygame_live2d` 直达）。
-
-```{note}
-[接口风格] 上游词汇原生化——canvas / drawable / parameter（Live2D
-惯例即文档，不 pygame 化）。
-
-[坐标系] Live2D 原生画布域（y 向下、原点画布左上）——与引擎中心系
-换算脚本侧自理。
-
-[双形态] `Live2DModel` = 静态数据面（default pose 的 meshes/textures）；
-`Live2DRuntime` = 参数驱动面（每帧 set_parameter_normalized →
-update_meshes → mesh 数据）。
-
-[渲染接入] mesh(i) 数据流（顶点/uv/索引/纹理索引/不透明度）+ 纹理
-rgba——引擎带贴图 mesh draw 面落地后接 GPU（与 pygame_spine
-render_commands 同边界，v1 数据出口）。
-```
-
-## <span class="c-func">函数</span>
-
-#### <span class="c-func">load_model(path) -> Live2DModel</span>
-
-`.model3.json` 入口（moc3/纹理相对路径按其目录解析）。缺文件/坏内容
-= ValueError（不崩溃——严格模式同理，Live2D 面无静默兜底定约）。
-
-#### <span class="c-func">load_runtime(path) -> Live2DRuntime</span>
-
-参数驱动形态加载。
-
-## <span class="c-class">类</span>
-
-### <span class="c-class">Live2DModel —— 静态数据面</span>
-
-##### <span class="c-func">canvas_size() -> (w, h)</span>
-
-模型画布尺寸（Live2D 原生单位）。
-
-##### <span class="c-func">mesh_count() -> int</span>
-
-drawable 网格数。
-
-##### <span class="c-func">mesh(i) -> (texture_index, opacity, positions, uvs, indices)</span>
-
-网格数据流（positions/uvs 扁平 f32；indices u16）。
-
-##### <span class="c-func">texture_count() -> int</span>
-
-##### <span class="c-func">texture_info(i) -> (w, h)</span>
-
-##### <span class="c-func">texture_rgba(i) -> bytes</span>
-
-纹理原始 RGBA 字节（大对象——调试/Surface 构建取用）。
-
-### <span class="c-class">Live2DRuntime —— 参数驱动面</span>
-
-##### <span class="c-func">canvas_size() -> (w, h)</span>
-
-##### <span class="c-func">parameter_ids() -> list[str]</span>
-
-可驱动参数 id 表。
-
-##### <span class="c-func">set_parameter_normalized(id, v) -> bool</span>
-
-归一参数驱动（0..1；id 不存在返回 False）。
-
-##### <span class="c-func">update_meshes()</span>
-
-参数 → 网格重建（每帧参数更新后调用）。
-
-##### <span class="c-func">mesh_count() -> int / mesh(i)</span>
-
-数据面同 `Live2DModel.mesh`（读重建产物）。
-
-## <span class="c-func">渲染集成 —— gfxdraw.draw_live2d</span>
-
-#### <span class="c-func">pygame.gfxdraw.draw_live2d(f, model)</span>
-
-Live2D 模型渲染——RuntimeModel 网格重建产物内部直推会话 batch（纹理
-惰性 `Surface::from_rgba8` 缓存于 model 对象；uv 翻 v + y 翻转——
-Live2D 画布域 y 向下 → 引擎中心系；opacity 乘入顶点色）。每帧
-`set_parameter_normalized` → `update_meshes` → 本口。
-
-- :param f: 渲染会话
-- :param model: `load_runtime` 产物
-- 资产：Hiyori 官方样例模型已 vendor 至 pygame_live2d 仓
-  `assets/models/Hiyori/`（Live2D Free Material License，经 neocari
-  分发副本）。demo：`pygame-rs-dev/examples/live2d_render_demo.py`
+> **归档声明**（2026-11-06）：Live2D/Cubism 因法律风险归档为**独立库**
+> [pygame_live2d](https://github.com/GuYeying/pygame_live2d)——实现、
+> 渲染管线、文档随库维护，本仓仅存 feature 门控的薄绑定
+> （`features = ["live2d"]`），不再随 pygame-rs 主线维护。
+>
+> **API 文档随库**：见 pygame_live2d 仓 `docs/API.md`（权威来源）。
+>
+> 速览：`import pygame_live2d` 直达；`load_model / load_runtime /
+> load_motion / motion_player`；sprite 工作流 =
+> `rt.draw(surface, x=0, y=0, scale=0.9)` 全管线自理（蒙版纹理方案
+> GPU 化）→ `pygame.gfxdraw.draw_surface` 上屏。资产（Hiyori）与
+> demo（live2d_render_demo 等）见独立仓与 pygamest-dev examples。

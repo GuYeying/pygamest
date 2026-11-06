@@ -1,6 +1,11 @@
 //! pygame_live2d —— Live2D/Cubism 绑定（阶段 4；独立顶层 Python 模块
 //! ——pygame_spine 同范式：`import pygame_live2d` 直达）。
 //!
+//! **归档声明（2026-11-06，法律风险定约）**：Live2D 归档为独立库
+//! ——实现/渲染管线/文档随 pygame_live2d 仓自持（API 权威文档 =
+//! 其 docs/API.md），本文件仅存 feature 门控的薄绑定
+//! （`features = ["live2d"]`），不再随 pygame-rs 主线维护。
+//!
 //! 上游 = mocari v0.4.0（MIT，Eatgrapes/Mocari；上游仓已删——经 LunaMate
 //! 内嵌副本溯源 vendored 进 pygame_live2d 兄弟 crate，wgpu 依赖恢复
 //! upstream 原生形态）。
