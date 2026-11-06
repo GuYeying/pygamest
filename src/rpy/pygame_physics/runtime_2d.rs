@@ -32,8 +32,8 @@ use rapier_starfish_debug::dim2::debug::{collect as sf_collect, DebugDraw as SfD
 use rapier_starfish_debug::dim2::prelude::{
     ChannelEventCollector, ColliderBuilder as SfColliderBuilder, ColliderHandle,
     CollisionEvent, ContactForceEvent, DebugRenderMode, QueryFilter, Ray as SfRay,
-    ActiveEvents as SfActiveEvents, Group as SfGroup, InteractionGroups, InteractionTestMode,
-    RigidBodyBuilder as SfRigidBodyBuilder, RigidBodyHandle,
+    IVector as SfIVector2, ActiveEvents as SfActiveEvents, Group as SfGroup, InteractionGroups,
+    InteractionTestMode, RigidBodyBuilder as SfRigidBodyBuilder, RigidBodyHandle,
 };
 use rapier_starfish_debug::dim2::world::PhysicsWorld as SfPhysicsWorld;
 use rustpython_derive::{FromArgs, pyclass};
@@ -198,9 +198,16 @@ impl Constructor for PyRigidBodyBuilder {
 #[derive(FromArgs)]
 pub(crate) struct ColliderBuilderArgs {
     /// "cuboid"（hx/hy 半尺寸）/ "ball"（radius）/ "capsule"（half_height
-    /// + radius，纵轴 y）/ "segment"（ax ay bx by）/ "triangle"（六坐标）
+    /// + radius，纵轴 y）/ "segment"（ax ay bx by）/ "triangle"（六坐标）/
+    /// "voxels"（voxel_size 方格边长 + voxels 扁平格子坐标）
     #[pyarg(any)]
     pub(crate) kind: String,
+    /// 体素方格边长（米；"voxels" 用）
+    #[pyarg(any, optional)]
+    pub(crate) voxel_size: Option<ArgIntoFloat>,
+    /// 体素格子坐标（扁平 [i,j, ...]，长度须为 2 的倍数；"voxels" 用）
+    #[pyarg(any, optional)]
+    pub(crate) voxels: Option<Vec<i32>>,
     #[pyarg(any, optional)]
     pub(crate) hx: Option<ArgIntoFloat>,
     #[pyarg(any, optional)]
@@ -312,9 +319,25 @@ impl Constructor for PyColliderBuilder {
                     [x3.into_float() as f32, y3.into_float() as f32].into(),
                 )
             }
+            "voxels" => {
+                let (Some(vs), Some(vox)) = (args.voxel_size, args.voxels.clone()) else {
+                    return Err(
+                        vm.new_value_error("voxels 须给 voxel_size（方格边长，米）/ voxels（扁平格子坐标）")
+                    );
+                };
+                if vox.is_empty() || vox.len() % 2 != 0 {
+                    return Err(vm.new_value_error("voxels 长度须为 2 的倍数（扁平 i,j）"));
+                }
+                let s = vs.into_float() as f32;
+                let cells: Vec<_> = vox
+                    .chunks_exact(2)
+                    .map(|c| SfIVector2::new(c[0], c[1]))
+                    .collect();
+                SfColliderBuilder::voxels([s, s].into(), &cells)
+            }
             other => {
                 return Err(vm.new_value_error(format!(
-                    "kind 须为 'cuboid' / 'ball' / 'capsule' / 'segment' / 'triangle'，实际 {other:?}"
+                    "kind 须为 'cuboid' / 'ball' / 'capsule' / 'segment' / 'triangle' / 'voxels'，实际 {other:?}"
                 )))
             }
         };

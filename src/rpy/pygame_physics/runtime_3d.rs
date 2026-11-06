@@ -24,9 +24,10 @@ use rapier_starfish_debug::dim3::debug::{
 };
 use rapier_starfish_debug::dim3::prelude::{
     ChannelEventCollector, ColliderBuilder as SfColliderBuilder, ColliderHandle,
-    CollisionEvent, ContactForceEvent, DebugRenderMode, QueryFilter, Ray as SfRay3,
-    ActiveEvents as SfActiveEvents3, Group as SfGroup, InteractionGroups, InteractionTestMode,
-    RigidBodyBuilder as SfRigidBodyBuilder, RigidBodyHandle,
+    CollisionEvent, ContactForceEvent, DebugRenderMode, FillMode as SfFillMode3, QueryFilter,
+    Ray as SfRay3, IVector as SfIVector3, ActiveEvents as SfActiveEvents3, Group as SfGroup,
+    InteractionGroups, InteractionTestMode, RigidBodyBuilder as SfRigidBodyBuilder,
+    RigidBodyHandle,
 };
 use rapier_starfish_debug::dim3::world::PhysicsWorld as SfPhysicsWorld;
 use rustpython_derive::{FromArgs, pyclass};
@@ -189,7 +190,10 @@ impl Constructor for PyRigidBodyBuilder3D {
 pub(crate) struct ColliderBuilderArgs {
     /// "cuboid"（hx/hy/hz 半尺寸）/ "ball"（radius）/ "capsule"（
     /// half_height + radius，纵轴 y）/ "cylinder" / "cone"（同 capsule
-    /// 参数形态）/ "trimesh"（vertices 扁平 xyz + indices 扁平三角索引）
+    /// 参数形态）/ "trimesh"（vertices 扁平 xyz + indices 扁平三角索引）/
+    /// "voxels"（voxel_size 立方边长 + voxels 扁平格子坐标）/ 
+    /// "voxelized_mesh"（trimesh 体素化——vertices/indices/voxel_size/
+    /// fill_mode="surface"|"flood_fill"）
     #[pyarg(any)]
     pub(crate) kind: String,
     #[pyarg(any, optional)]
@@ -209,6 +213,16 @@ pub(crate) struct ColliderBuilderArgs {
     /// trimesh 三角索引（扁平 [i0,i1,i2, ...]，长度须为 3 的倍数）
     #[pyarg(any, optional)]
     pub(crate) indices: Option<Vec<u32>>,
+    /// 体素立方边长（米；"voxels" / "voxelized_mesh" 用）
+    #[pyarg(any, optional)]
+    pub(crate) voxel_size: Option<ArgIntoFloat>,
+    /// 体素格子坐标（扁平 [i,j,k, ...]；"voxels" 用）
+    #[pyarg(any, optional)]
+    pub(crate) voxels: Option<Vec<i32>>,
+    /// 体素化填充模式（"voxelized_mesh" 用）："surface"（只表面体素）/
+    /// "flood_fill"（表面 + 内部泛洪——实心体；缺省 flood_fill）
+    #[pyarg(any, optional)]
+    pub(crate) fill_mode: Option<String>,
     /// 相对刚体原点的偏移（米）
     #[pyarg(any, optional)]
     pub(crate) translation: Option<SfFPoint3>,
@@ -302,9 +316,56 @@ impl Constructor for PyColliderBuilder3D {
                     vm.new_value_error(format!("trimesh 构建失败: {e:?}"))
                 })?
             }
+            "voxels" => {
+                let (Some(vs), Some(vox)) = (args.voxel_size, args.voxels.clone()) else {
+                    return Err(
+                        vm.new_value_error("voxels 须给 voxel_size（立方边长，米）/ voxels（扁平格子坐标）")
+                    );
+                };
+                if vox.is_empty() || vox.len() % 3 != 0 {
+                    return Err(vm.new_value_error("voxels 长度须为 3 的倍数（扁平 i,j,k）"));
+                }
+                let s = vs.into_float() as f32;
+                let cells: Vec<_> = vox
+                    .chunks_exact(3)
+                    .map(|c| SfIVector3::new(c[0], c[1], c[2]))
+                    .collect();
+                SfColliderBuilder::voxels([s, s, s].into(), &cells)
+            }
+            "voxelized_mesh" => {
+                let (Some(verts), Some(idx)) = (args.vertices.clone(), args.indices.clone())
+                else {
+                    return Err(vm.new_value_error("voxelized_mesh 须给 vertices / indices"));
+                };
+                let Some(vs) = args.voxel_size else {
+                    return Err(vm.new_value_error("voxelized_mesh 须给 voxel_size（体素边长，米）"));
+                };
+                if verts.len() % 3 != 0 || idx.len() % 3 != 0 || idx.is_empty() {
+                    return Err(vm.new_value_error(
+                        "vertices 须为 3 的倍数（扁平 xyz）/ indices 须为 3 的倍数且非空",
+                    ));
+                }
+                let points: Vec<_> = verts
+                    .chunks_exact(3)
+                    .map(|p| [p[0], p[1], p[2]].into())
+                    .collect();
+                let tris: Vec<_> = idx.chunks_exact(3).map(|t| [t[0], t[1], t[2]]).collect();
+                let fill = match args.fill_mode.as_deref().unwrap_or("flood_fill") {
+                    "surface" => SfFillMode3::SurfaceOnly,
+                    "flood_fill" | "flood_fill_cavities" => SfFillMode3::FloodFill {
+                        detect_cavities: args.fill_mode.as_deref() == Some("flood_fill_cavities"),
+                    },
+                    other => {
+                        return Err(vm.new_value_error(format!(
+                            "fill_mode 须为 'surface' / 'flood_fill' / 'flood_fill_cavities'，实际 {other:?}"
+                        )))
+                    }
+                };
+                SfColliderBuilder::voxelized_mesh(&points, &tris, vs.into_float() as f32, fill)
+            }
             other => {
                 return Err(vm.new_value_error(format!(
-                    "kind 须为 'cuboid' / 'ball' / 'capsule' / 'cylinder' / 'cone' / 'trimesh'，实际 {other:?}"
+                    "kind 须为 'cuboid' / 'ball' / 'capsule' / 'cylinder' / 'cone' / 'trimesh' / 'voxels' / 'voxelized_mesh'，实际 {other:?}"
                 )))
             }
         };
