@@ -25,8 +25,9 @@ physics2d = ["physics", "rapier-starfish-debug/2d"]
 physics3d = ["physics", "rapier-starfish-debug/3d"]
 # spine = Spine 2D 骨骼动画（pygame_spine 适配 crate——阶段 4）
 spine = ["dep:pygame_spine"]
-# live2d = Live2D/Cubism 运行时（pygame_live2d——mocari vendored，阶段 4）
-live2d = ["dep:pygame_live2d"]
+# live2d = Live2D/Cubism 运行时（pygame_live2d——mocari vendored，阶段 4；
+# 渲染管线 crate 内自理（pygame_live2d/render），本 crate 只做宏绑定）
+live2d = ["dep:pygame_live2d", "pygame_live2d/render"]
 # ozz = 3D 骨骼动画（pygame_ozz——ozz-animation-rs 适配；上游 std::simd 需 nightly 构建，不入 default）
 ozz = ["dep:pygame_ozz"]
 

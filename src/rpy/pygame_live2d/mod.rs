@@ -7,10 +7,10 @@
 //!
 //! 接口风格：上游词汇原生化（Live2D/Cubism 惯例 canvas / drawable /
 //! parameter）。数据流：`load_model(path)` 静态数据面（meshes/textures/
-//! canvas）→ `load_runtime(path)` 参数驱动面（set_parameter_normalized
-//! / update_meshes——每帧参数更新后网格重建）。渲染接入 = mesh 数据流
-//! （顶点/uv/索引/纹理索引）+ 纹理 rgba——引擎带贴图 mesh draw 面落地
-//! 后接 GPU（与 pygame_spine.render_commands 同边界）。
+//! canvas）→ `load_runtime(path, surface)` 参数驱动面 + **注入式渲染**
+//! （用户创建 Surface 注入；`rt.draw(x, y, scale)` 全管线自理——蒙版
+//! 纹理方案 GPU 落地在 crate render::pygst，本文件零渲染编排；产物 =
+//! 全透明底人物图，gfxdraw.draw_surface 上屏/摆放）。
 //!
 //! 坐标系：Live2D 原生画布域（y 向下、原点画布左上）——与引擎中心系
 //! 换算脚本侧自理（canvas_size + origin 可换算）。
@@ -55,23 +55,15 @@ pub mod pygame_live2d {
         }
     }
 
-    /// Live2DRuntime（参数驱动面——set_parameter / update_meshes）
+    /// Live2DRuntime（参数驱动面——set_parameter / update_meshes / draw）
     #[derive(PyPayload)]
     #[pyattr]
     #[pyclass(module = "pygame_live2d", name = "Live2DRuntime", unhashable = true)]
     pub(crate) struct PyLive2DRuntime {
         pub(crate) inner: RefCell<l2d::assets::RuntimeModel>,
-        /// 纹理 Surface 惰性缓存（from_rgba8 一次性构建——2048{b2} RGBA
-        /// 每帧重建不可接受）
-        pub(crate) textures: RefCell<Option<Vec<std::sync::Arc<starfish_pygame::render::Surface>>>>,
-        /// 蒙版纹理渲染资源池（mask 组逐一惰性扩容；Mg 蒙版面 800×600、
-        /// C 颜色合成面 800×600、白 1×1、masked 双纹理 WGSL 管线三件套）
-        pub(crate) mask_pool: RefCell<Vec<std::sync::Arc<starfish_pygame::render::Surface>>>,
-        pub(crate) color_pool: RefCell<Vec<std::sync::Arc<starfish_pygame::render::Surface>>>,
-        pub(crate) white_1x1: RefCell<Option<std::sync::Arc<starfish_pygame::render::Surface>>>,
-        pub(crate) masked_pipeline: RefCell<Option<std::sync::Arc<wgpu::RenderPipeline>>>,
-        pub(crate) masked_bgl: RefCell<Option<std::sync::Arc<wgpu::BindGroupLayout>>>,
-        pub(crate) masked_sampler: RefCell<Option<std::sync::Arc<wgpu::Sampler>>>,
+        /// 注入式渲染器（管线 crate 内自理——用户创建 Surface 注入，
+        /// 每对象自持渲染目标 + Mg/C 蒙版工作面池 + 内容锚定）
+        pub(crate) renderer: RefCell<l2d::render::pygst::Live2DRenderer>,
     }
 
     impl std::fmt::Debug for PyLive2DRuntime {
@@ -102,25 +94,39 @@ pub mod pygame_live2d {
         }
     }
 
-    /// load_runtime(path) -> Live2DRuntime：参数驱动形态（每帧
-    /// set_parameter_normalized → update_meshes → mesh 数据）。
+    /// load_runtime(path, surface) -> Live2DRuntime：参数驱动形态 +
+    /// 注入式渲染（surface = 用户创建的产物面——全透明底人物图，精灵
+    /// 工作流：rt.draw() 画进 surface，gfxdraw.draw_surface 上屏）。
     #[pyfunction]
-    fn load_runtime(path: PyStrRef, vm: &VirtualMachine) -> PyResult<PyRef<PyLive2DRuntime>> {
+    fn load_runtime(
+        path: PyStrRef,
+        surface: PyRef<crate::rpy::pygame::pygame::PySurface>,
+        vm: &VirtualMachine,
+    ) -> PyResult<PyRef<PyLive2DRuntime>> {
         let p = path_of(path, vm)?;
         match l2d::assets::load_model_runtime(&p) {
-            Ok(m) => Ok(PyLive2DRuntime {
-                inner: RefCell::new(m),
-                textures: RefCell::new(None),
-                mask_pool: RefCell::new(Vec::new()),
-                color_pool: RefCell::new(Vec::new()),
-                white_1x1: RefCell::new(None),
-                masked_pipeline: RefCell::new(None),
-                masked_bgl: RefCell::new(None),
-                masked_sampler: RefCell::new(None),
+            Ok(m) => {
+                let renderer =
+                    l2d::render::pygst::Live2DRenderer::new(surface.surface.clone(), &m);
+                Ok(PyLive2DRuntime {
+                    inner: RefCell::new(m),
+                    renderer: RefCell::new(renderer),
+                }
+                .into_ref(&vm.ctx))
             }
-            .into_ref(&vm.ctx)),
             Err(e) => Err(vm.new_value_error(format!("Live2D 运行时加载失败: {e:?}"))),
         }
+    }
+
+    /// draw(x, y, scale) 收参（全可选——默认 = 居中 90% 画布利用率）
+    #[derive(FromArgs)]
+    struct Live2DDrawArgs {
+        #[pyarg(any, optional)]
+        x: Option<ArgIntoFloat>,
+        #[pyarg(any, optional)]
+        y: Option<ArgIntoFloat>,
+        #[pyarg(any, optional)]
+        scale: Option<ArgIntoFloat>,
     }
 
     /// mesh 元组组装（静态面/运行时面共用——positions/uvs 扁平 f32 +
@@ -282,6 +288,25 @@ pub mod pygame_live2d {
                 .get(i)
                 .ok_or_else(|| vm.new_value_error(format!("网格索引越界: {i}")))?;
             Ok(mesh_tuple(vm, m))
+        }
+
+        /// draw(x=0.0, y=0.0, scale=0.9)：全管线自理——蒙版/masked/
+        /// 整模型三段落注入面（产物=全透明底人物图）。坐标定约（与
+        /// pygamest 中心系同构，全 0-1 相对注入面）：x/y=内容中心位置
+        /// （0=面中心，±1=±半幅，y 向上）；scale=内容高/面高（>1 溢出
+        /// 裁边=特写）。
+        #[pymethod]
+        fn draw(&self, args: Live2DDrawArgs, vm: &VirtualMachine) -> PyResult<()> {
+            let model = self.inner.borrow();
+            let renderer = self.renderer.borrow();
+            renderer
+                .draw(
+                    &model,
+                    args.x.map(|v| v.into_float() as f32).unwrap_or(0.0),
+                    args.y.map(|v| v.into_float() as f32).unwrap_or(0.0),
+                    args.scale.map(|v| v.into_float() as f32).unwrap_or(0.9),
+                )
+                .map_err(|e| vm.new_runtime_error(format!("live2d draw: {e}")))
         }
 
     }
