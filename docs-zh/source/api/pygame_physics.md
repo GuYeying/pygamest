@@ -136,6 +136,25 @@ builder **一次性消费**（二次 insert 抛 ValueError，重建再插）。
 
 移除刚体（连带其全部碰撞体）；返回是否存在并已移除。
 
+##### <span class="c-func">create_joint(kind, body1, body2, ...) -> int</span>
+
+脉冲关节创建——返回关节句柄（`remove_joint` 消费）。
+**v1 kind = `"spring"`**（弹簧约束）：`rest_length` 自然长（米）、
+`stiffness` 刚度、`damping` 阻尼（三者必填）；`anchor1` / `anchor2` =
+各自体的局部系锚点（缺省质心）；`contacts_enabled` 两体间碰撞保留
+（缺省 False——弹簧互连体互不碰撞）。
+
+- ⚠️ **panic 注意**：`rest_length ≤ 0` 会触发上游断言 panic——绑定层
+  已防线（ValueError），但请勿绕过绑定直接构造
+- ⚠️ **debug**：`DebugDraw(set_mode(joints=True))` 后 rapier 自绘关
+  节线（impulse joint 专属配色——与碰撞线框区分；弹簧不做花哨渲染）
+- :param kind: `"spring"`（其余关节族待接口扫描批次）
+- :param body1/body2: `insert` 产物刚体句柄
+
+##### <span class="c-func">remove_joint(h) -> bool</span>
+
+移除脉冲关节；返回是否存在并已移除。
+
 ##### <span class="c-func">drain_events() -> list[tuple[str, int, int]]</span>
 
 排空自上帧以来的碰撞事件——`[(kind, h1, h2), ...]`，`kind` =
