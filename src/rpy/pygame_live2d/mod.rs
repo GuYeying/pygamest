@@ -64,6 +64,14 @@ pub mod pygame_live2d {
         /// 纹理 Surface 惰性缓存（from_rgba8 一次性构建——2048{b2} RGBA
         /// 每帧重建不可接受）
         pub(crate) textures: RefCell<Option<Vec<std::sync::Arc<starfish_pygame::render::Surface>>>>,
+        /// 蒙版纹理渲染资源池（mask 组逐一惰性扩容；Mg 蒙版面 800×600、
+        /// C 颜色合成面 800×600、白 1×1、masked 双纹理 WGSL 管线三件套）
+        pub(crate) mask_pool: RefCell<Vec<std::sync::Arc<starfish_pygame::render::Surface>>>,
+        pub(crate) color_pool: RefCell<Vec<std::sync::Arc<starfish_pygame::render::Surface>>>,
+        pub(crate) white_1x1: RefCell<Option<std::sync::Arc<starfish_pygame::render::Surface>>>,
+        pub(crate) masked_pipeline: RefCell<Option<std::sync::Arc<wgpu::RenderPipeline>>>,
+        pub(crate) masked_bgl: RefCell<Option<std::sync::Arc<wgpu::BindGroupLayout>>>,
+        pub(crate) masked_sampler: RefCell<Option<std::sync::Arc<wgpu::Sampler>>>,
     }
 
     impl std::fmt::Debug for PyLive2DRuntime {
@@ -103,6 +111,12 @@ pub mod pygame_live2d {
             Ok(m) => Ok(PyLive2DRuntime {
                 inner: RefCell::new(m),
                 textures: RefCell::new(None),
+                mask_pool: RefCell::new(Vec::new()),
+                color_pool: RefCell::new(Vec::new()),
+                white_1x1: RefCell::new(None),
+                masked_pipeline: RefCell::new(None),
+                masked_bgl: RefCell::new(None),
+                masked_sampler: RefCell::new(None),
             }
             .into_ref(&vm.ctx)),
             Err(e) => Err(vm.new_value_error(format!("Live2D 运行时加载失败: {e:?}"))),
