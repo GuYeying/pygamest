@@ -174,6 +174,8 @@ use std::cell::Cell;
             scale: f32,
         ) {
             if std::env::var("L2D_DEBUG").is_ok() {
+                let masked_n = meshes.iter().filter(|(_, m)| !m.masks().is_empty()).count();
+                eprintln!("[dbg] live2d drawable 总数={} masked={}", meshes.len(), masked_n);
                 let xs: Vec<f32> = meshes.iter().flat_map(|(_, m)| m.vertices().iter().map(|v| v.position()[0])).collect();
                 let ys: Vec<f32> = meshes.iter().flat_map(|(_, m)| m.vertices().iter().map(|v| v.position()[1] * scale)).collect();
                 eprintln!("[dbg] live2d 顶点 x {:?}..{:?} y {:?}..{:?} scale={}", xs.iter().cloned().fold(f32::MAX, f32::min), xs.iter().cloned().fold(f32::MIN, f32::max), ys.iter().cloned().fold(f32::MAX, f32::min), ys.iter().cloned().fold(f32::MIN, f32::max), scale);
