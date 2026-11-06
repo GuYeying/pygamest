@@ -6,6 +6,13 @@
 //! 与 rapier-starfish-debug dim2/dim3 镜像面一一对应。
 //! `runtime_2d.rs` / `runtime_3d.rs` = 各维度会话实现本体；本文件 =
 //! #[pymodule] 声明 + 类型。文件夹形态 = 新模块效仿模板。
+//!
+//! ⚠️ **上游限制（rapier 0.36.1 最新版未修，2026-11-06 实测）**：动态
+//! 体与**体素复合体**（"voxels" / "voxelized_mesh"）接触后进入收敛
+//! （接触流形收缩）即 panic `stale ContactRef manifold ordinal`
+//! （manifold_store.rs:117——composite-pair 流形收缩竞态，单线程同样
+//! 必现，非并行竞态）。规避：体素体与动态体轨迹**隔离**（测试脚本
+//! 做法——静态独立摆放不受影响）；rapier 升级修复后解除。
 #![allow(unused_imports)]
 use rustpython_derive::{pymodule, pyclass, FromArgs};
 use crate::rpy::{bridge, args};

@@ -4465,7 +4465,7 @@ dependencies = [
 [[package]]
 name = "rapier-starfish-debug"
 version = "0.1.2"
-source = "git+https://github.com/GuYeying/rapier-starfish-debug#44d6b811bb70f72e469019204371b516f14dd9d4"
+source = "git+https://github.com/GuYeying/rapier-starfish-debug#077d2df9d7e42d5ef2e5ab48f0d6f90c227f5152"
 dependencies = [
  "bytemuck",
  "glam 0.33.11",
