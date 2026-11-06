@@ -21,6 +21,15 @@ v1 为数据出口（脚本可经 raw_render 自绘或先行消费数据）。
 
 ## <span class="c-func">函数</span>
 
+```{note}
+**加载与跨平台 I/O 定约（2026-11-07 核查）**：chine 加载面为
+**纯字节/文本入参**（`from_json(&str)` / `from_binary(&[u8])`）——
+① spine **不会自行导入任何依赖文件**（loader 零文件系统访问；linked
+mesh 解析在加载期由同一份数据完成）；② 当前接口**天然跨平台**（wasm
+直接兼容）；③ 文件获取由脚本侧 pygame.io（read_text/read_bytes/fetch）
+供数——"我方 I/O 直接写入数据"即既定设计，无需 spine 按路径自行加载。
+```
+
 #### <span class="c-func">load_json(text) -> SkeletonData</span>
 
 Spine JSON 导入。
