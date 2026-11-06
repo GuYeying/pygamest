@@ -252,6 +252,30 @@ use std::sync::Arc;
                 self.inner.borrow_mut().update_world_transform();
             }
 
+            /// drain_animation_events() -> [(name, time, int, float, str), ...]：
+            /// 排空动画事件（apply 期触发——脚步/受击帧/音频提示的反馈
+            /// 通道；事件名与负载数据来自 Spine 导出的动画事件轨道）。
+            /// 每帧调用一次，不清也不丢（内部缓冲按步累积，drain 即清）。
+            #[pymethod]
+            fn drain_animation_events(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+                let mut sk = self.inner.borrow_mut();
+                let mut out: Vec<PyObjectRef> = Vec::new();
+                for ev in sk.events() {
+                    let name: PyObjectRef = vm.ctx.new_str(ev.name.clone()).into();
+                    let sval: PyObjectRef = vm.ctx.new_str(ev.string_value.clone()).into();
+                    let tup = vm.new_tuple((
+                        name,
+                        ev.time as f64,
+                        ev.int_value as i64,
+                        ev.float_value as f64,
+                        sval,
+                    ));
+                    out.push(tup.into());
+                }
+                sk.clear_events();
+                Ok(vm.ctx.new_list(out).into())
+            }
+
             /// bone_world(i) -> (x, y, a, b, c, d)：骨骼世界变换（2×3 仿射
             /// 矩阵 + 世界原点——y 向上，与引擎中心系同构零换算）。
             #[pymethod]
@@ -341,10 +365,31 @@ use std::sync::Arc;
 
         #[pyclass(with(Constructor))]
         impl PySpineState {
-            /// set_animation(anim, looping)：track 0 设当前动画（环形/单发
-            /// 由 looping 定）。
+            /// set_animation(anim, looping=True, time_scale=None)：track 0
+            /// 设当前动画（环形/单发由 looping 定；time_scale = 播放速度
+            /// 倍率——set 时可调，中途调速待上游 track_mut）。
             #[pymethod]
             fn set_animation(
+                &self,
+                anim: PyRef<PySpineAnimation>,
+                looping: Option<bool>,
+                time_scale: Option<ArgIntoFloat>,
+                _vm: &VirtualMachine,
+            ) {
+                // set_animation 返回 &mut TrackEntry（调 time_scale/alpha
+                // 的入口）——guard 须存活到调定完成
+                let mut state = self.inner.borrow_mut();
+                let entry = state.set_animation(anim.0.clone(), looping.unwrap_or(true));
+                if let Some(ts) = time_scale {
+                    entry.time_scale = ts.into_float() as f32;
+                }
+                drop(state);
+            }
+
+            /// queue_animation(anim, looping=True)：track 0 排队下一动画
+            /// （当前动画与已排队列播完后接续——切换动画的队列形态）。
+            #[pymethod]
+            fn queue_animation(
                 &self,
                 anim: PyRef<PySpineAnimation>,
                 looping: Option<bool>,
@@ -352,7 +397,29 @@ use std::sync::Arc;
             ) {
                 self.inner
                     .borrow_mut()
-                    .set_animation(anim.0.clone(), looping.unwrap_or(true));
+                    .add_animation(anim.0.clone(), looping.unwrap_or(true));
+            }
+
+            /// clear_track(track=0)：清指定轨道（停止该轨动画）。
+            #[pymethod]
+            fn clear_track(&self, track: Option<usize>, _vm: &VirtualMachine) {
+                self.inner.borrow_mut().clear_track(track.unwrap_or(0));
+            }
+
+            /// clear()：清全部轨道。
+            #[pymethod]
+            fn clear(&self) {
+                self.inner.borrow_mut().clear();
+            }
+
+            /// track_time(track=0) -> float | None：轨道当前时间（秒——
+            /// 播放进度查询；空轨 None）。
+            #[pymethod]
+            fn track_time(&self, track: Option<usize>) -> Option<f64> {
+                self.inner
+                    .borrow()
+                    .track(track.unwrap_or(0))
+                    .map(|t| t.track_time as f64)
             }
 
             /// update(dt)：推进时间轴（帧循环调用；dt = 秒）。
