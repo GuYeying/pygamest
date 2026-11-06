@@ -116,6 +116,21 @@ use std::cell::Cell;
             Ok(())
         }
 
+        /// set_click_through(enable)：鼠标事件穿透开关（点击落到下层
+        /// 窗口——桌宠形态配套；穿透设计稿 M1。⚠️ 穿透后窗口收不到
+        /// 任何鼠标事件——恢复须脚本逻辑/外部通道，防自锁）。
+        #[pyfunction]
+        fn set_click_through(enable: bool, vm: &VirtualMachine) -> PyResult<()> {
+            starfish_pygame::display::set_click_through(enable)
+                .map_err(|e| vm.new_runtime_error(e))
+        }
+
+        /// get_click_through() -> bool：窗口当前是否鼠标穿透（OS 位读回）。
+        #[pyfunction]
+        fn get_click_through(_vm: &VirtualMachine) -> bool {
+            starfish_pygame::display::get_click_through()
+        }
+
         /// get_init() -> bool：set_mode 是否已调用（display 初始化态）。
         #[pyfunction]
         fn get_init(_vm: &VirtualMachine) -> bool {
