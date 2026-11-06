@@ -372,7 +372,9 @@ use std::sync::Arc;
             fn set_animation(
                 &self,
                 anim: PyRef<PySpineAnimation>,
+                #[pyarg(any, optional)]
                 looping: Option<bool>,
+                #[pyarg(any, optional)]
                 time_scale: Option<ArgIntoFloat>,
                 _vm: &VirtualMachine,
             ) {
@@ -392,6 +394,7 @@ use std::sync::Arc;
             fn queue_animation(
                 &self,
                 anim: PyRef<PySpineAnimation>,
+                #[pyarg(any, optional)]
                 looping: Option<bool>,
                 _vm: &VirtualMachine,
             ) {
@@ -402,7 +405,12 @@ use std::sync::Arc;
 
             /// clear_track(track=0)：清指定轨道（停止该轨动画）。
             #[pymethod]
-            fn clear_track(&self, track: Option<usize>, _vm: &VirtualMachine) {
+            fn clear_track(
+                &self,
+                #[pyarg(any, optional)]
+                track: Option<usize>,
+                _vm: &VirtualMachine,
+            ) {
                 self.inner.borrow_mut().clear_track(track.unwrap_or(0));
             }
 
