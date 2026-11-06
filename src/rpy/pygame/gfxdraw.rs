@@ -381,9 +381,15 @@ fn fs_main(i: VsOut) -> @location(0) vec4<f32> {
             ctx.pass_on_surface("pygamest_l2d_mask", mg, wgpu::Color::TRANSPARENT, move |rp| {
                 clip_draw_replay(rp.inner_mut(), &pl0, &md);
             });
-            // ② masked pass：色 × Mg alpha 画入 C
+            // ② masked pass：色 × Mg alpha 画入 C——组内按 render_order
+            // 排序（索引序 ≠ 绘制序：Hiyori 高光 = 组内 ro 最大者，按
+            // 索引序画 = 高光垫底被虹膜盖死）
+            let mut masked_sorted: Vec<usize> = plan.group.masked_ids.clone();
+            masked_sorted.sort_by_key(|&di| {
+                meshes.get(di).map(|m| m.render_order()).unwrap_or(i32::MAX)
+            });
             let mut masked_draws = Vec::new();
-            for &di in &plan.group.masked_ids {
+            for &di in &masked_sorted {
                 let Some(m) = meshes.get(di) else {
                     continue;
                 };
@@ -645,9 +651,14 @@ fn fs_main(i: VsOut) -> @location(0) vec4<f32> {
                     let Some(csurf) = color_pool.get(gi) else {
                         continue;
                     };
+                    // clip 仿射把内容缩进 [m/(1+2m), (1+m)/(1+2m)]（margin
+                    // 0.25 外扩域）——合成 quad 须按同一仿射反演外扩 bbox
+                    //（原 bbox 直采 = 内容缩至 2/3 且向 min 角偏位）
+                    let mx = (plan.max_x - plan.min_x) * 0.25;
+                    let my = (plan.max_y - plan.min_y) * 0.25;
                     let positions = [
-                        plan.min_x, plan.min_y, plan.max_x, plan.min_y, plan.max_x, plan.max_y,
-                        plan.min_x, plan.max_y,
+                        plan.min_x - mx, plan.min_y - my, plan.max_x + mx, plan.min_y - my,
+                        plan.max_x + mx, plan.max_y + my, plan.min_x - mx, plan.max_y + my,
                     ];
                     // uv 直读 clip 域（蒙版段顶点烘 NDC 时已预补偿 y 翻转
                     // ——纹理 v == clip v，此处零翻转）
