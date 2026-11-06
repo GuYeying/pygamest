@@ -48,8 +48,15 @@ use std::cell::Cell;
             ],
             None => [1.0, 1.0, 1.0, 1.0],
         };
-        let tex: Option<&starfish_pygame::render::Surface> =
-            surface.as_deref().map(|s| &*s.surface);
+        // 纯色路径 = 1×1 白 Surface（draw_mesh 签名必选纹理——回退后形态）
+        let white = starfish_pygame::render::Surface::from_rgba8(
+            (1, 1),
+            &[255, 255, 255, 255],
+        );
+        let tex: &starfish_pygame::render::Surface = match surface.as_deref() {
+            Some(s) => &s.surface,
+            None => &white,
+        };
         use starfish_pygame::render::DrawTarget;
         match route(&f, vm)? {
             Target::Surf(s) => {
@@ -79,8 +86,7 @@ use std::cell::Cell;
     ) -> PyResult<()> {
         use starfish_pygame::render::DrawTarget;
         let sk = skeleton.inner.borrow();
-        let mut scratch = skeleton.scratch.borrow_mut();
-        let cmds = pygame_spine::render::render_with(&sk, &mut scratch);
+        let cmds = pygame_spine::render::render(&sk);
         fn draw_cmds<T: DrawTarget + ?Sized>(
             t: &T,
             cmds: &[pygame_spine::RenderCommand],
@@ -92,13 +98,11 @@ use std::cell::Cell;
                 };
                 let positions: Vec<f32> =
                     c.positions.iter().flat_map(|p| [p.x, p.y]).collect();
-                let uvs: Vec<f32> = c
-                    .uvs
-                    .chunks_exact(2)
-                    .flat_map(|uv| [uv[0], 1.0 - uv[1]])
-                    .collect();
+                // chine uv = PNG 原生 top-down 域（v=0 图顶）——与引擎纹理
+                // 上传方向一致，直传零翻转
+                let uvs: Vec<f32> = c.uvs.clone();
                 let rgba = [c.color.r, c.color.g, c.color.b, c.color.a];
-                t.draw_mesh(Some(page), &positions, &uvs, &c.triangles, rgba);
+                t.draw_mesh(page, &positions, &uvs, &c.triangles, rgba);
             }
         }
         let page_surfaces: Vec<std::sync::Arc<starfish_pygame::render::Surface>> =
@@ -124,12 +128,18 @@ use std::cell::Cell;
     /// y 翻转：Live2D 画布域 y 向下 → 引擎中心系 y 向上；opacity 乘入
     /// 顶点色）。
     #[cfg(feature = "live2d")]
-    #[pyfunction]
-    fn draw_live2d(
-        f: PyObjectRef,
+    #[derive(FromArgs)]
+    struct Live2DDrawArgs {
         model: PyRef<crate::rpy::pygame_live2d::pygame_live2d::PyLive2DRuntime>,
-        vm: &VirtualMachine,
-    ) -> PyResult<()> {
+        #[pyarg(any, optional)]
+        scale: Option<ArgIntoFloat>,
+    }
+
+    #[cfg(feature = "live2d")]
+    #[pyfunction]
+    fn draw_live2d(f: PyObjectRef, args: Live2DDrawArgs, vm: &VirtualMachine) -> PyResult<()> {
+        let model = args.model;
+        let scale = args.scale.map(|v| v.into_float() as f32).unwrap_or(1.0);
         use ::pygame_live2d as l2d_crate;
         use starfish_pygame::render::{DrawTarget, Surface as SfSurface};
         // 纹理惰性构建（一次——2048{b2} RGBA 每帧重建不可接受）
@@ -153,43 +163,63 @@ use std::cell::Cell;
         let texs = model.textures.borrow();
         let tex_list = texs.as_ref().expect("纹理缓存刚确保");
         let rt = model.inner.borrow();
+        // 按 Cubism RenderOrder 排序（drawable 索引序 ≠ 绘制序——运行时
+        // 顺序动态变化；不排序 = 手臂/头发层级错乱、该在背后的画到前面）
+        let mut ordered: Vec<_> = rt.runtime().meshes().iter().enumerate().collect();
+        ordered.sort_by_key(|(_, m)| m.render_order());
         fn draw_meshes<T: DrawTarget + ?Sized>(
             t: &T,
-            rt: &l2d_crate::assets::RuntimeModel,
+            meshes: &[(usize, &l2d_crate::moc3::Moc3DrawableMesh)],
             tex_list: &[std::sync::Arc<SfSurface>],
+            scale: f32,
         ) {
-            for m in rt.runtime().meshes() {
+            if std::env::var("L2D_DEBUG").is_ok() {
+                let xs: Vec<f32> = meshes.iter().flat_map(|(_, m)| m.vertices().iter().map(|v| v.position()[0])).collect();
+                let ys: Vec<f32> = meshes.iter().flat_map(|(_, m)| m.vertices().iter().map(|v| v.position()[1] * scale)).collect();
+                eprintln!("[dbg] live2d 顶点 x {:?}..{:?} y {:?}..{:?} scale={}", xs.iter().cloned().fold(f32::MAX, f32::min), xs.iter().cloned().fold(f32::MIN, f32::max), ys.iter().cloned().fold(f32::MAX, f32::min), ys.iter().cloned().fold(f32::MIN, f32::max), scale);
+            }
+            for (_, m) in meshes {
+                // masked drawable（眉眼口等蒙版裁剪部位）——stencil 蒙版面
+                // 未落地前跳过（画错位比缺部位更诡异）
+                if !m.masks().is_empty() {
+                    continue;
+                }
                 let tex_i = m.texture_index();
                 let Some(tex) = tex_list.get(tex_i as usize) else {
                     continue;
                 };
+                // mocari 顶点已是归一化 y 向上域——直传零翻转
                 let positions: Vec<f32> = m
                     .vertices()
                     .iter()
-                    .flat_map(|v| [v.position()[0], -v.position()[1]])
+                    .flat_map(|v| [v.position()[0] * scale, v.position()[1] * scale])
                     .collect();
+                // mocari uv = 纹理原生域直传（零翻转）
                 let uvs: Vec<f32> = m
                     .vertices()
                     .iter()
-                    .flat_map(|v| [v.uv()[0], 1.0 - v.uv()[1]])
+                    .flat_map(|v| [v.uv()[0], v.uv()[1]])
                     .collect();
                 let opacity = m.opacity();
                 let indices = m.indices().clone();
                 let rgba = [1.0, 1.0, 1.0, opacity.clamp(0.0, 1.0)];
-                t.draw_mesh(Some(tex), &positions, &uvs, &indices, rgba);
+                let tex = tex_list.get(tex_i as usize);
+                if let Some(tex) = tex {
+                    t.draw_mesh(tex, &positions, &uvs, &indices, rgba);
+                }
             }
         }
         match route(&f, vm)? {
             Target::Surf(s) => {
-                draw_meshes(&*s.surface, &rt, tex_list);
+                draw_meshes(&*s.surface, &ordered, tex_list, scale);
                 Ok(())
             }
             Target::Active => bridge::with_session(vm, |t| {
-                draw_meshes(t, &rt, tex_list);
+                draw_meshes(t, &ordered, tex_list, scale);
                 Ok(())
             })?,
             Target::Targets => bridge::with_mrt_session(vm, |t| {
-                draw_meshes(t, &rt, tex_list);
+                draw_meshes(t, &ordered, tex_list, scale);
                 Ok(())
             })?,
         }
@@ -219,30 +249,51 @@ use std::cell::Cell;
         let s = args.scale.map(|v| v.into_float() as f32).unwrap_or(1.0);
         let ox = args.cx.map(|v| v.into_float() as f32).unwrap_or(0.0);
         let oy = args.cy.map(|v| v.into_float() as f32).unwrap_or(0.0);
+        // 盒体宽 = 屏域单位（与骨骼缩放解耦——骨骼域随资产变化）
         let hw = args
             .size
             .map(|v| v.into_float() as f32)
             .unwrap_or(14.0)
-            * 0.5
-            * s;
-        let basis = args.player.inner.borrow().joint_basis_2d();
-        let mut positions: Vec<f32> = Vec::with_capacity(basis.len() * 8);
-        let mut uvs: Vec<f32> = Vec::with_capacity(basis.len() * 8);
-        let mut indices: Vec<u16> = Vec::with_capacity(basis.len() * 6);
-        for (i, (jx, jy, rx, ry, ux, uy)) in basis.iter().enumerate() {
-            let (cx0, cy0) = (jx * s + ox, jy * s + oy);
-            let rl = (rx * rx + ry * ry).sqrt().max(1e-6);
-            let ul = (ux * ux + uy * uy).sqrt().max(1e-6);
-            let (r_x, r_y) = (rx / rl * hw, ry / rl * hw);
-            let (u_x, u_y) = (ux / ul * hw, uy / ul * hw);
-            for (dx, dy) in [
-                (-r_x - u_x, -r_y - u_y),
-                (r_x - u_x, r_y - u_y),
-                (r_x + u_x, r_y + u_y),
-                (-r_x + u_x, -r_y + u_y),
-            ] {
-                positions.push(cx0 + dx);
-                positions.push(cy0 + dy);
+            * 0.5;
+        let pos = args.player.inner.borrow().joint_positions_xy();
+        let parents = args.player.inner.borrow().joint_parents();
+        // 盒体沿"父→关节"骨段方向定向（关节自身基向量随动画旋转剧烈，
+        // 骨段方向才是可读的肢体朝向）；根关节画小方块。
+        let mut positions: Vec<f32> = Vec::with_capacity(pos.len() * 8);
+        let mut uvs: Vec<f32> = Vec::with_capacity(pos.len() * 8);
+        let mut indices: Vec<u16> = Vec::with_capacity(pos.len() * 6);
+        let pt = |i: usize| -> (f32, f32) {
+            let (x, y) = pos[i];
+            (x * s + ox, y * s + oy)
+        };
+        for (i, parent) in parents.iter().enumerate() {
+            let (jx, jy) = pt(i);
+            let corners: [(f32, f32); 4] = if *parent >= 0 {
+                let Some(ppos) = pos.get(*parent as usize) else {
+                    continue;
+                };
+                let (px_, py_) = pt(*parent as usize);
+                let (dx, dy) = (jx - px_, jy - py_);
+                let len = (dx * dx + dy * dy).sqrt().max(1e-6);
+                let (dx, dy) = (dx / len, dy / len);
+                let (per_x, per_y) = (-dy, dx);
+                [
+                    (jx + per_x * hw, jy + per_y * hw),
+                    (jx - per_x * hw, jy - per_y * hw),
+                    (px_ - per_x * hw, py_ - per_y * hw),
+                    (px_ + per_x * hw, py_ + per_y * hw),
+                ]
+            } else {
+                [
+                    (jx - hw, jy - hw),
+                    (jx + hw, jy - hw),
+                    (jx + hw, jy + hw),
+                    (jx - hw, jy + hw),
+                ]
+            };
+            for (cx0, cy0) in corners {
+                positions.push(cx0);
+                positions.push(cy0);
             }
             uvs.extend_from_slice(&[0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0]);
             let b = i as u16 * 4;
@@ -253,20 +304,22 @@ use std::cell::Cell;
             positions: &[f32],
             uvs: &[f32],
             indices: &[u16],
+            white: &starfish_pygame::render::Surface,
         ) {
-            t.draw_mesh(None, positions, uvs, indices, [1.0, 0.85, 0.45, 0.92]);
+            t.draw_mesh(white, positions, uvs, indices, [1.0, 0.85, 0.45, 0.92]);
         }
+        let white_q = starfish_pygame::render::Surface::from_rgba8((1, 1), &[255, 255, 255, 255]);
         match route(&f, vm)? {
             Target::Surf(s2) => {
-                draw_quads(&*s2.surface, &positions, &uvs, &indices);
+                draw_quads(&*s2.surface, &positions, &uvs, &indices, &white_q);
                 Ok(())
             }
             Target::Active => bridge::with_session(vm, |t| {
-                draw_quads(t, &positions, &uvs, &indices);
+                draw_quads(t, &positions, &uvs, &indices, &white_q);
                 Ok(())
             })?,
             Target::Targets => bridge::with_mrt_session(vm, |t| {
-                draw_quads(t, &positions, &uvs, &indices);
+                draw_quads(t, &positions, &uvs, &indices, &white_q);
                 Ok(())
             })?,
         }

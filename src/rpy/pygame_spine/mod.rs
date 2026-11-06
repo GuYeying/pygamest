@@ -400,5 +400,5 @@ use std::sync::Arc;
         }
     }
 
-pub(crate) use self::pygame_spine::module_def;
-pub(crate) use self::pygame_spine::PySpineSkeleton;
+
+pub(crate) use self::pygame_spine::{module_def, PySpineSkeleton};
