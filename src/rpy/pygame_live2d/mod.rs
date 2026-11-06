@@ -94,20 +94,14 @@ pub mod pygame_live2d {
         }
     }
 
-    /// load_runtime(path, surface) -> Live2DRuntime：参数驱动形态 +
-    /// 注入式渲染（surface = 用户创建的产物面——全透明底人物图，精灵
-    /// 工作流：rt.draw() 画进 surface，gfxdraw.draw_surface 上屏）。
+    /// load_runtime(path) -> Live2DRuntime：参数驱动形态（产物面
+    /// **draw 时传**——同一对象可画任意尺寸/多个面）。
     #[pyfunction]
-    fn load_runtime(
-        path: PyStrRef,
-        surface: PyRef<crate::rpy::pygame::pygame::PySurface>,
-        vm: &VirtualMachine,
-    ) -> PyResult<PyRef<PyLive2DRuntime>> {
+    fn load_runtime(path: PyStrRef, vm: &VirtualMachine) -> PyResult<PyRef<PyLive2DRuntime>> {
         let p = path_of(path, vm)?;
         match l2d::assets::load_model_runtime(&p) {
             Ok(m) => {
-                let renderer =
-                    l2d::render::pygst::Live2DRenderer::new(surface.surface.clone(), &m);
+                let renderer = l2d::render::pygst::Live2DRenderer::new(&m);
                 Ok(PyLive2DRuntime {
                     inner: RefCell::new(m),
                     renderer: RefCell::new(renderer),
@@ -118,9 +112,11 @@ pub mod pygame_live2d {
         }
     }
 
-    /// draw(x, y, scale) 收参（全可选——默认 = 居中 90% 画布利用率）
+    /// draw(surface, x, y, scale) 收参（surface = 本次产物面必填；
+    /// x/y/scale 全可选——默认 = 居中 90% 画布利用率）
     #[derive(FromArgs)]
     struct Live2DDrawArgs {
+        surface: PyRef<crate::rpy::pygame::pygame::PySurface>,
         #[pyarg(any, optional)]
         x: Option<ArgIntoFloat>,
         #[pyarg(any, optional)]
@@ -290,17 +286,18 @@ pub mod pygame_live2d {
             Ok(mesh_tuple(vm, m))
         }
 
-        /// draw(x=0.0, y=0.0, scale=0.9)：全管线自理——蒙版/masked/
-        /// 整模型三段落注入面（产物=全透明底人物图）。坐标定约（与
-        /// pygamest 中心系同构，全 0-1 相对注入面）：x/y=内容中心位置
-        /// （0=面中心，±1=±半幅，y 向上）；scale=内容高/面高（>1 溢出
-        /// 裁边=特写）。
+        /// draw(surface, x=0.0, y=0.0, scale=0.9)：全管线自理——蒙版/
+        /// masked/整模型三段落本次传入的 surface（产物=全透明底人物
+        /// 图）。坐标定约（与 pygamest 中心系同构，全 0-1 相对产物面）：
+        /// x/y=内容中心位置（0=面中心，±1=±半幅，y 向上）；scale=内容
+        /// 高/面高（>1 溢出裁边=特写）。
         #[pymethod]
         fn draw(&self, args: Live2DDrawArgs, vm: &VirtualMachine) -> PyResult<()> {
             let model = self.inner.borrow();
             let renderer = self.renderer.borrow();
             renderer
                 .draw(
+                    &args.surface.surface,
                     &model,
                     args.x.map(|v| v.into_float() as f32).unwrap_or(0.0),
                     args.y.map(|v| v.into_float() as f32).unwrap_or(0.0),
