@@ -72,7 +72,7 @@ use std::sync::Arc;
         pub(crate) struct PySpineSkeleton {
             pub(crate) inner: RefCell<sp::Skeleton>,
             /// 渲染 scratch 复用（chine render_with——每帧免重分配命令缓冲）
-            pub(crate) scratch: RefCell<sp::clip::RenderScratch>,
+            pub(crate) scratch: RefCell<sp::render::RenderScratch>,
         }
 
         impl std::fmt::Debug for PySpineSkeleton {
@@ -90,7 +90,7 @@ use std::sync::Arc;
             ) -> PyResult<Self> {
                 Ok(Self {
                     inner: RefCell::new(sp::Skeleton::new(data.data.borrow().clone())),
-                scratch: RefCell::new(sp::clip::RenderScratch::new()),
+                scratch: RefCell::new(sp::render::RenderScratch::new()),
                 })
             }
         }
@@ -224,13 +224,21 @@ use std::sync::Arc;
         #[pyclass(with(Constructor))]
         impl PySpineSkeleton {
             /// set_skin(name)：激活皮肤（未知名 ValueError）。
+            /// ⚠️ 校验覆盖 default 皮肤名（chine find_skin 只查命名
+            /// skins 表——default 存独立字段；set_skin 上游语义：未命中
+            /// skins 表 = None 槽 = default 皮肤激活，行为正确）。
             #[pymethod]
             fn set_skin(&self, name: PyStrRef, vm: &VirtualMachine) -> PyResult<()> {
                 let t = name
                     .to_str()
                     .ok_or_else(|| vm.new_value_error("文本含非 UTF-8 字符"))?;
                 // 非法名校验（定约：未知名 ValueError——静默 no-op 会掩盖拼写错误）
-                if self.inner.borrow().data().find_skin(t).is_none() {
+                let known = {
+                    let sk = self.inner.borrow();
+                    let data = sk.data();
+                    data.find_skin(t).is_some() || data.default_skin.name == t
+                };
+                if !known {
                     return Err(vm.new_value_error(format!("皮肤不存在: {t}")));
                 }
                 self.inner.borrow_mut().set_skin(t);
