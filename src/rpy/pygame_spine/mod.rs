@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 #[pymodule(name = "pygame_spine")]
     pub mod pygame_spine {
-        use rustpython_derive::pyclass;
+        use rustpython_derive::{pyclass, FromArgs};
         use rustpython_vm::{
             function::ArgIntoFloat, PyObjectRef, Py, PyPayload, PyRef, PyResult, VirtualMachine,
             types::Constructor, builtins::{PyStrRef, PyType},
@@ -363,26 +363,44 @@ use std::sync::Arc;
             }
         }
 
+        /// set_animation 收参（looping/time_scale 可省）
+        #[derive(FromArgs)]
+        pub(crate) struct SetAnimationArgs {
+            pub(crate) anim: PyRef<PySpineAnimation>,
+            #[pyarg(any, optional)]
+            pub(crate) looping: Option<bool>,
+            #[pyarg(any, optional)]
+            pub(crate) time_scale: Option<ArgIntoFloat>,
+        }
+
+        /// queue_animation 收参（looping 可省）
+        #[derive(FromArgs)]
+        pub(crate) struct QueueAnimationArgs {
+            pub(crate) anim: PyRef<PySpineAnimation>,
+            #[pyarg(any, optional)]
+            pub(crate) looping: Option<bool>,
+        }
+
+        /// clear_track 收参（track 可省——缺省 0）
+        #[derive(FromArgs)]
+        pub(crate) struct ClearTrackArgs {
+            #[pyarg(any, optional)]
+            pub(crate) track: Option<usize>,
+        }
+
         #[pyclass(with(Constructor))]
         impl PySpineState {
             /// set_animation(anim, looping=True, time_scale=None)：track 0
             /// 设当前动画（环形/单发由 looping 定；time_scale = 播放速度
             /// 倍率——set 时可调，中途调速待上游 track_mut）。
             #[pymethod]
-            fn set_animation(
-                &self,
-                anim: PyRef<PySpineAnimation>,
-                #[pyarg(any, optional)]
-                looping: Option<bool>,
-                #[pyarg(any, optional)]
-                time_scale: Option<ArgIntoFloat>,
-                _vm: &VirtualMachine,
-            ) {
+            fn set_animation(&self, args: SetAnimationArgs, _vm: &VirtualMachine) {
                 // set_animation 返回 &mut TrackEntry（调 time_scale/alpha
                 // 的入口）——guard 须存活到调定完成
                 let mut state = self.inner.borrow_mut();
-                let entry = state.set_animation(anim.0.clone(), looping.unwrap_or(true));
-                if let Some(ts) = time_scale {
+                let entry =
+                    state.set_animation(args.anim.0.clone(), args.looping.unwrap_or(true));
+                if let Some(ts) = args.time_scale {
                     entry.time_scale = ts.into_float() as f32;
                 }
                 drop(state);
@@ -391,27 +409,16 @@ use std::sync::Arc;
             /// queue_animation(anim, looping=True)：track 0 排队下一动画
             /// （当前动画与已排队列播完后接续——切换动画的队列形态）。
             #[pymethod]
-            fn queue_animation(
-                &self,
-                anim: PyRef<PySpineAnimation>,
-                #[pyarg(any, optional)]
-                looping: Option<bool>,
-                _vm: &VirtualMachine,
-            ) {
+            fn queue_animation(&self, args: QueueAnimationArgs, _vm: &VirtualMachine) {
                 self.inner
                     .borrow_mut()
-                    .add_animation(anim.0.clone(), looping.unwrap_or(true));
+                    .add_animation(args.anim.0.clone(), args.looping.unwrap_or(true));
             }
 
             /// clear_track(track=0)：清指定轨道（停止该轨动画）。
             #[pymethod]
-            fn clear_track(
-                &self,
-                #[pyarg(any, optional)]
-                track: Option<usize>,
-                _vm: &VirtualMachine,
-            ) {
-                self.inner.borrow_mut().clear_track(track.unwrap_or(0));
+            fn clear_track(&self, args: ClearTrackArgs, _vm: &VirtualMachine) {
+                self.inner.borrow_mut().clear_track(args.track.unwrap_or(0));
             }
 
             /// clear()：清全部轨道。
