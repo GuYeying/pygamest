@@ -69,9 +69,9 @@ pub mod pygame_ozz {
             args: Self::Args,
             vm: &VirtualMachine,
         ) -> PyResult<Self> {
-            let skel_bytes = std::fs::read(&args.skeleton_path)
+            let skel_bytes = pollster::block_on(starfish_pygame::sfx::read(&args.skeleton_path)).map_err(|e| format!("io: {e}"))
                 .map_err(|e| vm.new_value_error(format!("skeleton.ozz 读取失败: {e}")))?;
-            let anim_bytes = std::fs::read(&args.animation_path)
+            let anim_bytes = pollster::block_on(starfish_pygame::sfx::read(&args.animation_path)).map_err(|e| format!("io: {e}"))
                 .map_err(|e| vm.new_value_error(format!("animation.ozz 读取失败: {e}")))?;
             match ozz::Player::new(&skel_bytes, &anim_bytes) {
                 Ok(p) => Ok(Self {

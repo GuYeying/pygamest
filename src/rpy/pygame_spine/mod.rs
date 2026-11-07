@@ -26,6 +26,7 @@ use std::sync::Arc;
             function::ArgIntoFloat, PyObjectRef, Py, PyPayload, PyRef, PyResult, VirtualMachine,
             types::Constructor, builtins::{PyStrRef, PyType},
         };
+        use starfish_pygame;
         use std::cell::RefCell;
         use std::sync::Arc;
         // 内层模块与上游 crate 同名（python 模块名 = crate 名定约）——
@@ -131,7 +132,7 @@ use std::sync::Arc;
             let p = path
                 .to_str()
                 .ok_or_else(|| vm.new_value_error("路径含非 UTF-8 字符"))?;
-            let bytes = std::fs::read(p)
+            let bytes = { pollster::block_on(starfish_pygame::sfx::read(p)).map_err(|e| format!("io: {e}")) }
                 .map_err(|e| vm.new_value_error(format!("Spine JSON 读取失败: {e}")))?;
             let text = String::from_utf8_lossy(&bytes);
             match sp::load::from_json(&text) {
@@ -147,7 +148,7 @@ use std::sync::Arc;
             let p = path
                 .to_str()
                 .ok_or_else(|| vm.new_value_error("路径含非 UTF-8 字符"))?;
-            let bytes = std::fs::read(p)
+            let bytes = { pollster::block_on(starfish_pygame::sfx::read(p)).map_err(|e| format!("io: {e}")) }
                 .map_err(|e| vm.new_value_error(format!("Spine 二进制读取失败: {e}")))?;
             match sp::binary::from_binary(&bytes) {
                 Ok(data) => Ok(PySpineSkeletonData { data: RefCell::new(Arc::new(data)) }.into_ref(&vm.ctx)),
@@ -486,9 +487,9 @@ use std::sync::Arc;
             let ap = atlas_path
                 .to_str()
                 .ok_or_else(|| vm.new_value_error("路径含非 UTF-8 字符"))?;
-            let j = std::fs::read_to_string(jp)
+            let j = { pollster::block_on(starfish_pygame::sfx::read(jp)).map(|b| String::from_utf8_lossy(&b).into_owned()).map_err(|e| format!("io: {e}")) }
                 .map_err(|e| vm.new_value_error(format!("Spine JSON 读取失败: {e}")))?;
-            let a = std::fs::read_to_string(ap)
+            let a = { pollster::block_on(starfish_pygame::sfx::read(ap)).map(|b| String::from_utf8_lossy(&b).into_owned()).map_err(|e| format!("io: {e}")) }
                 .map_err(|e| vm.new_value_error(format!("atlas 读取失败: {e}")))?;
             match sp::load_with_atlas(&j, &a) {
                 Ok((data, pages)) => Ok((
