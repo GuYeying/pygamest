@@ -96,7 +96,7 @@ pub mod pygame_live2d {
         model3_path: &str,
         vm: &VirtualMachine,
     ) -> PyResult<l2d::RuntimeModelAssets> {
-        let raw = pollster::block_on(starfish_pygame::sfx::read(model3_path))
+        let raw = starfish_pygame::sfx::read_block(model3_path)
             .map_err(|e| vm.new_value_error(format!("model3.json 读取失败: {e}")))?;
         let source =
             String::from_utf8(raw).map_err(|_| vm.new_value_error("model3.json 非 UTF-8"))?;
@@ -106,7 +106,7 @@ pub mod pygame_live2d {
 
         let read_bytes = |rel: &str| -> PyResult<Vec<u8>> {
             let full = dir.join(rel);
-            pollster::block_on(starfish_pygame::sfx::read(&full.to_string_lossy()))
+            starfish_pygame::sfx::read_block(&full.to_string_lossy())
                 .map_err(|e| vm.new_value_error(format!("Live2D 资产读取失败 {rel}: {e}")))
         };
         let read_text = |rel: &str| -> PyResult<String> {
@@ -427,7 +427,7 @@ pub mod pygame_live2d {
         #[pyfunction]
         fn load_motion(path: PyStrRef, vm: &VirtualMachine) -> PyResult<PyRef<PyLive2DMotion>> {
             let p = path_of(path, vm)?;
-            let raw = pollster::block_on(starfish_pygame::sfx::read(&p.to_string_lossy()))
+            let raw = starfish_pygame::sfx::read_block(&p.to_string_lossy())
                 .map_err(|e| vm.new_value_error(format!("motion 读取失败: {e}")))?;
             let source =
                 String::from_utf8(raw).map_err(|_| vm.new_value_error("motion3.json 非 UTF-8"))?;
