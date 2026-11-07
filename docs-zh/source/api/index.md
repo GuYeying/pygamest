@@ -26,4 +26,7 @@ API 页的成员标题按类别**着色 + 同色淡调底线**；标题缩进即
 pygame <pygame>
 pygame_gui <pygame_gui>
 pygame_physics <pygame_physics>
+pygame_spine <pygame_spine>
+pygame_ozz <pygame_ozz>
+pygame_live2d <pygame_live2d>
 ```
