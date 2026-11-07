@@ -1,5 +1,11 @@
 # pygame_live2d（已归档——独立库）
 
+```{warning}
+⚠️ **使用前必读**：本模块**编译默认不含**——构建须显式激活
+`features = ["live2d"]`，否则 `import pygame_live2d` 即 ImportError。
+法律风险说明见下方归档声明。
+```
+
 > **归档声明**（2026-11-06）：Live2D/Cubism 因法律风险归档为**独立库**
 > [pygame_live2d](https://github.com/GuYeying/pygame_live2d)——实现、
 > 渲染管线、文档随库维护，本仓仅存 feature 门控的薄绑定

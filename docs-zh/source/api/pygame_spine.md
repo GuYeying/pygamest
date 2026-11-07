@@ -1,5 +1,17 @@
 # pygame_spine
 
+```{warning}
+⚠️ **使用前必读（两项前置条件）**
+
+1. **Spine Runtimes License**：Spine 运行时与资产的使用须遵守
+   [Esoteric Software Spine Runtimes License](https://esotericsoftware.com/spine-runtimes-license)——
+   运行时可免费用于产品，但**导入的 `.skel`/`.json` 资产须由正版
+   Spine 编辑器导出**（持有有效 Spine 许可证）。
+2. **编译默认不含本库**：`pygame_spine` 为 feature 门控的可选模块——
+   构建时须显式激活 `features = ["spine"]`（stable 可用），否则
+   `import pygame_spine` 即 ImportError。
+```
+
 Spine 2D 骨骼动画绑定——上游 [chine](https://crates.io/crates/chine)
 （纯 Rust Spine 运行时），适配层 = `pygame_spine` 兄弟 crate（阶段 4；
 rapier-starfish-debug 同范式）。**独立顶层 Python 模块**

@@ -33,6 +33,10 @@ toc_object_entries_show_parents = "domain"
 
 html_static_path = ['_static']
 
+# 模板/脚手架文件排除（example_module.rst = 新模块文档模板——不进
+# 构建，消除 "document isn't included in any toctree" 警告）
+exclude_patterns = ['api/example_module.rst']
+
 html_context = {
     "display_github": True,
     "github_user": "GuYeying",

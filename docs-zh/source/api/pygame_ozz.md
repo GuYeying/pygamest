@@ -1,5 +1,12 @@
 # pygame_ozz
 
+```{warning}
+⚠️ **使用前必读**：本模块**编译默认不含**——feature `ozz` 门控且需
+**nightly rustc**（上游 std::simd；wasm 需 simd128 target-feature）。
+构建：`cargo +nightly build --features ozz`，否则
+`import pygame_ozz` 即 ImportError。
+```
+
 3D 骨骼动画绑定——上游
 [ozz-animation-rs](https://github.com/SlimeYummy/ozz-animation-rs)
 （MPL-2.0，ozz-animation 的 Rust 移植），经 pygame_ozz 兄弟 crate 的
