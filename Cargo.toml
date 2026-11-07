@@ -22,6 +22,13 @@ stdlib-full = ["rustpython-pylib/freeze-full"]
 # starfish-pygame click-through 能力位透传；Win32 实装，未启用 =
 # pygame.display 两口不存在，编译期即知平台不支持）
 click-through = ["starfish-pygame/click-through"]
+# skip-taskbar = 任务栏（Dock）隐藏（桌宠配套——starfish-pygame
+# 透传；Win32/macOS 实装，Linux Wayland 站桩，未启用 = pygame.display
+# 两口不存在）
+skip-taskbar = ["starfish-pygame/skip-taskbar"]
+# tray = 系统托盘（桌宠配套——starfish-pygame 透传；三桌面实装，
+# 未启用 = pygame.display 两口 + 事件三常量不存在）
+tray = ["starfish-pygame/tray"]
 gui = ["dep:egui-starfish-we", "dep:egui-wgpu"]
 physics = ["dep:rapier-starfish-debug"]
 physics2d = ["physics", "rapier-starfish-debug/2d"]

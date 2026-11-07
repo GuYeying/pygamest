@@ -19,7 +19,7 @@ use std::cell::Cell;
         use rustpython_vm::convert::TryFromObject;
         use rustpython_vm::{
             PyObjectRef, PyPayload, PyRef, PyResult, VirtualMachine,
-            builtins::PyStrRef,
+            builtins::{PyStr, PyTupleRef, PyStrRef},
         };
 
         // ── 窗口旗标（locals::display 透传；set_mode 当前收下不解析，前向兼容）──
@@ -133,6 +133,96 @@ use std::cell::Cell;
         #[pyfunction]
         fn get_click_through(_vm: &VirtualMachine) -> bool {
             starfish_pygame::display::get_click_through()
+        }
+
+        /// set_skip_taskbar(enable)：任务栏（Dock）隐藏开关（桌宠形态
+        /// 配套——Win=WS_EX_TOOLWINDOW 位切换（Alt+Tab 一并隐藏）、
+        /// macOS=Dock 级 setActivationPolicy 切换；Linux Wayland 站桩
+        /// Err。⚠️ feature `skip-taskbar` 门控——未启用构建无此 API）。
+        #[cfg(feature = "skip-taskbar")]
+        #[pyfunction]
+        fn set_skip_taskbar(enable: bool, vm: &VirtualMachine) -> PyResult<()> {
+            starfish_pygame::display::set_skip_taskbar(enable)
+                .map_err(|e| vm.new_runtime_error(e))
+        }
+
+        /// get_skip_taskbar() -> bool：窗口当前是否任务栏隐藏（OS 状态
+        /// 读回；stub 平台恒 False）。
+        #[cfg(feature = "skip-taskbar")]
+        #[pyfunction]
+        fn get_skip_taskbar(_vm: &VirtualMachine) -> bool {
+            starfish_pygame::display::get_skip_taskbar()
+        }
+
+        /// set_tray(icon, tooltip="", menu=None) 收参（icon = 离屏
+        /// Surface——RGBA 回读慢路径；menu = [(id, label), ...] 平铺——
+        /// 收 PyObjectRef 列表手工拆元组，RP FromArgs 不支持元组列表）。
+        #[derive(FromArgs)]
+        struct TraySetArgs {
+            /// 图标（离屏 Surface——Screen 背板不回读）
+            icon: PyRef<crate::rpy::pygame::pygame::PySurface>,
+            /// 悬停提示（缺省无）
+            #[pyarg(any, optional)]
+            tooltip: Option<PyStrRef>,
+            /// 平铺菜单项 (id, label) 列表（缺省/空表 = 纯图标）
+            #[pyarg(any, optional)]
+            menu: Option<Vec<PyObjectRef>>,
+        }
+
+        /// set_tray(icon, tooltip="", menu=None)：安装（或替换）系统托盘
+        /// 图标（桌宠形态配套——左键=trayclick 事件、右键=弹菜单、菜单
+        /// 点击=traymenu 事件，经 pygame.event.get() 上浮。⚠️ feature
+        /// `tray` 门控——未启用构建无此 API）。
+        #[cfg(feature = "tray")]
+        #[pyfunction]
+        fn set_tray(args: TraySetArgs, vm: &VirtualMachine) -> PyResult<()> {
+            let tooltip = match &args.tooltip {
+                Some(t) => t
+                    .to_str()
+                    .ok_or_else(|| vm.new_value_error("提示文本含非 UTF-8 字符"))?,
+                None => "",
+            };
+            let mut menu: Vec<(String, String)> = Vec::new();
+            for item in args.menu.unwrap_or_default() {
+                let tuple = PyTupleRef::try_from_object(vm, item)
+                    .map_err(|_| vm.new_type_error("menu 项须为 (id, label) 元组"))?;
+                if tuple.len() != 2 {
+                    return Err(vm.new_value_error(format!(
+                        "menu 项须为二元组 (id, label)，收到 {} 元",
+                        tuple.len()
+                    )));
+                }
+                let id: PyStrRef = tuple
+                    .get(0)
+                    .cloned()
+                    .ok_or_else(|| vm.new_value_error("menu 项索引越界"))?
+                    .downcast::<PyStr>()
+                    .map_err(|_| vm.new_type_error("菜单 id 须为 str"))?;
+                let label: PyStrRef = tuple
+                    .get(1)
+                    .cloned()
+                    .ok_or_else(|| vm.new_value_error("menu 项索引越界"))?
+                    .downcast::<PyStr>()
+                    .map_err(|_| vm.new_type_error("菜单文本须为 str"))?;
+                let id = id
+                    .to_str()
+                    .ok_or_else(|| vm.new_value_error("菜单 id 含非 UTF-8 字符"))?
+                    .to_owned();
+                let label = label
+                    .to_str()
+                    .ok_or_else(|| vm.new_value_error("菜单文本含非 UTF-8 字符"))?
+                    .to_owned();
+                menu.push((id, label));
+            }
+            starfish_pygame::display::set_tray(&args.icon.surface, tooltip, &menu)
+                .map_err(|e| vm.new_runtime_error(e))
+        }
+
+        /// remove_tray()：移除托盘图标（未安装时空操作）。
+        #[cfg(feature = "tray")]
+        #[pyfunction]
+        fn remove_tray(vm: &VirtualMachine) -> PyResult<()> {
+            starfish_pygame::display::remove_tray().map_err(|e| vm.new_runtime_error(e))
         }
 
         /// get_init() -> bool：set_mode 是否已调用（display 初始化态）。

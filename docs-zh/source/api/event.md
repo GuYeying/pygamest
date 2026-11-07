@@ -20,10 +20,20 @@
 | MOUSEMOTION | "mousemotion" | x y |
 | MOUSEBUTTONDOWN / UP | "mousebuttondown" / "mousebuttonup" | button x y |
 | TEXTINPUT | "textinput" | text |
+| TRAYMENU | "traymenu" | id |
 
 `[差异]` `mousewheel` / `resized` / `touch` / `focusgained` / `focuslost` /
 `suspend` / `resume` / `user` / `other` 标签事件存在但常量未暴露——比对时
 直接写字符串即可。
+
+```{note}
+TRAYMENU / TRAYCLICK / TRAYDOUBLECLICK 为**托盘事件词汇**（桌宠形态配套，
+feature `tray` 门控——未启用构建无这些常量与事件）：托盘菜单项点击 =
+`"traymenu"`（`e.id` = 菜单项 id）；托盘图标单击 = `"trayclick"`
+（`e.button` = 1/2/3，`e.x`/`e.y` = 屏幕物理坐标）；图标双击 =
+`"traydoubleclick"`（Windows 专属形态）。托盘见
+[pygame.display](display.md) 桌宠能力位。
+```
 
 ## <span class="c-func">函数</span>
 
@@ -96,6 +106,11 @@ for e in pygame.event.get():
 ##### <span class="c-attr">w / h</span>
 
 窗口新尺寸（仅 resized；其余 0）。
+
+##### <span class="c-attr">id</span>
+
+托盘事件 id（traymenu = 菜单项 id；trayclick/traydoubleclick = 托盘
+图标 id；其余 `""`）。
 
 ## <span class="c-func">自定义事件</span>
 

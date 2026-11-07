@@ -71,3 +71,66 @@ display 初始化态（`set_mode` 是否已调用）。
 原样透传。
 
 - :rtype: tuple[float, float]
+
+## <span class="c-func">桌宠能力位</span>
+
+三组窗口系统能力开关（桌宠/悬浮件形态配套）——全部
+**feature 门控**：未启用对应 feature 的构建无这些 API（AttributeError
+= 编译期即知不支持）；启用后不支持的平台运行时 Err（站桩原则）。
+
+| 能力 | feature | Windows | macOS | Linux | web/mobile |
+|---|---|---|---|---|---|
+| 鼠标穿透 | click-through | ✅ | 站桩 | 站桩 | Err |
+| 任务栏隐藏 | skip-taskbar | ✅ | ✅ Dock 级 | 站桩 | Err |
+| 系统托盘 | tray | ✅ | ✅ | ✅ ksni | Err |
+
+#### <span class="c-func">set_click_through(enable)</span>
+
+鼠标事件穿透开关（点击落到下层窗口）。⚠️ 穿透后窗口收不到任何
+鼠标事件——恢复须脚本逻辑/外部通道，防自锁。
+
+- :param enable: True = 穿透开
+- :type enable: bool
+
+#### <span class="c-func">get_click_through() -> bool</span>
+
+窗口当前是否鼠标穿透（OS 位读回）。
+
+#### <span class="c-func">set_skip_taskbar(enable)</span>
+
+任务栏（Dock）隐藏开关。Windows = `WS_EX_TOOLWINDOW` 位切换
+（⚠️ Alt+Tab 一并隐藏——工具窗语义，桌宠通常正合预期）；macOS =
+Dock 级 `setActivationPolicy(.accessory/.regular)`（app 整体隐藏/
+恢复 Dock 图标——macOS 无 per-window 任务栏概念）；Linux =
+Wayland 标准协议不控制任务栏（站桩 Err）。
+
+- :param enable: True = 任务栏隐藏
+- :type enable: bool
+
+#### <span class="c-func">get_skip_taskbar() -> bool</span>
+
+窗口当前是否任务栏隐藏（OS 状态读回）。
+
+#### <span class="c-func">set_tray(icon, tooltip="", menu=None)</span>
+
+安装（或替换）系统托盘图标：RGBA 图标 + 悬停提示 + 平铺菜单。
+交互经事件上浮：左键点图标 = `trayclick`、右键 = 弹菜单、菜单项
+点击 = `traymenu`（见 [pygame.event](event.md)）；托盘图标双击 =
+`traydoubleclick`（Windows）。Linux 后端 = ksni 纯 D-Bus（Ubuntu
+自带 AppIndicator 扩展可显示；其他 GNOME 需装扩展）。
+
+```python
+icon = pygame.Surface((64, 64))
+with icon.render() as t:
+    t.fill((40, 120, 60))
+pygame.display.set_tray(icon, "我的桌宠",
+                        [("show", "显示"), ("quit", "退出")])
+```
+
+- :param icon: 离屏 Surface（**Screen 背板不可作图标**——不回读）
+- :param tooltip: 悬停提示（缺省无）
+- :param menu: `[(id, label), ...]` 平铺菜单（缺省/空表 = 纯图标）
+
+#### <span class="c-func">remove_tray()</span>
+
+移除托盘图标（未安装时空操作）。

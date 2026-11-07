@@ -41,6 +41,20 @@ use crate::rpy::{bridge, args};
         pub(crate) const MOUSEBUTTONUP: &str = "mousebuttonup";
         #[pyattr]
         pub(crate) const TEXTINPUT: &str = "textinput";
+        // ── 托盘事件词汇（feature "tray" 门控——未启用构建无此常量；
+        // 事件对象也只在托盘交互时产生）──
+        /// 托盘菜单项点击（e.id = 菜单项 id）
+        #[cfg(feature = "tray")]
+        #[pyattr]
+        pub(crate) const TRAYMENU: &str = "traymenu";
+        /// 托盘图标单击（e.button = 1/2/3，e.x/e.y = 屏幕物理坐标）
+        #[cfg(feature = "tray")]
+        #[pyattr]
+        pub(crate) const TRAYCLICK: &str = "trayclick";
+        /// 托盘图标双击（Windows 专属形态）
+        #[cfg(feature = "tray")]
+        #[pyattr]
+        pub(crate) const TRAYDOUBLECLICK: &str = "traydoubleclick";
 
 
 
@@ -69,6 +83,9 @@ use crate::rpy::{bridge, args};
             pub(crate) repeat: bool,
             /// 文本（textinput）
             pub(crate) text: PyStrRef,
+            /// 托盘事件 id（traymenu = 菜单项 id；trayclick/traydouble
+            /// = 托盘图标 id；其余 ""）
+            pub(crate) id: PyStrRef,
             /// 尺寸（resized）
             pub(crate) w: i32,
             pub(crate) h: i32,
@@ -119,6 +136,13 @@ use crate::rpy::{bridge, args};
                 self.text.clone()
             }
 
+            /// 托盘事件 id（traymenu/trayclick/traydoubleclick 携带；
+            /// 其余 ""）
+            #[pygetset]
+            fn id(&self) -> PyStrRef {
+                self.id.clone()
+            }
+
             /// 宽（resized；其余 0）
             #[pygetset]
             fn w(&self) -> i32 {
@@ -159,15 +183,15 @@ use crate::rpy::{bridge, args};
                 match ev {
                     EngineEvent::Quit => Self {
                         ev, typ: tag("quit"), key: int_obj(0), x: 0, y: 0, button: 0,
-                        modifiers: 0, repeat: false, text: empty(), w: 0, h: 0,
+                        modifiers: 0, repeat: false, text: empty(), id: empty(), w: 0, h: 0,
                     },
                     EngineEvent::KeyDown { key, modifiers, repeat } => Self {
                         ev, typ: tag("keydown"), key: key_obj(key), x: 0, y: 0, button: 0,
-                        modifiers, repeat, text: empty(), w: 0, h: 0,
+                        modifiers, repeat, text: empty(), id: empty(), w: 0, h: 0,
                     },
                     EngineEvent::KeyUp { key, modifiers } => Self {
                         ev, typ: tag("keyup"), key: key_obj(key), x: 0, y: 0, button: 0,
-                        modifiers, repeat: false, text: empty(), w: 0, h: 0,
+                        modifiers, repeat: false, text: empty(), id: empty(), w: 0, h: 0,
                     },
                     EngineEvent::TextInput { text } => {
                         // text 同时进载荷与展示槽——载荷侧克隆保全（String 非 Copy）
@@ -175,60 +199,83 @@ use crate::rpy::{bridge, args};
                         Self {
                             ev, typ: tag("textinput"), key: int_obj(0), x: 0, y: 0, button: 0,
                             modifiers: 0, repeat: false,
-                            text: vm.ctx.new_str(text).to_owned(), w: 0, h: 0,
+                            text: vm.ctx.new_str(text).to_owned(), id: empty(), w: 0, h: 0,
                         }
                     }
                     EngineEvent::MouseMotion { x, y } => Self {
                         ev, typ: tag("mousemotion"), key: int_obj(0), x, y, button: 0,
-                        modifiers: 0, repeat: false, text: empty(), w: 0, h: 0,
+                        modifiers: 0, repeat: false, text: empty(), id: empty(), w: 0, h: 0,
                     },
                     EngineEvent::MouseButtonDown { button, x, y } => Self {
                         ev, typ: tag("mousebuttondown"), key: int_obj(0), x, y,
                         button: i32::from(button), modifiers: 0, repeat: false,
-                        text: empty(), w: 0, h: 0,
+                        text: empty(), id: empty(), w: 0, h: 0,
                     },
                     EngineEvent::MouseButtonUp { button, x, y } => Self {
                         ev, typ: tag("mousebuttonup"), key: int_obj(0), x, y,
                         button: i32::from(button), modifiers: 0, repeat: false,
-                        text: empty(), w: 0, h: 0,
+                        text: empty(), id: empty(), w: 0, h: 0,
                     },
                     EngineEvent::MouseWheel { x, y } => Self {
                         ev, typ: tag("mousewheel"), key: int_obj(0), x, y, button: 0,
-                        modifiers: 0, repeat: false, text: empty(), w: 0, h: 0,
+                        modifiers: 0, repeat: false, text: empty(), id: empty(), w: 0, h: 0,
                     },
                     EngineEvent::Resized { width, height } => Self {
                         ev, typ: tag("resized"), key: int_obj(0), x: 0, y: 0, button: 0,
-                        modifiers: 0, repeat: false, text: empty(),
+                        modifiers: 0, repeat: false, text: empty(), id: empty(),
                         w: width as i32, h: height as i32,
                     },
                     EngineEvent::FocusGained => Self {
                         ev, typ: tag("focusgained"), key: int_obj(0), x: 0, y: 0, button: 0,
-                        modifiers: 0, repeat: false, text: empty(), w: 0, h: 0,
+                        modifiers: 0, repeat: false, text: empty(), id: empty(), w: 0, h: 0,
                     },
                     EngineEvent::FocusLost => Self {
                         ev, typ: tag("focuslost"), key: int_obj(0), x: 0, y: 0, button: 0,
-                        modifiers: 0, repeat: false, text: empty(), w: 0, h: 0,
+                        modifiers: 0, repeat: false, text: empty(), id: empty(), w: 0, h: 0,
                     },
                     EngineEvent::Touch { phase: _, finger, x, y } => Self {
                         ev, typ: tag("touch"), key: int_obj(finger as u32), x, y, button: 0,
-                        modifiers: 0, repeat: false, text: empty(), w: 0, h: 0,
+                        modifiers: 0, repeat: false, text: empty(), id: empty(), w: 0, h: 0,
                     },
                     EngineEvent::Suspend => Self {
                         ev, typ: tag("suspend"), key: int_obj(0), x: 0, y: 0, button: 0,
-                        modifiers: 0, repeat: false, text: empty(), w: 0, h: 0,
+                        modifiers: 0, repeat: false, text: empty(), id: empty(), w: 0, h: 0,
                     },
                     EngineEvent::Resume => Self {
                         ev, typ: tag("resume"), key: int_obj(0), x: 0, y: 0, button: 0,
-                        modifiers: 0, repeat: false, text: empty(), w: 0, h: 0,
+                        modifiers: 0, repeat: false, text: empty(), id: empty(), w: 0, h: 0,
                     },
                     EngineEvent::User { code } => Self {
                         ev, typ: tag("user"), key: int_obj(code), x: 0, y: 0, button: 0,
-                        modifiers: 0, repeat: false, text: empty(), w: 0, h: 0,
+                        modifiers: 0, repeat: false, text: empty(), id: empty(), w: 0, h: 0,
                     },
                     EngineEvent::Other => Self {
                         ev, typ: tag("other"), key: int_obj(0), x: 0, y: 0, button: 0,
-                        modifiers: 0, repeat: false, text: empty(), w: 0, h: 0,
+                        modifiers: 0, repeat: false, text: empty(), id: empty(), w: 0, h: 0,
                     },
+                    // 托盘交互（feature "tray" 产生路径；kind → typ tag，
+                    // 菜单项 id 走 id 槽、按键走 button 槽、屏幕坐标走 x/y）
+                    EngineEvent::Tray { kind, id, button, x, y } => {
+                        let typ = match kind {
+                            starfish_we::TrayKind::Menu => tag("traymenu"),
+                            starfish_we::TrayKind::Click => tag("trayclick"),
+                            starfish_we::TrayKind::DoubleClick => tag("traydoubleclick"),
+                        };
+                        // id 载荷侧克隆保全（String 非 Copy——TextInput 同款）
+                        let ev = EngineEvent::Tray {
+                            kind,
+                            id: id.clone(),
+                            button,
+                            x,
+                            y,
+                        };
+                        Self {
+                            ev, typ, key: int_obj(0),
+                            x: x as i32, y: y as i32, button: i32::from(button),
+                            modifiers: 0, repeat: false,
+                            text: empty(), id: vm.ctx.new_str(id).to_owned(), w: 0, h: 0,
+                        }
+                    }
                 }
             }
         }
