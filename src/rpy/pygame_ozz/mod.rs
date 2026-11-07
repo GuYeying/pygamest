@@ -51,11 +51,14 @@ pub mod pygame_ozz {
         }
     }
 
-    /// 构造收参（双 ozz archive 字节流——skeleton.ozz + animation.ozz）。
+    /// 构造收参（双 .ozz 路径——skeleton.ozz + animation.ozz；路径进
+    /// 对象出，io 在绑定层闭环——Python 零搬运）。
     #[derive(FromArgs)]
     pub(crate) struct PlayerArgs {
-        skeleton_bytes: Vec<u8>,
-        animation_bytes: Vec<u8>,
+        /// skeleton.ozz 路径
+        skeleton_path: String,
+        /// animation.ozz 路径
+        animation_path: String,
     }
 
     impl Constructor for PyOzzPlayer {
@@ -66,7 +69,11 @@ pub mod pygame_ozz {
             args: Self::Args,
             vm: &VirtualMachine,
         ) -> PyResult<Self> {
-            match ozz::Player::new(&args.skeleton_bytes, &args.animation_bytes) {
+            let skel_bytes = std::fs::read(&args.skeleton_path)
+                .map_err(|e| vm.new_value_error(format!("skeleton.ozz 读取失败: {e}")))?;
+            let anim_bytes = std::fs::read(&args.animation_path)
+                .map_err(|e| vm.new_value_error(format!("animation.ozz 读取失败: {e}")))?;
+            match ozz::Player::new(&skel_bytes, &anim_bytes) {
                 Ok(p) => Ok(Self {
                     inner: RefCell::new(p),
                 }),

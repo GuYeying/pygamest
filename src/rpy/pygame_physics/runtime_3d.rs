@@ -26,8 +26,9 @@ use rapier_starfish_debug::dim3::prelude::{
     ChannelEventCollector, ColliderBuilder as SfColliderBuilder, ColliderHandle,
     CollisionEvent, ContactForceEvent, DebugRenderMode, FillMode as SfFillMode3, QueryFilter,
     Ray as SfRay3, IVector as SfIVector3, ActiveEvents as SfActiveEvents3, Group as SfGroup,
-    InteractionGroups, InteractionTestMode, RigidBodyBuilder as SfRigidBodyBuilder,
-    RigidBodyHandle,
+    ImpulseJointHandle, InteractionGroups, InteractionTestMode,
+    RigidBodyBuilder as SfRigidBodyBuilder, RigidBodyHandle,
+    SpringJointBuilder as SfSpringJointBuilder3,
 };
 use rapier_starfish_debug::dim3::world::PhysicsWorld as SfPhysicsWorld;
 use rustpython_derive::{FromArgs, pyclass};
@@ -59,6 +60,15 @@ fn pack_collider(h: ColliderHandle) -> u64 {
 
 fn unpack_collider(v: u64) -> ColliderHandle {
     ColliderHandle::from_raw_parts(v as u32, (v >> 32) as u32)
+}
+
+fn pack_joint(h: ImpulseJointHandle) -> u64 {
+    let (index, generation) = h.into_raw_parts();
+    ((generation as u64) << 32) | index as u64
+}
+
+fn unpack_joint(v: u64) -> ImpulseJointHandle {
+    ImpulseJointHandle::from_raw_parts(v as u32, (v >> 32) as u32)
 }
 
 // ── 收参结构体（构造 kwargs）────────────────────────────────────
@@ -251,6 +261,36 @@ pub(crate) struct ColliderBuilderArgs {
     /// 力事件门槛（总力幅值超过才发事件）
     #[pyarg(any, optional)]
     pub(crate) force_threshold: Option<ArgIntoFloat>,
+}
+
+/// create_joint(kind, body1=, body2=, ...) 收参（v1 kind = "spring"）
+#[derive(FromArgs)]
+pub(crate) struct CreateJointArgs {
+    /// 关节种类（v1 = "spring"）
+    #[pyarg(any)]
+    pub(crate) kind: String,
+    #[pyarg(any)]
+    pub(crate) body1: u64,
+    #[pyarg(any)]
+    pub(crate) body2: u64,
+    /// 弹簧自然长（米；> 0——上游断言防线）
+    #[pyarg(any, optional)]
+    pub(crate) rest_length: Option<ArgIntoFloat>,
+    /// 刚度
+    #[pyarg(any, optional)]
+    pub(crate) stiffness: Option<ArgIntoFloat>,
+    /// 阻尼
+    #[pyarg(any, optional)]
+    pub(crate) damping: Option<ArgIntoFloat>,
+    /// 体 1 局部系锚点（缺省质心）
+    #[pyarg(any, optional)]
+    pub(crate) anchor1: Option<SfFPoint3>,
+    /// 体 2 局部系锚点（缺省质心）
+    #[pyarg(any, optional)]
+    pub(crate) anchor2: Option<SfFPoint3>,
+    /// 两体间碰撞是否保留（缺省 false——弹簧互连体互不碰撞）
+    #[pyarg(any, optional)]
+    pub(crate) contacts_enabled: Option<bool>,
 }
 
 impl Constructor for PyColliderBuilder3D {
@@ -737,6 +777,64 @@ impl PyPhysicsWorld3D {
         Ok(w.get()
             .remove_body_with_colliders(unpack_body(body_handle), true)
             .is_some())
+    }
+
+    /// create_joint(kind="spring", body1=, body2=, rest_length=,
+    ///               stiffness=, damping=, anchor1=, anchor2=,
+    ///               contacts_enabled=False) -> int：脉冲关节创建（返回
+    /// 关节句柄——remove_joint 消费）。v1 kind = "spring"（弹簧约束：
+    /// rest_length 自然长/ stiffness 刚度/ damping 阻尼；anchor1/anchor2
+    /// = 各自体的局部系锚点，缺省体质心）。
+    /// ⚠️ debug：`DebugDraw3D(set_mode(joints=True))` 后 rapier 自绘关
+    /// 节线（impulse joint 专属配色——与碰撞线框区分，弹簧不另做花哨
+    /// 渲染定约）。
+    /// ⚠️ panic 面：rest_length ≤ 0 上游断言（SpringJoint::new 文档
+    /// 契约）——须 > 0；无其余 panic 面。
+    #[pymethod]
+    fn create_joint(&self, args: CreateJointArgs, vm: &VirtualMachine) -> PyResult<u64> {
+        let mut w = self.inner.borrow_mut();
+        let b1 = unpack_body(args.body1);
+        let b2 = unpack_body(args.body2);
+        match args.kind.as_str() {
+            "spring" => {
+                let (Some(rest), Some(k), Some(d)) =
+                    (args.rest_length, args.stiffness, args.damping)
+                else {
+                    return Err(vm.new_value_error(
+                        "spring 须给 rest_length / stiffness / damping",
+                    ));
+                };
+                let (rest, k, d) = (
+                    rest.into_float() as f32,
+                    k.into_float() as f32,
+                    d.into_float() as f32,
+                );
+                if rest <= 0.0 {
+                    return Err(vm.new_value_error("rest_length 须 > 0（上游断言防线）"));
+                }
+                let mut j = SfSpringJointBuilder3::new(rest, k, d);
+                if let Some(a) = args.anchor1 {
+                    j = j.local_anchor1([a.0, a.1, a.2].into());
+                }
+                if let Some(a) = args.anchor2 {
+                    j = j.local_anchor2([a.0, a.1, a.2].into());
+                }
+                if args.contacts_enabled.unwrap_or(false) {
+                    j = j.contacts_enabled(true);
+                }
+                Ok(pack_joint(w.get().insert_impulse_joint(b1, b2, j)))
+            }
+            other => Err(vm.new_value_error(format!(
+                "kind 须为 'spring'（其余关节族待接口扫描批次），实际 {other:?}"
+            ))),
+        }
+    }
+
+    /// remove_joint(handle) -> bool：脉冲关节移除（无效句柄 False）
+    #[pymethod]
+    fn remove_joint(&self, handle: u64) -> bool {
+        let mut w = self.inner.borrow_mut();
+        w.get().remove_impulse_joint(unpack_joint(handle)).is_some()
     }
 
     /// drain_events() -> [(kind, collider_handle1, collider_handle2), ...]：

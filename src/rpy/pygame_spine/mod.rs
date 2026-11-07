@@ -127,19 +127,28 @@ use std::sync::Arc;
         /// load_json(text) -> SkeletonData：Spine JSON 导入（导出需含骨骼
         /// 数据；动画/atlas 分离文件各自再进）。
         #[pyfunction]
-        fn load_json(text: PyStrRef, vm: &VirtualMachine) -> PyResult<PyRef<PySpineSkeletonData>> {
-            let t = text
+        fn load_json(path: PyStrRef, vm: &VirtualMachine) -> PyResult<PyRef<PySpineSkeletonData>> {
+            let p = path
                 .to_str()
-                .ok_or_else(|| vm.new_value_error("文本含非 UTF-8 字符"))?;
-            match sp::load::from_json(t) {
+                .ok_or_else(|| vm.new_value_error("路径含非 UTF-8 字符"))?;
+            let bytes = std::fs::read(p)
+                .map_err(|e| vm.new_value_error(format!("Spine JSON 读取失败: {e}")))?;
+            let text = String::from_utf8_lossy(&bytes);
+            match sp::load::from_json(&text) {
                 Ok(data) => Ok(PySpineSkeletonData { data: RefCell::new(Arc::new(data)) }.into_ref(&vm.ctx)),
                 Err(e) => Err(vm.new_value_error(format!("Spine JSON 解析失败: {e:?}"))),
             }
         }
 
-        /// load_binary(bytes) -> SkeletonData：Spine 二进制导入（.skel）。
+        /// load_binary(path) -> SkeletonData：Spine 二进制导入（.skel）——
+        /// 路径进对象出（io 在绑定层闭环，Python 零搬运）。
         #[pyfunction]
-        fn load_binary(bytes: Vec<u8>, vm: &VirtualMachine) -> PyResult<PyRef<PySpineSkeletonData>> {
+        fn load_binary(path: PyStrRef, vm: &VirtualMachine) -> PyResult<PyRef<PySpineSkeletonData>> {
+            let p = path
+                .to_str()
+                .ok_or_else(|| vm.new_value_error("路径含非 UTF-8 字符"))?;
+            let bytes = std::fs::read(p)
+                .map_err(|e| vm.new_value_error(format!("Spine 二进制读取失败: {e}")))?;
             match sp::binary::from_binary(&bytes) {
                 Ok(data) => Ok(PySpineSkeletonData { data: RefCell::new(Arc::new(data)) }.into_ref(&vm.ctx)),
                 Err(e) => Err(vm.new_value_error(format!("Spine 二进制解析失败: {e:?}"))),
@@ -462,22 +471,26 @@ use std::sync::Arc;
             }
             .into_ref(&vm.ctx)
         }
-        /// load_with_atlas(json_text, atlas_text) -> (SkeletonData, 页数)：
-        /// JSON 骨架 + atlas 元数据一体加载并绑定（crate 侧完成 page/uv
-        /// 重映射——Atlas 类型不外露）。
+        /// load_with_atlas(json_path, atlas_path) -> (SkeletonData, 页数)：
+        /// JSON 骨架 + atlas 元数据一体加载并绑定（路径进对象出——io 在
+        /// 绑定层闭环；crate 侧完成 page/uv 重映射——Atlas 类型不外露）。
         #[pyfunction]
         fn load_with_atlas(
-            json_text: PyStrRef,
-            atlas_text: PyStrRef,
+            json_path: PyStrRef,
+            atlas_path: PyStrRef,
             vm: &VirtualMachine,
         ) -> PyResult<(PyRef<PySpineSkeletonData>, usize)> {
-            let j = json_text
+            let jp = json_path
                 .to_str()
-                .ok_or_else(|| vm.new_value_error("文本含非 UTF-8 字符"))?;
-            let a = atlas_text
+                .ok_or_else(|| vm.new_value_error("路径含非 UTF-8 字符"))?;
+            let ap = atlas_path
                 .to_str()
-                .ok_or_else(|| vm.new_value_error("文本含非 UTF-8 字符"))?;
-            match sp::load_with_atlas(j, a) {
+                .ok_or_else(|| vm.new_value_error("路径含非 UTF-8 字符"))?;
+            let j = std::fs::read_to_string(jp)
+                .map_err(|e| vm.new_value_error(format!("Spine JSON 读取失败: {e}")))?;
+            let a = std::fs::read_to_string(ap)
+                .map_err(|e| vm.new_value_error(format!("atlas 读取失败: {e}")))?;
+            match sp::load_with_atlas(&j, &a) {
                 Ok((data, pages)) => Ok((
                     PySpineSkeletonData {
                         data: RefCell::new(data),
