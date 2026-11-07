@@ -37,7 +37,7 @@ pub mod pygame_live2d {
         builtins::{PyStrRef, PyType},
     };
     use std::cell::RefCell;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     // 内层模块与 crate 同名——`::` 全路径别名（pygame_spine 同款）
     use ::pygame_live2d as l2d;
@@ -88,12 +88,76 @@ pub mod pygame_live2d {
         Ok(PathBuf::from(t))
     }
 
+    /// model3 全量资产 sfx 闭环装配（model3.json 路径进 RuntimeModelAssets
+    /// 出——moc/physics/pose/纹理逐文件 `starfish_pygame::sfx::read`，引用
+    /// 路径按 model3 所在目录拼接；SFXE1 加密 + base_dir + 平台 io 全在
+    /// sfx 层闭环，上游 RuntimeModelAssets 零 fs 访问）。
+    fn model_assets_via_sfx(
+        model3_path: &str,
+        vm: &VirtualMachine,
+    ) -> PyResult<l2d::RuntimeModelAssets> {
+        let raw = pollster::block_on(starfish_pygame::sfx::read(model3_path))
+            .map_err(|e| vm.new_value_error(format!("model3.json 读取失败: {e}")))?;
+        let source =
+            String::from_utf8(raw).map_err(|_| vm.new_value_error("model3.json 非 UTF-8"))?;
+        let model = l2d::json::Model3::from_json_str(&source)
+            .map_err(|e| vm.new_value_error(format!("model3.json 解析失败: {e}")))?;
+        let dir = Path::new(model3_path).parent().unwrap_or(Path::new(""));
+
+        let read_bytes = |rel: &str| -> PyResult<Vec<u8>> {
+            let full = dir.join(rel);
+            pollster::block_on(starfish_pygame::sfx::read(&full.to_string_lossy()))
+                .map_err(|e| vm.new_value_error(format!("Live2D 资产读取失败 {rel}: {e}")))
+        };
+        let read_text = |rel: &str| -> PyResult<String> {
+            let bytes = read_bytes(rel)?;
+            String::from_utf8(bytes)
+                .map_err(|_| vm.new_value_error(format!("Live2D 文本资产非 UTF-8: {rel}")))
+        };
+
+        let moc = read_bytes(model.moc())?;
+        let physics = match model.physics() {
+            Some(f) => {
+                let src = read_text(f)?;
+                Some(l2d::json::Physics3::from_json_str(&src).map_err(|e| {
+                    vm.new_value_error(format!("physics3.json 解析失败: {e}"))
+                })?)
+            }
+            None => None,
+        };
+        let pose = match model.pose() {
+            Some(f) => {
+                let src = read_text(f)?;
+                Some(l2d::json::Pose3::from_json_str(&src).map_err(|e| {
+                    vm.new_value_error(format!("pose3.json 解析失败: {e}"))
+                })?)
+            }
+            None => None,
+        };
+        let mut textures = Vec::with_capacity(model.textures().len());
+        for t in model.textures() {
+            let bytes = read_bytes(t)?;
+            textures.push(l2d::assets::DecodedTexture::from_encoded_bytes(&bytes).map_err(
+                |e| vm.new_value_error(format!("纹理解码失败 {t}: {e}")),
+            )?);
+        }
+        Ok(l2d::RuntimeModelAssets::new(
+            model,
+            moc,
+            physics,
+            pose,
+            textures,
+            dir.to_path_buf(),
+        ))
+    }
+
     /// load_model(path) -> Live2DModel：.model3.json 入口（moc3/纹理
-    /// 相对路径按其目录解析）。
+    /// 相对路径按其目录解析；资产 I/O 走 sfx——加密/base_dir/平台闭环）。
     #[pyfunction]
     fn load_model(path: PyStrRef, vm: &VirtualMachine) -> PyResult<PyRef<PyLive2DModel>> {
         let p = path_of(path, vm)?;
-        match l2d::assets::load_model(&p) {
+        let assets = model_assets_via_sfx(&p.to_string_lossy(), vm)?;
+        match l2d::assets::load_model_from_assets(assets) {
             Ok(m) => Ok(PyLive2DModel { inner: m }.into_ref(&vm.ctx)),
             Err(e) => Err(vm.new_value_error(format!("Live2D 模型加载失败: {e:?}"))),
         }
@@ -104,7 +168,8 @@ pub mod pygame_live2d {
     #[pyfunction]
     fn load_runtime(path: PyStrRef, vm: &VirtualMachine) -> PyResult<PyRef<PyLive2DRuntime>> {
         let p = path_of(path, vm)?;
-        match l2d::assets::load_model_runtime(&p) {
+        let assets = model_assets_via_sfx(&p.to_string_lossy(), vm)?;
+        match l2d::assets::load_model_runtime_from_assets(assets) {
             Ok(m) => {
                 let renderer = l2d::render::pygst::Live2DRenderer::new(&m);
                 Ok(PyLive2DRuntime {
@@ -357,16 +422,21 @@ pub mod pygame_live2d {
             looping: Option<bool>,
         }
 
-        /// load_motion(path) -> Live2DMotion：.motion3.json 加载。
+        /// load_motion(path) -> Live2DMotion：.motion3.json 加载（I/O
+        /// 走 sfx——加密/base_dir/平台闭环）。
         #[pyfunction]
         fn load_motion(path: PyStrRef, vm: &VirtualMachine) -> PyResult<PyRef<PyLive2DMotion>> {
             let p = path_of(path, vm)?;
-            match l2d::motion::load_motion(&p) {
+            let raw = pollster::block_on(starfish_pygame::sfx::read(&p.to_string_lossy()))
+                .map_err(|e| vm.new_value_error(format!("motion 读取失败: {e}")))?;
+            let source =
+                String::from_utf8(raw).map_err(|_| vm.new_value_error("motion3.json 非 UTF-8"))?;
+            match l2d::Motion3::from_json_str(&source) {
                 Ok(m) => Ok(PyLive2DMotion {
                     inner: std::sync::Arc::new(m),
                 }
                 .into_ref(&vm.ctx)),
-                Err(e) => Err(vm.new_value_error(format!("motion 加载失败: {e:?}"))),
+                Err(e) => Err(vm.new_value_error(format!("motion 解析失败: {e:?}"))),
             }
         }
 
