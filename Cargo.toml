@@ -18,6 +18,10 @@ description = "starfish 的 Python 绑定层：RustPython 内嵌壳 + pygame 绑
 # 子模块随之消失（import 即 AttributeError）。
 default = ["gui", "physics2d"]
 stdlib-full = ["rustpython-pylib/freeze-full"]
+# click-through = 鼠标事件穿透（桌宠形态配套；穿透设计稿 M1——
+# starfish-pygame click-through 能力位透传；Win32 实装，未启用 =
+# pygame.display 两口不存在，编译期即知平台不支持）
+click-through = ["starfish-pygame/click-through"]
 gui = ["dep:egui-starfish-we", "dep:egui-wgpu"]
 physics = ["dep:rapier-starfish-debug"]
 physics2d = ["physics", "rapier-starfish-debug/2d"]
