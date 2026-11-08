@@ -105,8 +105,16 @@ pub mod pygame_live2d {
         let dir = Path::new(model3_path).parent().unwrap_or(Path::new(""));
 
         let read_bytes = |rel: &str| -> PyResult<Vec<u8>> {
-            let full = dir.join(rel);
-            starfish_pygame::sfx::read_block(&full.to_string_lossy())
+            // POSIX 归一（2026-11-08 分发形态实测）：Windows Path::join
+            // 引入反斜杠 → 逻辑路径与加密清单哈希错位（dist 全哈希名
+            // .sfx，逻辑路径须逐字节一致；开发期真文件在盘掩盖此问题）
+            let dir_str = dir.to_string_lossy().replace('\\', "/");
+            let full = if dir_str.is_empty() {
+                rel.to_string()
+            } else {
+                format!("{dir_str}/{rel}")
+            };
+            starfish_pygame::sfx::read_block(&full)
                 .map_err(|e| vm.new_value_error(format!("Live2D 资产读取失败 {rel}: {e}")))
         };
         let read_text = |rel: &str| -> PyResult<String> {

@@ -1,0 +1,3 @@
+cargo +nightly build                                # 默认形态（gui+physics+ozz）
+cargo +nightly build --features "spine,live2d,skip-taskbar,tray"   # 全量形态
+cargo +nightly build --no-default-features --features "full"       # 带full态
