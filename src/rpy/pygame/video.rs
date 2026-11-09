@@ -15,10 +15,25 @@ use std::cell::Cell;
         use rustpython_derive::pyclass;
         use rustpython_vm::types::Constructor;
         use rustpython_vm::{
-            Py, PyPayload, PyRef, PyResult, VirtualMachine,
+            PyObjectRef, Py, PyPayload, PyRef, PyResult, VirtualMachine,
             builtins::{PyStrRef, PyType},
         };
         use starfish_pygame::video::{VideoSystem as SfVideoSystem, Video as SfVideo};
+        use crate::rpy::pygame::pygame::PySurface;
+
+        /// 路径规则单一事实源（io 同语义：相对路径 → 基准目录拼接，
+        /// 绝对路径原样；Web 端 v1 走 URL 前缀——与资源装载一致）
+        fn resolve_path(p: &str) -> String {
+            #[cfg(target_arch = "wasm32")]
+            {
+                let _ = p;
+                unimplemented!("video Web 端 v1 不开放（后续批次）")
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                starfish_io::resolve(p).to_string_lossy().into_owned()
+            }
+        }
 
         /// pygame.video.VideoSystem——解码系统入口（set_mode 后创建）。
         #[derive(PyPayload)]
@@ -42,10 +57,11 @@ use std::cell::Cell;
                 let p = path
                     .to_str()
                     .ok_or_else(|| vm.new_value_error("路径含非 UTF-8 字符"))?;
+                let rp = resolve_path(p);
                 let v = self
                     .inner
-                    .open(p)
-                    .map_err(|e| vm.new_value_error(format!("video.open 失败: {e:?}")))?;
+                    .open(rp.clone())
+                    .map_err(|e| vm.new_value_error(format!("video.open 失败: {e:?} path={rp}")))?;
                 Ok(PyVideo { inner: std::cell::RefCell::new(v) }.into_ref(&vm.ctx))
             }
         }
@@ -105,6 +121,17 @@ use std::cell::Cell;
             #[pymethod]
             fn ended(&self) -> bool {
                 self.inner.borrow().ended()
+            }
+
+            /// frame() -> Surface | None：当前帧 Surface 包装（零拷贝直通
+            /// ——draw_surface 直采样；未出首帧 = None）。纹理同尺寸复用，
+            /// 包装跨帧缓存（代数判据），零 bind 扰动
+            #[pymethod]
+            fn frame(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+                let Some(s) = self.inner.borrow().frame() else {
+                    return Ok(vm.ctx.none());
+                };
+                Ok(PySurface { surface: s }.into_ref(&vm.ctx).to_owned().into())
             }
 
             /// has_audio() -> bool：是否含音轨。
