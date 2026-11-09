@@ -120,3 +120,23 @@ if pygame.key.get_pressed().get(pygame.key.K_ESCAPE):
 - :type key: Key
 - :returns: 该键是否按下
 - :rtype: bool
+
+### <span class="c-func">start_text_input()</span> / <span class="c-func">stop_text_input()</span>
+
+软键盘生命周期**显式口**（对齐真 pygame 同名接口）——Android 呼出/收起
+软键盘；桌面 no-op（硬件键盘恒可用，文本事件恒流动）。
+
+```python
+pygame.key.start_text_input()   # Android = showSoftInput；桌面 no-op
+pygame.key.stop_text_input()    # Android = hideSoftInput；桌面 no-op
+```
+
+**定约**：用 egui（`draw_ui`）的脚本**不要调用**——键盘生命周期由
+egui 焦点状态隐式驱动（`egui_wants_keyboard_input` 变化自动跟随，
+零调用），混用会被每场首帧的隐式复位打断。显式口只给**非 egui 自绘
+文本框**的脚本用（Surface 手绘输入框等场景）。
+
+**[差异]** 真 pygame 的同名接口桌面端也生效（控制 TEXTINPUT 事件是否
+产生）；本实现桌面端恒 no-op——跨平台脚本零感知。
+
+- :returns: None

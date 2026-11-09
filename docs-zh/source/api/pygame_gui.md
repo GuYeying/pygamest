@@ -241,3 +241,28 @@ def draw(self, ui):
 
 - :param panel: 面板（UiBase 子类实例）
 - :type panel: UiBase
+
+## 隐式文本输入（跨平台自动——脚本零调用）
+
+egui TextEdit 获焦/失焦 → 平台软键盘自动跟（Android = showSoftInput/
+hideSoftInput；桌面 no-op）。实现沉在 egui-starfish-we 桥层
+（`take_egui_input` 每帧必经路径）——**纯 Rust 宿主与脚本层同享**，
+与 resize 同级别的隐式处理：
+
+- **键盘生命周期**：`egui_wants_keyboard_input()` 状态变化 → 自动
+  start/stop 软键盘（滞后一帧的隐式节奏）。
+- **点空白失焦**：主键按下帧若按点不在当前聚焦控件矩形内 → 主动
+  失焦 → 键盘收。**[有意偏离]** egui 上游点击被动区不丢焦（只有点
+  另一可交互控件才移焦）——触屏端表现为输入框常亮、软键盘永不收，
+  故本实现全平台统一为点空白即失焦。命中 TextEdit 的点击不受影响
+  （帧内复得聚焦）。
+- **场启动清残留**：软键盘活跃标志是进程级状态——上一场退出时输入框
+  若仍激活则残留，新场任意点按会误弹键盘。egui 桥构造期无条件收口
+  （每场/每应用新建 State 天然复位）。
+- **宿主接线**（Android 嵌入形态）：`isTextInputWanted()` JNI 轮询 +
+  `TextInputSurfaceView` 动态编辑器声明——参考宿主 pygamest-dev /
+  pygamest-runtime 的 ScriptActivity/MainActivity 同构实现。
+
+**web 路线图**：浏览器侧软键盘呼出属 DOM 域（canvas 非可编辑元素，
+浏览器不给键盘）——待 starfish-we web 后端实现 text-agent 模式
+（隐藏 input 元素 focus/blur），本隐式链零改动自动生效。
