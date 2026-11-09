@@ -22,17 +22,10 @@ use std::cell::Cell;
         use crate::rpy::pygame::pygame::PySurface;
 
         /// 路径规则单一事实源（io 同语义：相对路径 → 基准目录拼接，
-        /// 绝对路径原样；Web 端 v1 走 URL 前缀——与资源装载一致）
+        /// 绝对路径原样）——桌面/移动专属；Web 端 v1 站桩不走到此处
+        #[cfg(not(target_arch = "wasm32"))]
         fn resolve_path(p: &str) -> String {
-            #[cfg(target_arch = "wasm32")]
-            {
-                let _ = p;
-                unimplemented!("video Web 端 v1 不开放（后续批次）")
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                starfish_io::resolve(p).to_string_lossy().into_owned()
-            }
+            starfish_io::resolve(p).to_string_lossy().into_owned()
         }
 
         /// pygame.video.VideoSystem——解码系统入口（set_mode 后创建）。
@@ -57,12 +50,26 @@ use std::cell::Cell;
                 let p = path
                     .to_str()
                     .ok_or_else(|| vm.new_value_error("路径含非 UTF-8 字符"))?;
-                let rp = resolve_path(p);
-                let v = self
-                    .inner
-                    .open(rp.clone())
-                    .map_err(|e| vm.new_value_error(format!("video.open 失败: {e:?} path={rp}")))?;
-                Ok(PyVideo { inner: std::cell::RefCell::new(v) }.into_ref(&vm.ctx))
+                #[cfg(target_arch = "wasm32")]
+                {
+                    // Web 端 v1 站桩（WebCodecs 播放管线后续批次）——与
+                    // dialog/io 同款显式 ValueError 语义，不落 unimplemented panic
+                    let _ = p;
+                    return Err(vm.new_value_error(
+                        "pygame.video: Web 端 v1 不开放（WebCodecs 播放管线后续批次）",
+                    ));
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let rp = resolve_path(p);
+                    let v = self
+                        .inner
+                        .open(rp.clone())
+                        .map_err(|e| {
+                            vm.new_value_error(format!("video.open 失败: {e:?} path={rp}"))
+                        })?;
+                    Ok(PyVideo { inner: std::cell::RefCell::new(v) }.into_ref(&vm.ctx))
+                }
             }
         }
 
