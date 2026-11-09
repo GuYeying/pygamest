@@ -506,68 +506,12 @@ fn draw_ui_generic(
         .screen_rect
         .map(|r| (r.width() as u32, r.height() as u32))
         .unwrap_or((0, 0));
-    // ── 点空白失焦（触屏 UX 补齐）：egui 上游语义点击被动区不丢焦
-    // （只有点另一可交互控件才移焦点）——触屏端表现为输入框常亮、软
-    // 键盘永不收。此处补齐：主键按下帧若按点不在当前聚焦控件矩形内
-    // （空白/被动区/其他控件），主动 stop_text_input 失焦 → wants 翻
-    // false → 下方隐式链收键盘。build_frame 消费 raw 前 peek 按点；
-    // 失焦先行于本帧（命中 TextEdit 的点击会在帧内 request_focus 复
-    // 得——聚焦行为不受影响）。Surface 纯展示变体已在 raw 预处理剥除
-    // 指针事件——本段自然旁路（变量驱动零交互）
-    let press_pos = raw.events.iter().find_map(|ev| match ev {
-        egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed: true,
-            ..
-        } => Some(*pos),
-        _ => None,
-    });
-    if let Some(pos) = press_pos {
-        let rt = rc.borrow();
-        let hit_focused = rt
-            .ctx
-            .memory(|m| m.focused())
-            .and_then(|id| rt.ctx.read_response(id))
-            .map(|r| r.rect.contains(pos))
-            .unwrap_or(false);
-        if !hit_focused {
-            rt.ctx.memory_mut(|m| m.stop_text_input());
-        }
-    }
     let (output, jobs) = build_frame(&rc, &panel, raw, vm)?;
 
-    // ── 隐式文本输入（跨平台自动——脚本零调用）──
-    // egui TextEdit 获焦/失焦 → wants_keyboard_input 状态变化 → 平台
-    // 软键盘自动跟（Android = showSoftInput/hideSoftInput；桌面 no-op
-    // ——硬件键盘恒可用）。resize 同级别的隐式处理。
-    {
-        thread_local! {
-            static PREV_WANTS_KB: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-            static FIRST_FRAME: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
-        }
-        // 场启动清残留：TEXT_INPUT_ACTIVE 是进程级 static（starfish-we
-        // 顶层），上一场退出时输入框若仍激活则 true 跨场残留——新场
-        // 任意点按都会误弹软键盘（真机实证）。引擎线程每场新建（loadCode
-        // 自起），thread_local 天然按场复位——首帧无条件收口，随后恢复
-        // 增量比较。egui 管辖生命周期的定约下，显式 start_text_input 的
-        // 脚本不该混用 draw_ui（见 key.rs 文档）
-        let first = FIRST_FRAME.with(|c| c.replace(false));
-        if first {
-            starfish_we::stop_text_input();
-        }
-        let wants_kb = rc.borrow().ctx.egui_wants_keyboard_input();
-        PREV_WANTS_KB.with(|c| {
-            if c.get() != wants_kb {
-                if wants_kb {
-                    starfish_we::start_text_input();
-                } else {
-                    starfish_we::stop_text_input();
-                }
-                c.set(wants_kb);
-            }
-        });
-    }
+    // 隐式文本输入（点空白失焦 + 键盘生命周期 + 场启动清残留）已下沉
+    // egui-starfish-we 桥层（take_egui_input_we 每帧必经路径）——纯 Rust
+    // 宿主与脚本层同享零感知，此处不再重复（0.1.2 起）
+
     let frame = DeferredFrame {
         rc,
         key,
