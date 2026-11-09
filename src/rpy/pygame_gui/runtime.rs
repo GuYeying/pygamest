@@ -507,6 +507,27 @@ fn draw_ui_generic(
         .map(|r| (r.width() as u32, r.height() as u32))
         .unwrap_or((0, 0));
     let (output, jobs) = build_frame(&rc, &panel, raw, vm)?;
+
+    // ── 隐式文本输入（跨平台自动——脚本零调用）──
+    // egui TextEdit 获焦/失焦 → wants_keyboard_input 状态变化 → 平台
+    // 软键盘自动跟（Android = showSoftInput/hideSoftInput；桌面 no-op
+    // ——硬件键盘恒可用）。resize 同级别的隐式处理。
+    {
+        thread_local! {
+            static PREV_WANTS_KB: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        }
+        let wants_kb = rc.borrow().ctx.egui_wants_keyboard_input();
+        PREV_WANTS_KB.with(|c| {
+            if c.get() != wants_kb {
+                if wants_kb {
+                    starfish_we::start_text_input();
+                } else {
+                    starfish_we::stop_text_input();
+                }
+                c.set(wants_kb);
+            }
+        });
+    }
     let frame = DeferredFrame {
         rc,
         key,
