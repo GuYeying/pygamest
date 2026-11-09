@@ -514,7 +514,9 @@ pub async fn preload_cjk(tag: &str) {
         ];
         let mut hit = false;
         for p in CJK_CANDIDATES {
-            match starfish_pygame::sfx::read(p).await {
+            // 系统候选 = 明文系统文件（非游戏资产）——走原始 io 层直读
+            //（sfx 恒相对收拢后绝对路径已折叠进 base_dir，原始读不再可达）
+            match starfish_io::read(p).await {
                 Ok(b) => {
                     starfish_pygame::font::preload("cjk", b);
                     dlog(tag, &format!("CJK 字体已预载（系统 {p}）"));
@@ -541,7 +543,9 @@ pub async fn preload_cjk(tag: &str) {
         ];
         let mut hit = false;
         for p in CJK_CANDIDATES {
-            match starfish_pygame::sfx::read(p).await {
+            // 系统候选 = 明文系统文件（非游戏资产）——走原始 io 层直读
+            //（sfx 恒相对收拢后绝对路径已折叠进 base_dir，原始读不再可达）
+            match starfish_io::read(p).await {
                 Ok(b) => {
                     starfish_pygame::font::preload("cjk", b);
                     dlog(tag, &format!("CJK 字体已预载（系统 {p}）"));

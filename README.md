@@ -243,6 +243,9 @@ Android 另需环境变量（未设时脚本按常见路径探测，如 `D:/SDK/
 | [rapier-starfish-debug](https://github.com/GuYeying/rapier-starfish-debug) | Rapier 物理适配 + 通用 debug 渲染 |
 | RustPython | vendored 快照内嵌于本仓 `src/rpy/dependencies/`（MIT，零改动+三处 Android 补丁） |
 
+
+
+
 ## 协议
 
 MIT OR Apache-2.0 双协议（见 LICENSE-MIT / LICENSE-APACHE）。
