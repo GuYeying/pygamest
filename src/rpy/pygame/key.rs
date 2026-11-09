@@ -163,6 +163,19 @@ use std::cell::Cell;
             starfish_pygame::dialog::request_text_dialog(current)
         }
 
+        /// start_text_input()：呼出软键盘（Android IME——脚本显式控制，
+        /// 非 tap 自动弹出；桌面 = no-op，硬件键盘恒可用）。
+        #[pyfunction]
+        fn start_text_input(_vm: &VirtualMachine) {
+            starfish_we::start_text_input();
+        }
+
+        /// stop_text_input()：收起软键盘。
+        #[pyfunction]
+        fn stop_text_input(_vm: &VirtualMachine) {
+            starfish_we::stop_text_input();
+        }
+
         /// 键名（W3C KeyboardEvent.code 命名——name(K_x) = "KeyX" 等）。
         #[pyfunction]
         fn name(key: PyRef<PyKey>, _vm: &VirtualMachine) -> String {
