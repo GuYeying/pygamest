@@ -130,3 +130,10 @@ crate-type = ["cdylib"]
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "0.2", default-features = false }
 wasm-bindgen-futures = "0.4"
+
+# vello_common 0.2.0 strip 光栅化 NaN 防御（vendor 本地补丁）：模拟器
+# Noto CJK 新版特定字形 outline 含 NaN → tile.line_idx 垃圾值越界 panic
+# → egui epaint 字形渲染全链炸（模拟器黑屏实测）。上游 0.2.0 已最新未修
+# ——防御式 get 兜底跳坏 tile，待上游修复后整体撤除
+[patch.crates-io]
+vello_common = { path = "vendor/vello_common" }
