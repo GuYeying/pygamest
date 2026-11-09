@@ -276,6 +276,20 @@ use crate::rpy::{bridge, args};
                             text: empty(), id: vm.ctx.new_str(id).to_owned(), w: 0, h: 0,
                         }
                     }
+                    // 文本对话框完成（Android IME 组合方案——脚本覆盖自己的
+                    // 输入框内容；最终文本走 text 槽）
+                    EngineEvent::TextDialogDone { text } => {
+                        // 最终文本走 text 槽（与 textinput 同槽——脚本
+                        // 以 type 区分语义）
+                        let ev = EngineEvent::TextDialogDone {
+                            text: text.clone(),
+                        };
+                        Self {
+                            ev, typ: tag("textdialogdone"), key: int_obj(0), x: 0, y: 0,
+                            button: 0, modifiers: 0, repeat: false,
+                            text: vm.ctx.new_str(text).to_owned(), id: empty(), w: 0, h: 0,
+                        }
+                    }
                 }
             }
         }

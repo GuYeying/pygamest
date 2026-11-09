@@ -154,6 +154,15 @@ use std::cell::Cell;
             starfish_pygame::key::get_mods()
         }
 
+        /// start_text_dialog(current)：请求弹出文本对话框（Android IME
+        /// 组合方案——宿主弹原生 EditText 对话框预填 current，完成后
+        /// TextDialogDone 事件回投最终文本；桌面 = 无对话框能力返回
+        /// False——跨平台脚本可据此跳过）。
+        #[pyfunction]
+        fn start_text_dialog(current: String, vm: &VirtualMachine) -> bool {
+            starfish_pygame::dialog::request_text_dialog(current)
+        }
+
         /// 键名（W3C KeyboardEvent.code 命名——name(K_x) = "KeyX" 等）。
         #[pyfunction]
         fn name(key: PyRef<PyKey>, _vm: &VirtualMachine) -> String {
