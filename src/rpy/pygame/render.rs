@@ -116,7 +116,7 @@ pub(crate) mod render {
         /// 替换视图矩阵（3D 位姿：look_at 等 Mat4；2D 恒 Identity）。
         #[pymethod]
         fn with_view(zelf: PyRef<Self>, view: PyRef<PyMat4>, vm: &VirtualMachine) -> PyRef<Self> {
-            Self(zelf.0.with_view(view.0.get())).into_ref(&vm.ctx)
+            Self(zelf.0.clone().with_view(view.0.get())).into_ref(&vm.ctx)
         }
 
         /// MVP（projection × view——唯一上传量；调试/教学口）。
@@ -124,6 +124,94 @@ pub(crate) mod render {
         fn mvp(&self, vm: &VirtualMachine) -> PyRef<PyMat4> {
             PyMat4(std::cell::Cell::new(self.0.mvp())).into_ref(&vm.ctx)
         }
+    }
+
+    // ── GameCamera：letterbox 内聚相机（阶段一 1.2 新类型——显式传入）──
+
+    /// GameCamera（letterbox 内聚——MVP/坐标映射/裁剪全在内部）。
+    /// 构造经 game_camera_ortho / game_camera_perspective。
+    #[derive(Clone, Debug, PyPayload)]
+    #[pyattr]
+    #[pyclass(module = "pygame.render", name = "GameCamera", unhashable = true)]
+    pub(crate) struct PyGameCamera(pub(crate) starfish_pygame::camera::Camera);
+
+    #[pyclass]
+    impl PyGameCamera {
+        /// 替换视图矩阵（3D 位姿）。
+        #[pymethod]
+        fn with_view(
+            zelf: PyRef<Self>,
+            view: PyRef<PyMat4>,
+            vm: &VirtualMachine,
+        ) -> PyRef<Self> {
+            Self(zelf.0.clone().with_view(view.0.get())).into_ref(&vm.ctx)
+        }
+
+        /// letterbox 内聚 MVP（唯一上传量）。
+        #[pymethod]
+        fn mvp(&self, vm: &VirtualMachine) -> PyRef<PyMat4> {
+            PyMat4(std::cell::Cell::new(self.0.mvp())).into_ref(&vm.ctx)
+        }
+
+        /// 物理点 → 逻辑点。
+        #[pymethod]
+        fn physical_to_logical(
+            &self,
+            x: f64,
+            y: f64,
+            vm: &VirtualMachine,
+        ) -> PyResult<PyObjectRef> {
+            let (lx, ly) = self.0.physical_to_logical(x, y);
+            Ok(vm.ctx.new_tuple(vec![
+                vm.ctx.new_float(lx).into(),
+                vm.ctx.new_float(ly).into(),
+            ]).into())
+        }
+
+        /// resize 物理视口（返回新 GameCamera——Camera 是 Copy）。
+        #[pymethod]
+        fn resized(&self, pw: u32, ph: u32, vm: &VirtualMachine) -> PyRef<Self> {
+            let mut cam = self.0;
+            cam.resize((pw, ph));
+            Self(cam).into_ref(&vm.ctx)
+        }
+    }
+
+    // ── GameCamera 构造（模块函数）────────────────────────────────
+
+    /// 2D 正交 GameCamera（letterbox 内聚）。
+    #[pyfunction]
+    fn game_camera_ortho(
+        lw: u32,
+        lh: u32,
+        pw: u32,
+        ph: u32,
+        vm: &VirtualMachine,
+    ) -> PyRef<PyGameCamera> {
+        PyGameCamera(starfish_pygame::camera::Camera::ortho((lw, lh), (pw, ph)))
+            .into_ref(&vm.ctx)
+    }
+
+    /// 3D 透视 GameCamera（letterbox 内聚）。
+    #[pyfunction]
+    fn game_camera_perspective(
+        fov_deg: f32,
+        lw: u32,
+        lh: u32,
+        pw: u32,
+        ph: u32,
+        near: f32,
+        far: f32,
+        vm: &VirtualMachine,
+    ) -> PyRef<PyGameCamera> {
+        PyGameCamera(starfish_pygame::camera::Camera::perspective(
+            fov_deg,
+            (lw, lh),
+            (pw, ph),
+            near,
+            far,
+        ))
+        .into_ref(&vm.ctx)
     }
 
     // ── 相机构造（模块函数）─────────────────────────────────────
