@@ -579,7 +579,7 @@ pub(crate) mod render {
         /// 覆盖全部 wgpu 支持格式；vertices = **原始字节**（struct.pack
         /// / numpy.tobytes 形态——任意非 float 格式也能喂）。
         #[pymethod]
-        fn mesh_builder(
+        fn mesh(
             &self,
             args: MeshBuilderArgs,
             vm: &VirtualMachine,
