@@ -52,26 +52,36 @@ VideoToolbox 同上自动覆盖。
 
 ## 四、HarmonyOS（全栈新增）
 
-工作量最大，按层推进（每层独立可验收）：
+工作量最大，按层推进（每层独立可验收）。**第一步已完成**（2026-11-11）：
 
-1. **cfg 定型（第一步，必须先实证）**：确认 rustc 对
-   `aarch64-unknown-linux-ohos` 的 target_os/target_env 元数据
-   （`rustc --print cfg --target aarch64-unknown-linux-ohos`，
-   需 `rustup target add`）——**先验证再写 cfg 门**，杜绝死代码。
-2. **窗口/输入**：`platform/harmonyos/`（新目录）——NativeXComponent
-   回调 → 缓冲队列 → `poll_event` 排空（模板 = android/mod.rs 反转
-   形态）；表面 = OH_NativeXComponent_GetNativeWindow 提供 rwh。
-3. **渲染**：wgpu OHOS 后端缺口——路线 A：wgpu GL 后端 + EGL on
+1. **cfg 定型 ✅ 已实证**：`rustc --print cfg --target
+   aarch64-unknown-linux-ohos` → `target_os="linux"` + `target_env=
+   "ohos"`。**分流桩已落地**：starfish-we `platform/harmonyos/`
+   （WindowInner 刻意不可构造 + 全契约显式 Err 站桩，feature 门控
+   镜像 linux）+ video `UnsupportedPlatform` 分流 + linux 依赖门
+   （wayland/gstreamer/tray-icon）摘 OHOS——`cargo check --target
+   aarch64-unknown-linux-ohos -p starfish-we` ✅（否则 OHOS 会静默
+   吞 linux-Wayland/GStreamer 路径）。
+2. **音频（真适配第一项）**：starfish-audio cpal 门控摘 OHOS（当前
+   OHOS check 卡点 = alsa-sys 构建脚本）+ OHAudio 实现 device trait
+   （record/stream 模块同步割）——解锁全树 OHOS check 门。
+3. **窗口/输入实装**：`platform/harmonyos/` 桩 →
+   NativeXComponent 回调 → 缓冲队列 → `poll_event` 排空（模板 =
+   android/mod.rs 反转形态）；表面 = OH_NativeXComponent_GetNativeWindow
+   → `RawWindowHandle::Ohos` 新变体（连带 handle.rs 消费方全 match
+   更新 + wgpu 映射）。
+4. **渲染**：wgpu OHOS 后端缺口——路线 A：wgpu GL 后端 + EGL on
    OHOS（GLES3.x；需 vendor patch，警惕 GLES 实现栈差异——
    base_vertex 先例见 pygame_live2d 修复）；路线 B：wgpu-hal 自研
    OHOS hal（成本高，非必要不走）。
-4. **音频**：OHAudio（AAudio 兼容层）实现 device trait。
-5. **视频**：AVPlayer/AVCodec NDK 后端（`ohos.rs`；先行
-   UnsupportedPlatform 站桩保语义）。
+5. **视频**：AVPlayer/AVCodec NDK 后端（`ohos.rs`；当前
+   UnsupportedPlatform 站桩已就位保语义）。
 6. **打包**：build_ohos.py——hvigor/DevEco 工具链 + module.json5 +
-   资产 HAP 打包（对齐 android/build.py 五步链）。
-7. **验收门**：`cargo check --target aarch64-unknown-linux-ohos` →
-   OHOS 真机/模拟器 netvideo_test 三模块全绿。
+   资产 HAP 打包（对齐 android/build.py 五步链）；总控 builders 表
+   预留插槽已备。
+7. **验收门**：`cargo check --target aarch64-unknown-linux-ohos`
+   （we/video ✅，audio/pygame 待音频割后解锁）→ OHOS 真机/模拟器
+   netvideo_test 三模块全绿。
 
 ## 五、通用不变式（跨平台纪律）
 
