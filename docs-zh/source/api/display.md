@@ -56,6 +56,8 @@ with 会话入口：进入 = 开启 RenderPass，退出 = finish 打包
 GameCamera（letterbox 内聚——MVP / 坐标映射 / 裁剪同一事实源，详见
 [pygame.render](render.md)）。设置后 set_mode / resize 的自动重建不再
 覆盖（显式优先于自动）；物理视口变化走 `cam.resized(pw, ph)`。
+构造入参 pw/ph = 设计意图——**set 时引擎以当前物理表面对账
+letterbox**（投影/视图/逻辑面不动；跨设备可移植，桌面恰好相等）。
 
 ```python
 cam = pygame.render.game_camera_perspective(58.0, 800, 600, 800, 600, 0.1, 300.0)

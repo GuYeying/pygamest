@@ -169,6 +169,12 @@ MVP（projection × view——唯一上传量；调试 / 教学口）。
 `refresh_camera`（set_mode / resize 自动重建）不再覆盖——显式优先于
 自动；物理视口变化走 `.resized(pw, ph)` 重算 letterbox。
 
+**[物理面对账]**（2026-11-11 手机实证定约）构造入参的 pw/ph 只是
+设计意图（桌面恰好等于窗口尺寸）——`screen.set_camera` 时引擎以
+**当前物理表面**重算 letterbox（投影/视图/逻辑面不动）。跨设备
+（手机物理面 ≠ 桌面 800×600）不重对账 = fit_ndc 恒等映射 = 内容拉伸
+满屏、letterbox 失效；对账后脚本零设备知识即可移植。
+
 ```python
 cam = pygame.render.game_camera_perspective(58.0, 800, 600, 800, 600, 0.1, 300.0)
 screen.set_camera(cam)
