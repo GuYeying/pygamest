@@ -70,3 +70,14 @@ ok = await pygame.dialog.save_bytes("out.txt", b"hello")   # True = 已保存
   ——与 `pygame.image.load` 异步化同构（资源/外部应答 = 异步范式）
 - **平台**：桌面实装（rfd 后台线程）；Web/Android 后端站桩 ValueError
   （robius 桥后续批次——API 面已就绪，接后端零脚本改动）
+
+### Android（SAF）实装注记（2026-11-10）
+
+- **形态**：SAF 轮询槽（**非**后台线程）——阻塞式等待在 SAF 选择器覆盖
+  期会停摆事件泵（starfish-dialog 实测定案）；start/poll 全在引擎线程
+- **生命周期守卫**：SAF 是独立 Activity，覆盖触发本应用 surface 销毁
+  ——宿主（dev/runtime）按 `starfish_dialog::jobs_active()` 豁免
+  "surface 销毁 = 停引擎"（isDialogActive JNI），选择器返回后引擎存活
+  接结果
+- **实测链**：DocumentsUI 选文件 → PickedFile（content:// 临时本地化）
+  → read()；另存 → save_bytes 写入用户所选位置
