@@ -67,6 +67,49 @@ use std::cell::Cell;
             starfish_pygame::math::smootherstep(e0.into_float() as f32, e1.into_float() as f32, x.into_float() as f32)
         }
 
+        // ── 三角函数 + 角度转换（2026-11-10 补齐——用户案例手搓 Taylor sin
+        // 暴露缺口；Rust std f32 方法直通零成本）──
+
+        #[pyfunction]
+        fn sin(x: ArgIntoFloat) -> f32 {
+            (x.into_float() as f32).sin()
+        }
+
+        #[pyfunction]
+        fn cos(x: ArgIntoFloat) -> f32 {
+            (x.into_float() as f32).cos()
+        }
+
+        #[pyfunction]
+        fn tan(x: ArgIntoFloat) -> f32 {
+            (x.into_float() as f32).tan()
+        }
+
+        #[pyfunction]
+        fn atan2(y: ArgIntoFloat, x: ArgIntoFloat) -> f32 {
+            (y.into_float() as f32).atan2(x.into_float() as f32)
+        }
+
+        #[pyfunction]
+        fn asin(x: ArgIntoFloat) -> f32 {
+            (x.into_float() as f32).asin()
+        }
+
+        #[pyfunction]
+        fn acos(x: ArgIntoFloat) -> f32 {
+            (x.into_float() as f32).acos()
+        }
+
+        #[pyfunction]
+        fn degrees(x: ArgIntoFloat) -> f32 {
+            (x.into_float() as f32).to_degrees()
+        }
+
+        #[pyfunction]
+        fn radians(x: ArgIntoFloat) -> f32 {
+            (x.into_float() as f32).to_radians()
+        }
+
         // ── Vector2：基础向量（批次 H v1；rotate/angle_to 等留增强批）──
         #[derive(Clone, Debug, PyPayload)]
         #[pyattr]
@@ -664,24 +707,22 @@ use std::cell::Cell;
             }
         }
 
-        // ── Mat4：4x4 矩阵（glam 直通；无算符协议——乘法用 mul_mat4）──
+        // ── Mat4：4x4 矩阵（glam 直通；* = 标量缩放 / @ = 矩阵组合）──
         // 构造经模块函数（mat4_identity / mat4_from_quat / mat4_translation /
         // mat4_scale）；直呼不可实例化。
+        //
+        // 运算符分离定约（2026-11-10）：numpy/GSL 惯例——
+        // * : mat × scalar → 逐元素缩放（"均匀放大/缩小"）
+        // @ : mat × mat → 矩阵组合（线性代数乘法；GLM/GLSL 语义）
+        // mat × mat 走 * 有语义歧义（元素乘 or 组合乘？）——强制 @ 消除。
         #[derive(Clone, Debug, PyPayload)]
         #[pyattr]
         #[pyclass(module = "pygame.math", name = "Mat4", unhashable = true)]
         pub(crate) struct PyMat4(pub(crate) Cell<starfish_pygame::math::Mat4>);
 
         impl PyMat4 {
-            /// 算术分发（批次 P）：mat × mat（组合）或 mat × 标量；全对称。
+            /// * : mat × scalar（逐元素缩放）；mat × mat → NotImplemented（强制 @）
             fn arith_mul(a: &PyObject, b: &PyObject, vm: &VirtualMachine) -> PyResult {
-                if let (Some(x), Some(y)) =
-                    (a.downcast_ref::<Self>(), b.downcast_ref::<Self>())
-                {
-                    return Ok(Self(Cell::new(x.0.get() * y.0.get()))
-                        .into_ref(&vm.ctx)
-                        .into());
-                }
                 if let (Some(x), Ok(k)) = (
                     a.downcast_ref::<Self>(),
                     ArgIntoFloat::try_from_object(vm, b.to_owned()),
@@ -690,11 +731,23 @@ use std::cell::Cell;
                         .into_ref(&vm.ctx)
                         .into());
                 }
-                if let (Some(y), Ok(k)) = (
-                    b.downcast_ref::<Self>(),
+                if let (Ok(k), Some(y)) = (
                     ArgIntoFloat::try_from_object(vm, a.to_owned()),
+                    b.downcast_ref::<Self>(),
                 ) {
                     return Ok(Self(Cell::new(y.0.get() * (k.into_float() as f32)))
+                        .into_ref(&vm.ctx)
+                        .into());
+                }
+                Ok(vm.ctx.not_implemented())
+            }
+
+            /// @ : mat × mat（矩阵组合——线性代数语义）
+            fn arith_matmul(a: &PyObject, b: &PyObject, vm: &VirtualMachine) -> PyResult {
+                if let (Some(x), Some(y)) =
+                    (a.downcast_ref::<Self>(), b.downcast_ref::<Self>())
+                {
+                    return Ok(Self(Cell::new(x.0.get() * y.0.get()))
                         .into_ref(&vm.ctx)
                         .into());
                 }
@@ -706,6 +759,7 @@ use std::cell::Cell;
             fn as_number() -> &'static PyNumberMethods {
                 static AS_NUMBER: PyNumberMethods = PyNumberMethods {
                     multiply: Some(PyMat4::arith_mul),
+                    matrix_multiply: Some(PyMat4::arith_matmul),
                     negative: Some(|number, vm| {
                         let m = PyMat4::number_downcast(number).0.get();
                         Ok(PyMat4(Cell::new(-m)).into_ref(&vm.ctx).into())
@@ -723,6 +777,7 @@ use std::cell::Cell;
             fn mul_mat4(&self, other: PyRef<Self>, vm: &VirtualMachine) -> PyRef<Self> {
                 Self(Cell::new(self.0.get() * other.0.get())).into_ref(&vm.ctx)
             }
+
 
             /// to_cols_array() -> tuple[float, ...]：列主序 16 元素（诊断/教学用）
             #[pymethod]
