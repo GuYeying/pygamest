@@ -1104,6 +1104,13 @@ pub(crate) mod render {
         inner: sf::BindGroup,
     }
 
+    impl PyBindGroup {
+        /// 唯一标识（inner 地址——with 块生命周期内稳定）
+        pub(crate) fn inner_ptr(&self) -> usize {
+            std::ptr::from_ref(&self.inner) as usize
+        }
+    }
+
     #[pyclass]
     impl PyBindGroup {}
 
@@ -1346,6 +1353,10 @@ pub(crate) mod render {
         depth: bool,
         /// None = 主屏（present 收口）；Some = 离屏面（flush 收口）
         surface: Option<std::sync::Arc<sf::Surface>>,
+        /// 1.4 管线缓存：录制层状态去重——同管线/同 bind group 跳过
+        /// 冗余 set 命令（Arc 指针作 ID，with 块生命周期内稳定）
+        st_pipe: std::cell::Cell<usize>,
+        st_binds: std::cell::RefCell<std::collections::HashMap<u32, usize>>,
     }
 
     #[pyclass]
@@ -1413,15 +1424,26 @@ pub(crate) mod render {
             false
         }
 
-        /// set_pipeline(pipeline)
+        /// set_pipeline(pipeline)——1.4 管线缓存：同管线跳过冗余命令
         #[pymethod]
         fn set_pipeline(&self, pipeline: PyRef<PyPipeline>) {
+            let id = std::sync::Arc::as_ptr(&pipeline.inner) as usize;
+            if self.st_pipe.get() == id {
+                return;
+            }
+            self.st_pipe.set(id);
+            self.st_binds.borrow_mut().clear(); // 管线变更 = bind 语义重置
             self.cmds.borrow_mut().push(RawCmd::Pipeline(pipeline));
         }
 
-        /// set_bind_group(index, group)
+        /// set_bind_group(index, group)——同槽位同组跳过冗余命令
         #[pymethod]
         fn set_bind_group(&self, index: u32, group: PyRef<PyBindGroup>) {
+            let id = group.inner_ptr();
+            if self.st_binds.borrow().get(&index) == Some(&id) {
+                return;
+            }
+            self.st_binds.borrow_mut().insert(index, id);
             self.cmds.borrow_mut().push(RawCmd::BindGroup(index, group));
         }
 
@@ -1540,6 +1562,8 @@ pub(crate) mod render {
             cmds: std::cell::RefCell::new(Vec::new()),
             depth,
             surface,
+            st_pipe: std::cell::Cell::new(0),
+            st_binds: std::cell::RefCell::new(std::collections::HashMap::new()),
         }
         .into_ref(&vm.ctx))
     }
