@@ -1,6 +1,6 @@
 [package]
 name = "pygamest"
-version = "0.3.64"
+version = "0.3.65"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "starfish 的 Python 绑定层：RustPython 内嵌壳 + pygame 绑定面（独立 crate，starfish 本体零 Python 资产）"
