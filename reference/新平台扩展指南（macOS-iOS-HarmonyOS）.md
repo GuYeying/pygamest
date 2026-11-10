@@ -83,11 +83,12 @@ VideoToolbox 同上自动覆盖。
    资产 HAP 打包（对齐 android/build.py 五步链）；总控 builders 表
    预留插槽已备。
 7. **验收门**：`cargo check --target aarch64-unknown-linux-ohos`——
-   **侦察阶梯 ✅（2026-11-11）**：we / audio（no-default） / video /
-   gamepad / **starfish-pygame（wgpu/vello 全绿）** 五门通过；墙 =
-   pygamest 绑定层 psm（RustPython stacker 不识 ohos 三元组——
-   vendored patch 待 OHOS SDK 期）。→ OHOS 真机/模拟器 netvideo_test
-   三模块全绿（终门）。
+   **侦察阶梯 ✅（2026-11-11）**：we / dialog / audio（含默认
+   features）/ video / gamepad / **starfish-pygame（wgpu/vello 全绿）**
+   / **全 workspace（18.5s）**；墙 = pygamest 绑定层 psm（精确取证：
+   非三元组识别问题——psm 已走 linux asm 路径，卡 `CC_aarch64-
+   unknown-linux-ohos = None`，**OHOS SDK 装机即解**）。→ OHOS 真机/
+   模拟器 netvideo_test 三模块全绿（终门）。
 
 ## 五、通用不变式（跨平台纪律）
 
