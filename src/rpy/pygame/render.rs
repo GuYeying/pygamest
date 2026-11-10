@@ -720,6 +720,7 @@ pub(crate) mod render {
             } else if let Some(floats) = &args.vertices {
                 let n: Vec<f64> = vm.extract_elements_with(floats, |o| {
                     f64::try_from_object(vm, o.to_owned())
+                        .or_else(|_| i64::try_from_object(vm, o.to_owned()).map(|v| v as f64))
                 })?;
                 n.iter().flat_map(|v| (*v as f32).to_le_bytes()).collect()
             } else {
