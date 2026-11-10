@@ -50,7 +50,6 @@ starfish-time       = { git = "https://github.com/GuYeying/starfish" }
 starfish-permission = { git = "https://github.com/GuYeying/starfish" }
 starfish-io         = { git = "https://github.com/GuYeying/starfish" }
 starfish-net        = { git = "https://github.com/GuYeying/starfish" }
-starfish-dialog     = { git = "https://github.com/GuYeying/starfish" }
 chacha20poly1305    = { version = "0.10", default-features = false, features = ["alloc"] }
 starfish-gamepad    = { git = "https://github.com/GuYeying/starfish" }
 starfish-render     = { git = "https://github.com/GuYeying/starfish" }

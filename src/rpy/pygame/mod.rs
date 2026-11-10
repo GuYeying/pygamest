@@ -892,7 +892,6 @@ pub mod pygame {
 // 取 PyKey 的 static type（event 的 `__init_attributes` 里创建）。
 
 
-pub(crate) mod dialog;
 pub(crate) mod display;
 pub(crate) mod event;
 pub(crate) mod font;
