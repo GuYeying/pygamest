@@ -317,6 +317,26 @@ pub(crate) mod render {
         label: Option<String>,
     }
 
+    /// mesh_builder(layout, vertices, ...) 收参——layout = 格式名列表
+    #[derive(FromArgs)]
+    pub(crate) struct MeshBuilderArgs {
+        #[pyarg(any)]
+        layout: Vec<String>,
+        /// float 列表（全 float 布局便捷形态）
+        #[pyarg(any, optional)]
+        vertices: Option<PyObjectRef>,
+        /// 原始字节（任意格式混用形态——struct.pack / numpy.tobytes）
+        #[pyarg(named, optional)]
+        vertices_bytes: Option<PyObjectRef>,
+        #[pyarg(any, optional)]
+        indices: Option<PyObjectRef>,
+        #[pyarg(named, optional)]
+        label: Option<String>,
+        /// 实例步进（GPU 粒子——每实例一粒）
+        #[pyarg(named, default = false)]
+        instance: bool,
+    }
+
     /// access.bind_group(bindings, label=None)
     #[derive(FromArgs)]
     pub(crate) struct BindGroupArgs {
@@ -442,6 +462,71 @@ pub(crate) mod render {
             "pos3uv2color4" => vec![Float32x3, Float32x2, Float32x4],
             _ => return None,
         })
+    }
+
+    /// wgpu::VertexFormat 变体名 → 枚举（snake_case 系统性映射——
+    /// 覆盖全部 wgpu 支持格式，非硬编码列表）
+    fn parse_vertex_format(name: &str) -> Option<wgpu::VertexFormat> {
+        use wgpu::VertexFormat::*;
+        Some(match name.to_ascii_lowercase().as_str() {
+            "uint8x2" => Uint8x2,
+            "uint8x4" => Uint8x4,
+            "sint8x2" => Sint8x2,
+            "sint8x4" => Sint8x4,
+            "unorm8x2" => Unorm8x2,
+            "unorm8x4" => Unorm8x4,
+            "snorm8x2" => Snorm8x2,
+            "snorm8x4" => Snorm8x4,
+            "uint16x2" => Uint16x2,
+            "uint16x4" => Uint16x4,
+            "sint16x2" => Sint16x2,
+            "sint16x4" => Sint16x4,
+            "unorm16x2" => Unorm16x2,
+            "unorm16x4" => Unorm16x4,
+            "snorm16x2" => Snorm16x2,
+            "snorm16x4" => Snorm16x4,
+            "float16x2" => Float16x2,
+            "float16x4" => Float16x4,
+            "float32" => Float32,
+            "float32x2" => Float32x2,
+            "float32x3" => Float32x3,
+            "float32x4" => Float32x4,
+            "uint32" => Uint32,
+            "uint32x2" => Uint32x2,
+            "uint32x3" => Uint32x3,
+            "uint32x4" => Uint32x4,
+            "sint32" => Sint32,
+            "sint32x2" => Sint32x2,
+            "sint32x3" => Sint32x3,
+            "sint32x4" => Sint32x4,
+            "float64" => Float64,
+            "float64x2" => Float64x2,
+            "float64x3" => Float64x3,
+            "float64x4" => Float64x4,
+            _ => return None,
+        })
+    }
+
+    /// 格式字节宽度（stride 校验）
+    fn vertex_format_size(fmt: &wgpu::VertexFormat) -> u64 {
+        use wgpu::VertexFormat::*;
+        match fmt {
+            Uint8x2 | Sint8x2 | Unorm8x2 | Snorm8x2 => 2,
+            Uint8x4 | Sint8x4 | Unorm8x4 | Snorm8x4 => 4,
+            Uint16x2 | Sint16x2 | Unorm16x2 | Snorm16x2 | Float16x2 => 4,
+            Uint16x4 | Sint16x4 | Unorm16x4 | Snorm16x4 | Float16x4 => 8,
+            Float32 | Uint32 | Sint32 => 4,
+            Float32x2 | Uint32x2 | Sint32x2 => 8,
+            Float32x3 | Uint32x3 | Sint32x3 => 12,
+            Float32x4 | Uint32x4 | Sint32x4 => 16,
+            Float64 => 8,
+            Float64x2 => 16,
+            Float64x3 => 24,
+            Float64x4 => 32,
+            // 标量 8 位 + wgpu 30 新增罕用格式（stride 校验用——兜底 4B）
+            Uint8 | Sint8 | Unorm8 | Snorm8 => 1,
+            _ => 4,
+        }
     }
 
     /// 布局预设的每顶点分量数（vertices 列表打包校验用）
@@ -577,6 +662,81 @@ pub(crate) mod render {
             // 顶点恒带 COPY_DST（update_mesh 的 write_buffer 硬要求——
             // 动态几何是 mesh 常规用法，绑定层默认开启免用户踩坑）
             let mut b = if args.layout == "inst_pos2" {
+                self.access
+                    .mesh_builder_instance(formats, bytes)
+                    .with_vertex_usages(wgpu::BufferUsages::COPY_DST)
+            } else {
+                self.access
+                    .mesh_builder(formats, bytes)
+                    .with_vertex_usages(wgpu::BufferUsages::COPY_DST)
+            };
+            if let Some(idx) = args.indices {
+                let idx: Vec<i64> =
+                    vm.extract_elements_with(&idx, |o| i64::try_from_object(vm, o.to_owned()))?;
+                let mut u16s = Vec::with_capacity(idx.len());
+                for i in idx {
+                    u16s.push(u16::try_from(i).map_err(|_| {
+                        vm.new_value_error(format!("索引越界（0..=65535）：{i}"))
+                    })?);
+                }
+                b = b
+                    .with_short_indices(u16s)
+                    .with_index_usages(wgpu::BufferUsages::COPY_DST);
+            }
+            let m = b.build(args.label.as_deref(), None);
+            Ok(PyMesh { inner: m }.into_ref(&vm.ctx))
+        }
+
+        /// mesh_builder(layout, vertices, indices=None, label=None,
+        /// instance=False) -> Mesh：**任意顶点布局**（不受预设限制——
+        /// layout = wgpu::VertexFormat 变体名列表（snake_case），如
+        /// `["float32x3", "float32x4", "float32x3"]` = pos+color+normal。
+        /// 覆盖全部 wgpu 支持格式；vertices = **原始字节**（struct.pack
+        /// / numpy.tobytes 形态——任意非 float 格式也能喂）。
+        #[pymethod]
+        fn mesh_builder(
+            &self,
+            args: MeshBuilderArgs,
+            vm: &VirtualMachine,
+        ) -> PyResult<PyRef<PyMesh>> {
+            // 布局解析（系统性名称映射——非硬编码列表）
+            let mut formats = Vec::with_capacity(args.layout.len());
+            let mut stride_bytes: u64 = 0;
+            for name in &args.layout {
+                let fmt = parse_vertex_format(name).ok_or_else(|| {
+                    vm.new_value_error(format!(
+                        "VertexFormat '{name}' 未识别（wgpu 变体名 snake_case，如 float32x3 / unorm8x4 / uint16x2）"
+                    ))
+                })?;
+                stride_bytes += vertex_format_size(&fmt);
+                formats.push(fmt);
+            }
+            if formats.is_empty() {
+                return Err(vm.new_value_error("layout 不可为空"));
+            }
+            // 顶点字节
+            let bytes: Vec<u8> = if let Some(b) = &args.vertices_bytes {
+                b.try_bytes_like(vm, |b| b.to_vec())?
+            } else if let Some(floats) = &args.vertices {
+                let n: Vec<f64> = vm.extract_elements_with(floats, |o| {
+                    f64::try_from_object(vm, o.to_owned())
+                })?;
+                n.iter().flat_map(|v| (*v as f32).to_le_bytes()).collect()
+            } else {
+                return Err(vm.new_value_error("vertices（float 列表或 bytes）必填"));
+            };
+            if stride_bytes == 0 || bytes.is_empty() {
+                return Err(vm.new_value_error(format!(
+                    "vertices 为空（期望 stride {stride_bytes}B × N 顶点）"
+                )));
+            }
+            if bytes.len() as u64 % stride_bytes != 0 {
+                return Err(vm.new_value_error(format!(
+                    "vertices {bytes_len}B 非 stride {stride_bytes}B 整数倍",
+                    bytes_len = bytes.len()
+                )));
+            }
+            let mut b = if args.instance {
                 self.access
                     .mesh_builder_instance(formats, bytes)
                     .with_vertex_usages(wgpu::BufferUsages::COPY_DST)

@@ -4715,7 +4715,7 @@ checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
 
 [[package]]
 name = "pygame_live2d"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "image",
  "rapidhash",
@@ -4744,7 +4744,7 @@ dependencies = [
 
 [[package]]
 name = "pygamest"
-version = "0.3.64"
+version = "0.3.65"
 dependencies = [
  "chacha20poly1305",
  "egui-starfish-we",
