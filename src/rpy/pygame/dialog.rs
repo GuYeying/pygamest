@@ -207,7 +207,9 @@ use std::cell::Cell;
                 });
                 let mut v = OPEN.lock().unwrap();
                 v.push(slot);
-                Ok((v.len() - 1) as i64)
+                // 句柄空间分区：偶数 = 打开 / 奇数 = 保存（poll 按奇偶
+                // 路由——两类槽独立编号，混查会把空 SAVE 槽误判已完成）
+                Ok(((v.len() - 1) * 2) as i64)
             }
 
             pub(super) fn save_start(name: String, data: Vec<u8>) -> Result<i64, String> {
@@ -219,14 +221,20 @@ use std::cell::Cell;
                 });
                 let mut v = SAVE.lock().unwrap();
                 v.push(slot);
-                Ok((v.len() - 1) as i64)
+                Ok(((v.len() - 1) * 2 + 1) as i64)
+            }
+
+            /// 句柄路由：偶数 = 打开槽（idx = h/2），奇数 = 保存槽
+            fn route(h: i64) -> (bool, usize) {
+                ((h & 1) == 0, (h >> 1) as usize)
             }
 
             /// 轮询推进（try_result 出终值即转存结果槽）
             pub(super) fn poll(h: i64) -> bool {
-                let open_done = {
+                let (is_open, idx) = route(h);
+                if is_open {
                     let v = OPEN.lock().unwrap();
-                    match v.get(h as usize) {
+                    return match v.get(idx) {
                         Some(s) => {
                             let mut jg = s.job.lock().unwrap();
                             if let Some(j) = jg.as_mut() {
@@ -239,13 +247,10 @@ use std::cell::Cell;
                             s.result.lock().unwrap().is_some()
                         }
                         None => true, // 陈旧句柄
-                    }
-                };
-                if open_done {
-                    return true;
+                    };
                 }
                 let v = SAVE.lock().unwrap();
-                match v.get(h as usize) {
+                match v.get(idx) {
                     Some(s) => {
                         let mut jg = s.job.lock().unwrap();
                         if let Some(j) = jg.as_mut() {
@@ -259,13 +264,14 @@ use std::cell::Cell;
                         }
                         s.result.lock().unwrap().is_some()
                     }
-                    None => true,
+                    None => true, // 陈旧句柄
                 }
             }
 
             pub(super) fn open_take(h: i64) -> Result<Option<PickedFile>, String> {
+                let (_, idx) = route(h);
                 let v = OPEN.lock().unwrap();
-                let s = v.get(h as usize).ok_or("SAF 打开槽句柄不存在")?;
+                let s = v.get(idx).ok_or("SAF 打开槽句柄不存在")?;
                 s.result
                     .lock()
                     .unwrap()
@@ -274,8 +280,9 @@ use std::cell::Cell;
             }
 
             pub(super) fn save_take(h: i64) -> Result<bool, String> {
+                let (_, idx) = route(h);
                 let v = SAVE.lock().unwrap();
-                let s = v.get(h as usize).ok_or("SAF 保存槽句柄不存在")?;
+                let s = v.get(idx).ok_or("SAF 保存槽句柄不存在")?;
                 s.result
                     .lock()
                     .unwrap()
