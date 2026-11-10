@@ -301,22 +301,6 @@ pub(crate) mod render {
         indices: Option<PyObjectRef>,
     }
 
-    /// access.mesh(layout, vertices, indices=None, label=None)
-    #[derive(FromArgs)]
-    pub(crate) struct MeshArgs {
-        #[pyarg(any)]
-        layout: String,
-        #[pyarg(any, optional)]
-        vertices: Option<PyObjectRef>,
-        /// vertices=None 时的零填充 float 数（容量预留快路径）
-        #[pyarg(any, optional)]
-        floats: Option<usize>,
-        #[pyarg(any, optional)]
-        indices: Option<PyObjectRef>,
-        #[pyarg(any, optional)]
-        label: Option<String>,
-    }
-
     /// mesh_builder(layout, vertices, ...) 收参——layout = 格式名列表
     #[derive(FromArgs)]
     pub(crate) struct MeshBuilderArgs {
@@ -445,25 +429,6 @@ pub(crate) mod render {
             .collect())
     }
 
-    /// 顶点布局预设 → wgpu VertexFormat 列表（安全收参：不暴露 wgpu 枚举）
-    fn parse_layout(name: &str) -> Option<Vec<wgpu::VertexFormat>> {
-        use wgpu::VertexFormat::*;
-        Some(match name {
-            "pos3" => vec![Float32x3],
-            "pos3uv2" => vec![Float32x3, Float32x2],
-            "pos3color4" => vec![Float32x3, Float32x4],
-            // 角点模板（GPU 粒子：每粒子一个三角形，位置经 uniform/storage）
-            "corner2" => vec![Float32x2],
-            // 实例步进 pos（GPU 粒子 v3——每实例一粒，pos 顶点属性直进 VS：
-            // 顶点属性 = 固定功能通路，规避 VS 段纹理/SSBO 读取的多平台
-            // 静默失效——DX12/GLES 双实测 2026-10-30）
-            "inst_pos2" => vec![Float32x2],
-            // SpriteVertex 同布局（引擎批顶点——互操作）
-            "pos3uv2color4" => vec![Float32x3, Float32x2, Float32x4],
-            _ => return None,
-        })
-    }
-
     /// wgpu::VertexFormat 变体名 → 枚举（snake_case 系统性映射——
     /// 覆盖全部 wgpu 支持格式，非硬编码列表）
     fn parse_vertex_format(name: &str) -> Option<wgpu::VertexFormat> {
@@ -526,19 +491,6 @@ pub(crate) mod render {
             // 标量 8 位 + wgpu 30 新增罕用格式（stride 校验用——兜底 4B）
             Uint8 | Sint8 | Unorm8 | Snorm8 => 1,
             _ => 4,
-        }
-    }
-
-    /// 布局预设的每顶点分量数（vertices 列表打包校验用）
-    fn layout_stride_floats(name: &str) -> usize {
-        match name {
-            "pos3" => 3,
-            "pos3uv2" => 5,
-            "pos3color4" => 7,
-            "corner2" => 2,
-            "inst_pos2" => 2,
-            "pos3uv2color4" => 9,
-            _ => 0,
         }
     }
 
@@ -619,73 +571,6 @@ pub(crate) mod render {
             Ok(PyBuffer { inner: b, size: args.size }.into_ref(&vm.ctx))
         }
 
-        /// mesh(layout, vertices, indices=None, label=None) -> Mesh：
-        /// layout = 布局预设（pos3/pos3uv2/pos3color4/pos3uv2color4）；
-        /// vertices = 扁平数值列表（按布局 stride 校验）；indices = u16
-        /// 索引列表（可选）。
-        #[pymethod]
-        fn mesh(&self, args: MeshArgs, vm: &VirtualMachine) -> PyResult<PyRef<PyMesh>> {
-            let formats = parse_layout(&args.layout).ok_or_else(|| {
-                vm.new_value_error(format!(
-                    "layout 须为 pos3/pos3uv2/pos3color4/pos3uv2color4，实际 {:?}",
-                    args.layout
-                ))
-            })?;
-            let stride = layout_stride_floats(&args.layout);
-            let nv = if args.vertices.is_some() {
-                vm.extract_elements_with(&args.vertices.as_ref().unwrap(), |o| {
-                    f64::try_from_object(vm, o.to_owned())
-                })?
-                .len()
-            } else {
-                0
-            };
-            if stride == 0 || nv % stride != 0 {
-                return Err(vm.new_value_error(format!(
-                    "vertices 数量 {nv} 须为布局 stride {stride} 的整数倍",
-                )));
-            }
-            // vertices=None + floats=N → 零填充快路径（容量预留形态——
-            // GPU 粒子 v3：pos 平面经 copy_mesh_vertices 每帧 GPU 侧直搬，
-            // 百万级 Python 列表不可行）
-            let bytes: Vec<u8> = if args.vertices.is_none() {
-                let floats = args.floats.ok_or_else(|| {
-                    vm.new_value_error("vertices=None 须同时给 floats=N（零填充 float 数）")
-                })?;
-                vec![0u8; floats * 4]
-            } else {
-                let n: Vec<f64> = vm.extract_elements_with(&args.vertices.as_ref().unwrap(), |o| {
-                    f64::try_from_object(vm, o.to_owned())
-                })?;
-                n.iter().flat_map(|v| (*v as f32).to_le_bytes()).collect()
-            };
-            // 顶点恒带 COPY_DST（update_mesh 的 write_buffer 硬要求——
-            // 动态几何是 mesh 常规用法，绑定层默认开启免用户踩坑）
-            let mut b = if args.layout == "inst_pos2" {
-                self.access
-                    .mesh_builder_instance(formats, bytes)
-                    .with_vertex_usages(wgpu::BufferUsages::COPY_DST)
-            } else {
-                self.access
-                    .mesh_builder(formats, bytes)
-                    .with_vertex_usages(wgpu::BufferUsages::COPY_DST)
-            };
-            if let Some(idx) = args.indices {
-                let idx: Vec<i64> =
-                    vm.extract_elements_with(&idx, |o| i64::try_from_object(vm, o.to_owned()))?;
-                let mut u16s = Vec::with_capacity(idx.len());
-                for i in idx {
-                    u16s.push(u16::try_from(i).map_err(|_| {
-                        vm.new_value_error(format!("索引越界（0..=65535）：{i}"))
-                    })?);
-                }
-                b = b
-                    .with_short_indices(u16s)
-                    .with_index_usages(wgpu::BufferUsages::COPY_DST);
-            }
-            let m = b.build(args.label.as_deref(), None);
-            Ok(PyMesh { inner: m }.into_ref(&vm.ctx))
-        }
 
         /// mesh_builder(layout, vertices, indices=None, label=None,
         /// instance=False) -> Mesh：**任意顶点布局**（不受预设限制——
