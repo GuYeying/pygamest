@@ -62,9 +62,12 @@ VideoToolbox 同上自动覆盖。
    （wayland/gstreamer/tray-icon）摘 OHOS——`cargo check --target
    aarch64-unknown-linux-ohos -p starfish-we` ✅（否则 OHOS 会静默
    吞 linux-Wayland/GStreamer 路径）。
-2. **音频（真适配第一项）**：starfish-audio cpal 门控摘 OHOS（当前
-   OHOS check 卡点 = alsa-sys 构建脚本）+ OHAudio 实现 device trait
-   （record/stream 模块同步割）——解锁全树 OHOS check 门。
+2. **音频（桩已落地 ✅ 2026-11-11）**：starfish-audio device.rs 已割
+   （cpal 门控摘 OHOS + OHOS 桩分支：DeviceStream Infallible 不可构造
+   + 四口显式 Err，OHAudio 接入位就绪）——`cargo check --target
+   aarch64-unknown-linux-ohos -p starfish-audio --no-default-features`
+   ✅。**真适配** = OHAudio 实现同一公共面（open_output_stream /
+   open_input_stream / 枚举——上层零 cpal 类型）。
 3. **窗口/输入实装**：`platform/harmonyos/` 桩 →
    NativeXComponent 回调 → 缓冲队列 → `poll_event` 排空（模板 =
    android/mod.rs 反转形态）；表面 = OH_NativeXComponent_GetNativeWindow
@@ -79,9 +82,12 @@ VideoToolbox 同上自动覆盖。
 6. **打包**：build_ohos.py——hvigor/DevEco 工具链 + module.json5 +
    资产 HAP 打包（对齐 android/build.py 五步链）；总控 builders 表
    预留插槽已备。
-7. **验收门**：`cargo check --target aarch64-unknown-linux-ohos`
-   （we/video ✅，audio/pygame 待音频割后解锁）→ OHOS 真机/模拟器
-   netvideo_test 三模块全绿。
+7. **验收门**：`cargo check --target aarch64-unknown-linux-ohos`——
+   **侦察阶梯 ✅（2026-11-11）**：we / audio（no-default） / video /
+   gamepad / **starfish-pygame（wgpu/vello 全绿）** 五门通过；墙 =
+   pygamest 绑定层 psm（RustPython stacker 不识 ohos 三元组——
+   vendored patch 待 OHOS SDK 期）。→ OHOS 真机/模拟器 netvideo_test
+   三模块全绿（终门）。
 
 ## 五、通用不变式（跨平台纪律）
 
