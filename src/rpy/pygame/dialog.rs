@@ -159,6 +159,144 @@ use std::cell::Cell;
             }
         }
 
+        // ── 异步 job 三原生口（2026-11-10 异步面定约：open_file/save_bytes
+        // 的 await 形态机制层——后台线程跑模态对话框，帧轮询就绪，取走时
+        // 构造 PyObject。Python 面 = testhost.rs FRAME_BRIDGE 的
+        // _DialogOpen/_DialogSave shim 挂载）──
+
+        /// 后台任务注册表（结果载荷：打开 = Option<PickedFile>（None =
+        /// 用户取消）；保存 = bool）
+        static OPEN_JOBS: std::sync::OnceLock<crate::rpy::jobs::Registry<Option<PickedFile>>> =
+            std::sync::OnceLock::new();
+        static SAVE_JOBS: std::sync::OnceLock<crate::rpy::jobs::Registry<bool>> =
+            std::sync::OnceLock::new();
+
+        /// _open_start(title, filters) -> 句柄：后台线程起模态打开对话框
+        #[pyfunction]
+        fn _open_start(
+            args: OpenFileArgs,
+            vm: &VirtualMachine,
+        ) -> PyResult<rustpython_vm::builtins::PyIntRef> {
+            #[cfg(not(any(
+                target_os = "windows",
+                target_os = "linux",
+                target_os = "macos"
+            )))]
+            {
+                let _ = (args, vm);
+                return Err(vm.new_value_error(
+                    "pygame.dialog: 对话框后端为桌面专属（Web/Android robius 桥后续批次）",
+                ));
+            }
+            #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+            {
+                let filters: Vec<(String, Vec<String>)> = match &args.filters {
+                    Some(o) => vm.extract_elements_with(o, |el| {
+                        let t = el
+                            .downcast::<rustpython_vm::builtins::PyTuple>()
+                            .map_err(|_| {
+                                vm.new_type_error("过滤项应为 (展示名, [扩展名...]) 二元组")
+                            })?;
+                        let items = t.as_slice();
+                        if items.len() != 2 {
+                            return Err(vm
+                                .new_type_error("过滤项应为二元组 (展示名, [扩展名...])"));
+                        }
+                        let name = items[0]
+                            .downcast_ref::<rustpython_vm::builtins::PyStr>()
+                            .ok_or_else(|| vm.new_type_error("过滤项[0] 应为展示名 str"))?
+                            .to_str()
+                            .ok_or_else(|| vm.new_value_error("展示名含非 UTF-8 字符"))?
+                            .to_owned();
+                        let exts: Vec<String> = vm.extract_elements_with(&items[1], |e| {
+                            e.downcast_ref::<rustpython_vm::builtins::PyStr>()
+                                .ok_or_else(|| vm.new_type_error("扩展名应为 str"))?
+                                .to_str()
+                                .ok_or_else(|| vm.new_value_error("扩展名含非 UTF-8 字符"))
+                                .map(String::from)
+                        })?;
+                        Ok((name, exts))
+                    })?,
+                    None => Vec::new(),
+                };
+                let filters = leak_filters(&filters);
+                let title = args.title.clone();
+                let reg = OPEN_JOBS.get_or_init(Default::default);
+                let h = reg.spawn(move || {
+                    pollster::block_on(starfish_dialog::pick_file(title.as_deref(), &filters))
+                        .map_err(|e| format!("dialog: {e}"))
+                });
+                Ok(rustpython_vm::builtins::PyInt::from(h).into_ref(&vm.ctx))
+            }
+        }
+
+        /// _save_start(file_name, data) -> 句柄：后台线程起另存为
+        #[pyfunction]
+        fn _save_start(
+            file_name: PyStrRef,
+            data: PyObjectRef,
+            vm: &VirtualMachine,
+        ) -> PyResult<rustpython_vm::builtins::PyIntRef> {
+            #[cfg(not(any(
+                target_os = "windows",
+                target_os = "linux",
+                target_os = "macos"
+            )))]
+            {
+                let _ = (file_name, data);
+                return Err(vm.new_value_error(
+                    "pygame.dialog: 对话框后端为桌面专属（Web/Android robius 桥后续批次）",
+                ));
+            }
+            #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+            {
+                let name = file_name
+                    .to_str()
+                    .ok_or_else(|| vm.new_value_error("文件名含非 UTF-8 字符"))?
+                    .to_owned();
+                let bytes = data_bytes(data, vm)?;
+                let reg = SAVE_JOBS.get_or_init(Default::default);
+                let h = reg.spawn(move || {
+                    pollster::block_on(starfish_dialog::save_bytes(name.as_str(), bytes))
+                        .map(|saved| saved.is_some())
+                        .map_err(|e| format!("dialog: {e}"))
+                });
+                Ok(rustpython_vm::builtins::PyInt::from(h).into_ref(&vm.ctx))
+            }
+        }
+
+        /// _poll(句柄) -> bool：job 就绪查询（帧轮询）
+        #[pyfunction]
+        fn _poll(handle: i64) -> bool {
+            OPEN_JOBS
+                .get()
+                .map(|r| r.poll(handle))
+                .unwrap_or(false)
+                || SAVE_JOBS.get().map(|r| r.poll(handle)).unwrap_or(false)
+        }
+
+        /// _open_take(句柄) -> PickedFile | None：取走结果（取消 = None）
+        #[pyfunction]
+        fn _open_take(
+            handle: i64,
+            vm: &VirtualMachine,
+        ) -> PyResult<Option<PyPickedFile>> {
+            let reg = OPEN_JOBS.get().ok_or_else(|| {
+                vm.new_value_error("pygame.dialog: 打开任务表未初始化")
+            })?;
+            let picked = reg.take(handle).map_err(|e| vm.new_value_error(e))?;
+            Ok(picked.map(PyPickedFile))
+        }
+
+        /// _save_take(句柄) -> bool：取走保存结果
+        #[pyfunction]
+        fn _save_take(handle: i64, vm: &VirtualMachine) -> PyResult<bool> {
+            let reg = SAVE_JOBS
+                .get()
+                .ok_or_else(|| vm.new_value_error("pygame.dialog: 保存任务表未初始化"))?;
+            reg.take(handle).map_err(|e| vm.new_value_error(e))
+        }
+
         fn data_bytes(data: PyObjectRef, vm: &VirtualMachine) -> PyResult<Vec<u8>> {
             if let Some(s) = data.downcast_ref::<rustpython_vm::builtins::PyStr>() {
                 return Ok(s

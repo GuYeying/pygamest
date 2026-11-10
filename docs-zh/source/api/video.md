@@ -74,3 +74,16 @@ video = vs.open("cutscene.mp4")
 #### <span class="c-func">set_muted(m)</span>
 
 静音开关。
+
+## 模块级异步口（2026-11-10 定约）
+
+```python
+v = await pygame.video.open("assets/video/cutscene.mp4")   # 打开不卡帧
+```
+
+- **机制**：`_open_start/_poll/_open_take` 原生三口 + 帧轮询 shim——
+  open（含 MediaCodec configure 等百毫秒级初始化）在后台线程，引擎
+  线程逐帧渲染不冻；`VideoSystem` 在引擎线程构造（GPU 槽线程局部），
+  open 本体只携带 device/queue 的 Arc 克隆过线程
+- `VideoSystem.open(path)` 同步口保留（底层/兼容——桌面毫秒级场景）
+- **[差异]** Web 端 v1 站桩 ValueError（WebCodecs 播放管线后续批次）

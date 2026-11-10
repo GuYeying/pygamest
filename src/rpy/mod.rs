@@ -40,6 +40,8 @@ pub mod registry;
 pub mod args;
 pub mod bridge;
 pub mod modfind;
+// 原生异步 Job 注册表（dialog/video 异步面机制层——帧轮询式后台任务）
+pub mod jobs;
 pub mod smoke;
 pub mod testhost;
 

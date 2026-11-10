@@ -85,6 +85,74 @@ use std::cell::Cell;
             }
         }
 
+        // ── 异步 job 三原生口（2026-11-10 异步面定约：pygame.video.open
+        // 的 await 形态机制层——后台线程跑 open（MediaCodec configure 可达
+        // 百毫秒级），帧轮询就绪取走。Python 面 = testhost.rs FRAME_BRIDGE
+        // 的 _VideoOpen shim 挂载；VideoSystem.open 同步口保留）──
+
+        /// 跨线程交接盒（SfVideo 非 Send：解码器 trait 对象 + 帧包装
+        /// Surface 的 RefCell。交接健全性：worker 线程在 Mutex 临界区内
+        /// 写入 + Release 序发布 done 位；引擎线程 Acquire 读到 done 后
+        /// 才经同一 Mutex 取走——happens-before 成立，单生产单消费，
+        /// 之后仅引擎线程触碰）
+        struct SendVideo(SfVideo);
+        // SAFETY: 见上注——Mutex + Release/Acquire 交接序，消费后独占
+        unsafe impl Send for SendVideo {}
+
+        /// 后台任务注册表（载荷：打开成功 = SendVideo 交接盒）
+        static OPEN_JOBS: std::sync::OnceLock<crate::rpy::jobs::Registry<SendVideo>> =
+            std::sync::OnceLock::new();
+
+        /// _open_start(path) -> 句柄：后台线程跑 open（含 io 路径解析）
+        #[pyfunction]
+        fn _open_start(path: PyStrRef, vm: &VirtualMachine) -> PyResult<rustpython_vm::builtins::PyIntRef> {
+            #[cfg(target_arch = "wasm32")]
+            {
+                let _ = path;
+                return Err(vm.new_value_error(
+                    "pygame.video: Web 端 v1 不开放（WebCodecs 播放管线后续批次）",
+                ));
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let p = path
+                    .to_str()
+                    .ok_or_else(|| vm.new_value_error("路径含非 UTF-8 字符"))?
+                    .to_owned();
+                // System 构造在引擎线程（VideoSystem::new 取线程局部 GPU 槽
+                // ——worker 线程无槽必 panic）；open 本体只吃 device/queue
+                // 的 Arc 克隆（wgpu 句柄 Send+Sync），移进 worker 安全
+                let sys = SfVideoSystem::new();
+                let reg = OPEN_JOBS.get_or_init(Default::default);
+                let h = reg.spawn(move || {
+                    let rp = resolve_path(&p);
+                    sys.open(rp)
+                        .map(SendVideo)
+                        .map_err(|e| format!("video.open 失败: {e:?} path={p}"))
+                });
+                Ok(rustpython_vm::builtins::PyInt::from(h).into_ref(&vm.ctx))
+            }
+        }
+
+        /// _poll(句柄) -> bool：job 就绪查询（帧轮询）
+        #[pyfunction]
+        fn _poll(handle: i64) -> bool {
+            OPEN_JOBS.get().map(|r| r.poll(handle)).unwrap_or(false)
+        }
+
+        /// _open_take(句柄) -> Video：取走结果
+        #[pyfunction]
+        fn _open_take(handle: i64, vm: &VirtualMachine) -> PyResult<PyRef<PyVideo>> {
+            let reg = OPEN_JOBS
+                .get()
+                .ok_or_else(|| vm.new_value_error("pygame.video: 打开任务表未初始化"))?;
+            let v = reg.take(handle).map_err(|e| vm.new_value_error(e))?;
+            Ok(PyVideo {
+                inner: std::cell::RefCell::new(v.0),
+            }
+            .into_ref(&vm.ctx))
+        }
+
         /// pygame.video.Video——已打开的媒体（update 驱动解码推进）。
         #[derive(PyPayload)]
         #[pyattr]

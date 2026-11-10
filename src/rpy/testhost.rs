@@ -177,6 +177,42 @@ def _load_sound(path):
 def _load_font(path, size):
     return _LoadFont(path, size)
 
+# ── dialog/video 异步面（原生 job 三口驱动——后台线程干活 + 帧轮询
+# 就绪取走；挂载点把 pygame.dialog/pygame.video 的私有原生口 late-bind
+# 进本 scope，见 mount_unified_io 尾段）──
+class _DialogOpen:
+    def __init__(self, title, filters):
+        self._h = _dlg_open_start(title, filters)
+    def __await__(self):
+        while not _dlg_poll(self._h):
+            yield "frame"
+        return _dlg_open_take(self._h)
+
+class _DialogSave:
+    def __init__(self, file_name, data):
+        self._h = _dlg_save_start(file_name, data)
+    def __await__(self):
+        while not _dlg_poll(self._h):
+            yield "frame"
+        return _dlg_save_take(self._h)
+
+class _VideoOpen:
+    def __init__(self, path):
+        self._h = _vid_open_start(path)
+    def __await__(self):
+        while not _vid_poll(self._h):
+            yield "frame"
+        return _vid_open_take(self._h)
+
+def _dialog_open_file(title=None, filters=None):
+    return _DialogOpen(title, filters)
+
+def _dialog_save_bytes(file_name, data):
+    return _DialogSave(file_name, data)
+
+def _video_open(path):
+    return _VideoOpen(path)
+
 # （资源加密嵌入钥接线已移至 runtime bin Rust 侧——init_crypto 由
 # 宿主 main 直接调 starfish_io::init_crypto，不经过 Python 层）
 "#;
@@ -331,7 +367,45 @@ fn mount_unified_io(
             }
         }
     }
-    dlog(tag, "三线统一接口挂载 ✓（image/mixer/font.load → async）");
+    // dialog/video 异步面挂载：私有原生口 late-bind 进桥 scope（shim
+    // 类构造期解析——调用期可达），再覆写模块公开口为 awaitable shim
+    if let Ok(dlg) = pg.get_attr("dialog", vm) {
+        for (attr, as_name) in [
+            ("_open_start", "_dlg_open_start"),
+            ("_save_start", "_dlg_save_start"),
+            ("_poll", "_dlg_poll"),
+            ("_open_take", "_dlg_open_take"),
+            ("_save_take", "_dlg_save_take"),
+        ] {
+            if let Ok(f) = dlg.get_attr(attr, vm) {
+                let _ = scope.globals.set_item(as_name, f, vm);
+            }
+        }
+        for (attr, shim) in [
+            ("open_file", "_dialog_open_file"),
+            ("save_bytes", "_dialog_save_bytes"),
+        ] {
+            if let Ok(f) = scope.globals.get_item(shim, vm) {
+                let _ = dlg.set_attr(attr, f, vm);
+            }
+        }
+    }
+    if let Ok(vid) = pg.get_attr("video", vm) {
+        for (attr, as_name) in [
+            ("_open_start", "_vid_open_start"),
+            ("_poll", "_vid_poll"),
+            ("_open_take", "_vid_open_take"),
+        ] {
+            if let Ok(f) = vid.get_attr(attr, vm) {
+                let _ = scope.globals.set_item(as_name, f, vm);
+            }
+        }
+        // 模块级异步口（VideoSystem.open 同步口保留——底层/兼容）
+        if let Ok(shim) = scope.globals.get_item("_video_open", vm) {
+            let _ = vid.set_attr("open", shim, vm);
+        }
+    }
+    dlog(tag, "三线统一接口挂载 ✓（image/mixer/font.load → async）+ dialog/video 异步面");
 }
 
 /// 协程单步步进结果
