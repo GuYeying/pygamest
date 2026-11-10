@@ -350,6 +350,18 @@ pub mod pygame {
             Ok(PyScreenSession.into_ref(&vm.ctx))
         }
 
+        /// set_camera(cam)：显式设置渲染相机（阶段一 1.2 定约——
+        /// 必须显式传入，不再有兜底）。
+        #[pymethod]
+        fn set_camera(
+            &self,
+            cam: PyRef<crate::rpy::pygame::render::render::PyGameCamera>,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            starfish_pygame::display::get_screen().set_game_camera(cam.0);
+            Ok(())
+        }
+
         /// get_size() -> (w, h)：当前窗口/渲染表面尺寸（Web 响应式
         /// canvas 下跟随页面布局变化——脚本查询用）
         #[pymethod]
