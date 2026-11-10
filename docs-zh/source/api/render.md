@@ -18,6 +18,8 @@ set_camera 等全剔）。绘制接口按管线分域：图元/贴图/状态机 
 [相机归属] 相机选择是**会话级**（`pygame.gfxdraw.set_camera(f, cam)`），
 每会话/每目标独立持有，互不串线；`Auto` = 按目标尺寸隐式（resize
 天然跟随）。同画布多相机 = 会话内多次 `set_camera` 分段绘制。
+**全局显式相机**走 `screen.set_camera(cam)`（GameCamera——letterbox
+内聚，见下）；设置后 Auto 兜底不再覆盖（显式优先于自动）。
 
 [严格精细控制] 自建管线（raw_render）**引擎不做相机兜底**——相机
 buffer 由用户全权管理（同帧多 raw 会话须各持独立 buffer）。
@@ -50,6 +52,24 @@ Python 界**——一切经本模块句柄类安全收参。
 当前 Auto 兜底 MVP（主屏尺寸现算——resize 天然跟随）。
 
 - :rtype: Mat4
+
+#### <span class="c-func">game_camera_ortho(lw, lh, pw, ph) -> GameCamera</span>
+
+2D 正交 GameCamera（**letterbox 内聚**——逻辑画布 → 物理视口的等比
+适配在相机内部结算，MVP/坐标映射/裁剪同一事实源）。
+
+- :param lw: 逻辑画布宽（set_mode 语义尺寸）
+- :param lh: 逻辑画布高
+- :param pw: 物理视口宽（窗口实际像素）
+- :param ph: 物理视口高
+- :rtype: GameCamera
+
+#### <span class="c-func">game_camera_perspective(fov_deg, lw, lh, pw, ph, near, far) -> GameCamera</span>
+
+3D 透视 GameCamera（fov 度数制；纵横比按**逻辑画布**；letterbox 内聚
+同上）。
+
+- :rtype: GameCamera
 
 #### <span class="c-func">present_fit() -> Mat4</span>
 
@@ -138,6 +158,37 @@ Camera。
 ##### <span class="c-func">mvp() -> Mat4</span>
 
 MVP（projection × view——唯一上传量；调试 / 教学口）。
+
+### <span class="c-class">GameCamera —— letterbox 内聚相机</span>
+
+**显式传入，杜绝兜底**（2026-11 定约）——`screen.set_camera(cam)` 的
+实参类型；直呼不可实例化，经 `game_camera_ortho` /
+`game_camera_perspective` 构造。内部三合一：投影（ortho / perspective）
+× 视图 × letterbox 适配，`mvp()` 为唯一上传量（NDC 域拟合 × projection
+× view），同时承载逻辑 ↔ 物理坐标映射与裁剪区换算。设置后
+`refresh_camera`（set_mode / resize 自动重建）不再覆盖——显式优先于
+自动；物理视口变化走 `.resized(pw, ph)` 重算 letterbox。
+
+```python
+cam = pygame.render.game_camera_perspective(58.0, 800, 600, 800, 600, 0.1, 300.0)
+screen.set_camera(cam)
+```
+
+##### <span class="c-func">with_view(view) -> GameCamera</span>
+
+替换视图矩阵（3D 位姿 `Mat4`；2D 恒 Identity）。返回新 GameCamera。
+
+##### <span class="c-func">mvp() -> Mat4</span>
+
+letterbox 内聚 MVP（唯一上传量）。
+
+##### <span class="c-func">physical_to_logical(x, y) -> tuple[float, float]</span>
+
+物理点 → 逻辑点（事件坐标进脚本坐标系）。
+
+##### <span class="c-func">resized(pw, ph) -> GameCamera</span>
+
+物理视口尺寸变化（重算 letterbox；Camera 是 Copy——返回新对象）。
 
 ### <span class="c-class">ResourceAccess —— 资源工厂</span>
 
@@ -242,13 +293,18 @@ GPU 纹理。`rgba` = RGBA8 字节列表（w×h×4，None = 零填充）；`kind
 须在 `with screen.render()` 块内）。命令记录制——`__exit__` 排程到
 目标提交时点回放，**恒在游戏内容之上**；深度恒清 1.0。
 
+**[管线缓存]**（2026-11 定约）`set_pipeline` / `set_bind_group` 在当前
+with 块内缓存生效——同一 `Pipeline`（Arc 指针）/同 slot 同 `BindGroup`
+指针的重复设置被跳过（零冗余命令）；管线变更自动清 bind 缓存。设置
+一次后块内持续生效，无需每帧重设。
+
 ##### <span class="c-func">set_pipeline(pipeline)</span>
 
-绑定渲染管线。
+绑定渲染管线（同块内同管线重复设置 = 缓存命中跳过）。
 
 ##### <span class="c-func">set_bind_group(index, group)</span>
 
-绑定组（slot 从 0 起）。
+绑定组（slot 从 0 起；同 slot 同组重复设置 = 缓存命中跳过）。
 
 ##### <span class="c-func">set_mesh(mesh) / draw_mesh(mesh)</span>
 

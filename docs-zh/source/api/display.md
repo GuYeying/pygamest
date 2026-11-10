@@ -38,6 +38,36 @@ screen = pygame.display.set_mode(
 - :returns: Screen 绘制目标
 - :rtype: Screen
 
+## <span class="c-class">Screen —— 绘制终点</span>
+
+`set_mode` 返回的 Screen 对象（真身 = Rust 全局 Screen——宿主壳装配）。
+
+#### <span class="c-func">screen.render()</span>
+
+with 会话入口：进入 = 开启 RenderPass，退出 = finish 打包
+（`with screen.render() as f:`——绘制走 [pygame.gfxdraw](gfxdraw.md) /
+[pygame.font](font.md)，会话对象只做目标表达）。
+
+#### <span class="c-func">screen.set_camera(cam)</span>
+
+**显式设置渲染相机**（2026-11 定约——渲染会话必传，杜绝兜底）。
+`cam` = `pygame.render.game_camera_ortho(lw, lh, pw, ph)` /
+`game_camera_perspective(fov, lw, lh, pw, ph, near, far)` 构造的
+GameCamera（letterbox 内聚——MVP / 坐标映射 / 裁剪同一事实源，详见
+[pygame.render](render.md)）。设置后 set_mode / resize 的自动重建不再
+覆盖（显式优先于自动）；物理视口变化走 `cam.resized(pw, ph)`。
+
+```python
+cam = pygame.render.game_camera_perspective(58.0, 800, 600, 800, 600, 0.1, 300.0)
+screen.set_camera(cam)
+```
+
+#### <span class="c-func">screen.get_size() -> tuple[int, int]</span>
+
+当前逻辑尺寸（Web 响应式 canvas 下跟随页面布局变化——脚本查询用）。
+
+- :rtype: tuple[int, int]
+
 #### <span class="c-func">flip()</span>
 
 帧收尾——把本帧绘制结果呈现到屏幕（主循环每帧末尾调用）。
