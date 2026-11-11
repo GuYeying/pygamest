@@ -39,6 +39,17 @@ use crate::rpy::{bridge, args};
         pub(crate) const MOUSEBUTTONDOWN: &str = "mousebuttondown";
         #[pyattr]
         pub(crate) const MOUSEBUTTONUP: &str = "mousebuttonup";
+        /// 滚轮（e.x = 横向 / e.y = 纵向刻度）
+        #[pyattr]
+        pub(crate) const MOUSEWHEEL: &str = "mousewheel";
+        /// 窗口尺寸变化（e.w / e.h = 新逻辑尺寸）
+        #[pyattr]
+        pub(crate) const RESIZED: &str = "resized";
+        /// 窗口焦点获得 / 失去
+        #[pyattr]
+        pub(crate) const FOCUSGAINED: &str = "focusgained";
+        #[pyattr]
+        pub(crate) const FOCUSLOST: &str = "focuslost";
         #[pyattr]
         pub(crate) const TEXTINPUT: &str = "textinput";
         // ── 托盘事件词汇（feature "tray" 门控——未启用构建无此常量；
