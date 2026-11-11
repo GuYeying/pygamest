@@ -304,6 +304,14 @@ with 块内缓存生效——同一 `Pipeline`（Arc 指针）/同 slot 同 `Bin
 指针的重复设置被跳过（零冗余命令）；管线变更自动清 bind 缓存。设置
 一次后块内持续生效，无需每帧重设。
 
+**[交叉顺序定约]**（2026-11-12）raw 内容经叠加通道在 **present 时
+回放，恒在本帧全部 gfxdraw 内容之上**——gfxdraw → raw → gfxdraw
+的脚本序在呈现时**必然乱序**（后画的 gfxdraw 仍被压在 raw 之下）。
+可靠的层级手段只有：① gfx×gfx 之间按登记序；② raw×raw 之间按登记
+序（"盖在 3D 之上的 2D" = 再开一段无深度 raw 画图元）。另：同帧
+`depth=True` 的深度附件**只供第一条 raw 通道**（第二条起为 None）——
+3D 内容同帧只放一段带深度 raw。
+
 ##### <span class="c-func">set_pipeline(pipeline)</span>
 
 绑定渲染管线（同块内同管线重复设置 = 缓存命中跳过）。
