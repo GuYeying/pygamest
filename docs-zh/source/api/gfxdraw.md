@@ -135,6 +135,18 @@ pygame.gfxdraw.filled_circle(f, 100, 0, 50)  # → 填充面（默认）
 #### <span class="c-func">aapolygon(f, points)</span>
 #### <span class="c-func">filled_polygon(f, points)</span>
 
+#### <span class="c-func">polyline(f, points, closed=False)</span>
+
+折线（1px；closed = 闭合轮廓）——points = [[x, y], ...]（f32）。
+
+#### <span class="c-func">regular_polygon(f, cx, cy, radius, sides, rotation=0.0)</span>
+
+正多边形（填充）。
+
+#### <span class="c-func">capsule(f, ax, ay, bx, by, radius, segments=32)</span>
+
+胶囊（填充）——线段 ab 两端圆心的凸包（物理胶囊碰撞体可视化）。
+
 ### 矩形
 
 #### <span class="c-func">rectangle(f, rect)</span>
@@ -146,3 +158,41 @@ pygame.gfxdraw.filled_circle(f, 100, 0, 50)  # → 填充面（默认）
 #### <span class="c-func">rounded_box(f, rect, radius)</span>
 
 **[垫底]** 同上。
+
+### 3D 形状（starfish-gfx shape3d 对接——2026-11-12）
+
+透视相机（`set_camera` + `camera_perspective`）+ `render_depth` 深度
+会话配套；顶点 z 真实参与（深度测试管线）。完整案例 `gfx3d_demo.py`，
+教程见 [gfxdraw 3D 词汇](../tutorials/gfx-3d.md)。
+
+#### <span class="c-func">cube(f, min, max)</span>
+
+立方体（填充）——min/max = [x, y, z] 对角点。
+
+#### <span class="c-func">sphere(f, center, radius, segments_u=16, segments_v=12)</span>
+
+球（填充）——经纬分段。
+
+#### <span class="c-func">plane(f, center, right, up, size)</span>
+
+平面（填充）——center + right/up 基向量（size = [宽, 高] 沿基）。
+
+#### <span class="c-func">cylinder(f, base_center, radius, height, segments=24)</span>
+
+圆柱（填充）——base_center 起沿 +y 挤出。
+
+#### <span class="c-func">cone(f, base_center, radius, height, segments=24)</span>
+
+圆锥（填充）——base_center 起沿 +y 顶点高 height。
+
+#### <span class="c-func">polygon3d(f, points)</span>
+
+平面多边形 3D（填充）——共面点列 flat [x, y, z, ...]（Newell 法平面基
+三角化；退化输入返回空）。
+
+### 相机状态（clear_camera）
+
+#### <span class="c-func">clear_camera(f)</span>
+
+清除会话相机覆盖（回按目标尺寸正交）——2026-11-12 由 `reset_camera`
+改名：隐式兜底已退役，"clear" 才是实义。段级 `set_camera` 的配对清除口。

@@ -1,5 +1,4 @@
-
-
+# pygamest
 
 👣 **从这里开始**
 
@@ -126,4 +125,11 @@
 :hidden:
 
 api/index
+install/index
+examples/index
+tutorials/index
+distribute/index
+performance/index
+community/index
+games/index
 ```
