@@ -295,9 +295,12 @@ GPU 纹理。`rgba` = RGBA8 字节列表（w×h×4，None = 零填充）；`kind
 
 ### <span class="c-class">RawPass —— 直绘会话</span>
 
-`with t.raw_render(depth=False) as p:`（`t` = Screen / Surface；主屏版
-须在 `with screen.render()` 块内）。命令记录制——`__exit__` 排程到
-目标提交时点回放，**恒在游戏内容之上**；深度恒清 1.0。
+`with screen.raw_render(depth=False) as p:`（主屏版——**目标级扁平
+形态**，2026-11-12 从会话摘除；离屏 Surface 版 =
+`with surface.raw_render() as p:`）。命令记录制——`__exit__` 排程到
+目标提交时点回放，**恒在游戏内容之上**；深度恒清 1.0。帧纪律 =
+**flip 前任意时点**（present 统一消费叠加队列，登记序）——主 2D
+词汇仍走 `with screen.render()` 会话（gfxdraw/font + fill/quad/blit）。
 
 **[管线缓存]**（2026-11 定约）`set_pipeline` / `set_bind_group` 在当前
 with 块内缓存生效——同一 `Pipeline`（Arc 指针）/同 slot 同 `BindGroup`
@@ -346,7 +349,8 @@ with 块内缓存生效——同一 `Pipeline`（Arc 指针）/同 slot 同 `Bin
 
 ### <span class="c-class">RawCompute —— 计算会话</span>
 
-`with t.raw_compute() as p:`（须在 `with screen.render()` 块内）——
+`with screen.raw_compute() as p:`（目标级扁平形态，同 raw_render
+2026-11-12 摘除；离屏 Surface 版 = `surface.raw_compute()`）——
 排程到 present 收口，独立 compute pass。
 
 ##### <span class="c-func">set_pipeline(pipeline)</span>

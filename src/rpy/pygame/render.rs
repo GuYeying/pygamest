@@ -400,6 +400,10 @@ pub(crate) mod render {
         /// 原始字节（任意格式混用形态——struct.pack / numpy.tobytes）
         #[pyarg(named, optional)]
         vertices_bytes: Option<PyObjectRef>,
+        /// 预分配零填 float 数（compute 直写目标——copy_mesh_vertices
+        /// 供数；旧 mesh_builder 口保留，render.md 文档同款）
+        #[pyarg(named, optional)]
+        floats: Option<usize>,
         #[pyarg(any, optional)]
         indices: Option<PyObjectRef>,
         #[pyarg(named, optional)]
@@ -696,8 +700,13 @@ pub(crate) mod render {
                         .or_else(|_| i64::try_from_object(vm, o.to_owned()).map(|v| v as f64))
                 })?;
                 n.iter().flat_map(|v| (*v as f32).to_le_bytes()).collect()
+            } else if let Some(nf) = args.floats {
+                // 预分配零填缓冲（compute 直写目标——copy_mesh_vertices 供数）
+                vec![0u8; nf * 4]
             } else {
-                return Err(vm.new_value_error("vertices（float 列表或 bytes）必填"));
+                return Err(vm.new_value_error(
+                    "vertices（float 列表 / bytes / floats 预分配数）必填其一",
+                ));
             };
             if stride_bytes == 0 || bytes.is_empty() {
                 return Err(vm.new_value_error(format!(

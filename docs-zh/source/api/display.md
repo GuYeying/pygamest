@@ -70,6 +70,19 @@ screen.set_camera(cam)
 
 - :rtype: tuple[int, int]
 
+#### <span class="c-func">screen.raw_render(depth=False) -> RawPass</span>
+
+底层直绘会话（**目标级扁平形态**，2026-11-12 从会话摘除；离屏
+Surface 版 = `surface.raw_render()`）——`with screen.raw_render() as
+p:` 记录自定义管线命令，present 收口回放（**恒在本帧 gfxdraw 内容
+之上**；交叉顺序定约见 [pygame.render](render.md)）。帧纪律 = flip
+前任意时点。
+
+#### <span class="c-func">screen.raw_compute() -> RawCompute</span>
+
+计算会话（compute pipeline 直绘；目标级同上）——present 收口回放，
+独立 compute pass。
+
 #### <span class="c-func">flip()</span>
 
 帧收尾——把本帧绘制结果呈现到屏幕（主循环每帧末尾调用）。

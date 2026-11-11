@@ -350,6 +350,41 @@ pub mod pygame {
             Ok(PyScreenSession.into_ref(&vm.ctx))
         }
 
+        /// raw_render(depth=False) -> RawPass：底层直绘会话（批次 D，
+        /// 2026-11-12 目标级扁平化——从会话摘除）——`with
+        /// screen.raw_render() as p:` 记录命令，__exit__ 排程到
+        /// present 收口回放（恒在游戏内容之上）。depth 为 kwargs 可选。
+        /// 帧纪律 = flip 前任意时点（present 统一消费，登记序）；
+        /// 主 2D 词汇仍走会话（gfxdraw/font + fill/quad/blit）。
+        #[pymethod]
+        fn raw_render(
+            &self,
+            args: FuncArgs,
+            vm: &VirtualMachine,
+        ) -> PyResult<PyRef<crate::rpy::pygame::render::render::PyRawPass>> {
+            let depth = args
+                .kwargs
+                .get("depth")
+                .and_then(|o| {
+                    use rustpython_vm::convert::TryFromBorrowedObject;
+                    bool::try_from_borrowed_object(vm, o).ok()
+                })
+                .unwrap_or(false);
+            crate::rpy::pygame::render::render::raw_pass(depth, None, vm)
+        }
+
+        /// raw_compute() -> RawCompute：计算会话（compute pipeline 直绘）
+        /// ——`with screen.raw_compute() as p:` 记录
+        /// set_pipeline/set_bind_group/dispatch，present 收口回放
+        /// （独立 compute pass；2026-11-12 目标级扁平化同 raw_render）。
+        #[pymethod]
+        fn raw_compute(
+            &self,
+            vm: &VirtualMachine,
+        ) -> PyResult<PyRef<crate::rpy::pygame::render::render::PyRawCompute>> {
+            crate::rpy::pygame::render::render::raw_compute_session(vm)
+        }
+
         /// set_camera(cam)：显式设置渲染相机（阶段一 1.2 定约——
         /// 必须显式传入，不再有兜底）。
         #[pymethod]
@@ -454,39 +489,6 @@ pub mod pygame {
             // Screen 例外：全局屏填充不经会话（get_screen 进程唯一）
             starfish_pygame::display::get_screen().fill(args.color.0);
             Ok(())
-        }
-
-
-
-        /// raw_render(depth=False) -> RawPass：底层直绘会话（批次 D）
-        /// ——`with t.raw_render() as p:` 记录命令，__exit__ 排程到
-        /// present 收口回放（恒在游戏内容之上）。depth 为 kwargs 可选。
-        #[pymethod]
-        fn raw_render(
-            &self,
-            args: FuncArgs,
-            vm: &VirtualMachine,
-        ) -> PyResult<PyRef<crate::rpy::pygame::render::render::PyRawPass>> {
-            let depth = args
-                .kwargs
-                .get("depth")
-                .and_then(|o| {
-                    use rustpython_vm::convert::TryFromBorrowedObject;
-                    bool::try_from_borrowed_object(vm, o).ok()
-                })
-                .unwrap_or(false);
-            crate::rpy::pygame::render::render::raw_pass(depth, None, vm)
-        }
-
-        /// raw_compute() -> RawCompute：计算会话（compute pipeline 直绘）
-        /// ——`with t.raw_compute() as p:` 记录 set_pipeline/set_bind_group
-        /// /dispatch，present 收口回放（独立 compute pass）
-        #[pymethod]
-        fn raw_compute(
-            &self,
-            vm: &VirtualMachine,
-        ) -> PyResult<PyRef<crate::rpy::pygame::render::render::PyRawCompute>> {
-            crate::rpy::pygame::render::render::raw_compute_session(vm)
         }
 
         /// blit_area(src, dest, area, color=None)：UV 子区域贴图
