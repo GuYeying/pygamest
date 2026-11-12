@@ -22,17 +22,29 @@
 | TEXTINPUT | "textinput" | text |
 | TRAYMENU | "traymenu" | id |
 
-`[差异]` `mousewheel` / `resized` / `touch` / `focusgained` / `focuslost` /
-`suspend` / `resume` / `user` / `other` 标签事件存在但常量未暴露——比对时
-直接写字符串即可。
-
 ```{note}
 TRAYMENU / TRAYCLICK / TRAYDOUBLECLICK 为**托盘事件词汇**（桌宠形态配套，
 feature `tray` 门控——未启用构建无这些常量与事件）：托盘菜单项点击 =
-`"traymenu"`（`e.id` = 菜单项 id）；托盘图标单击 = `"trayclick"`
-（`e.button` = 1/2/3，`e.x`/`e.y` = 屏幕物理坐标）；图标双击 =
+`"traymenu"`（`e.id` = 菜单项 id）；托盘图标单击 =
+`"trayclick"`（`e.button` = 1/2/3，`e.x`/`e.y` = 屏幕物理坐标）；图标双击 =
 `"traydoubleclick"`（Windows 专属形态）。托盘见
 [pygame.display](display.md) 桌宠能力位。
+```
+
+| 常量 | 值 | 携带字段 |
+|---|---|---|
+| MOUSEWHEEL | "mousewheel" | x y |
+| RESIZED | "resized" | w h |
+| FOCUSGAINED / FOCUSLOST | "focusgained" / "focuslost" | — |
+| FULLSCREENENTERED / FULLSCREENEXITED | "fullscreenentered" / "fullscreenexited" | — |
+
+**[全屏事件]**（2026-11-12 web 全屏实装配套）——**Web 端**浏览器
+fullscreenchange：进入 / 退出全屏（含**用户 ESC 手动退出**——脚本据此
+同步自身状态）。桌面端 v1 不产生（引擎发起的转换脚本自知）。
+
+```python
+if e.type == pygame.event.FULLSCREENEXITED:
+    ...  # 用户按 ESC 退出了浏览器全屏
 ```
 
 ## <span class="c-func">函数</span>
