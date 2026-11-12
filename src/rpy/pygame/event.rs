@@ -45,6 +45,12 @@ use crate::rpy::{bridge, args};
         /// 窗口尺寸变化（e.w / e.h = 新逻辑尺寸）
         #[pyattr]
         pub(crate) const RESIZED: &str = "resized";
+        /// 进入全屏（fullscreenchange —— web 手动退出捕获配套）
+        #[pyattr]
+        pub(crate) const FULLSCREENENTERED: &str = "fullscreenentered";
+        /// 退出全屏（用户 ESC 手动退出 / exitFullscreen）
+        #[pyattr]
+        pub(crate) const FULLSCREENEXITED: &str = "fullscreenexited";
         /// 窗口焦点获得 / 失去
         #[pyattr]
         pub(crate) const FOCUSGAINED: &str = "focusgained";
@@ -235,6 +241,16 @@ use crate::rpy::{bridge, args};
                         ev, typ: tag("resized"), key: int_obj(0), x: 0, y: 0, button: 0,
                         modifiers: 0, repeat: false, text: empty(), id: empty(),
                         w: width as i32, h: height as i32,
+                    },
+                    EngineEvent::FullscreenChanged { fullscreen } => Self {
+                        ev, typ: if fullscreen {
+                            tag("fullscreenentered")
+                        } else {
+                            tag("fullscreenexited")
+                        },
+                        key: int_obj(0), x: 0, y: 0, button: 0,
+                        modifiers: 0, repeat: false, text: empty(), id: empty(),
+                        w: 0, h: 0,
                     },
                     EngineEvent::FocusGained => Self {
                         ev, typ: tag("focusgained"), key: int_obj(0), x: 0, y: 0, button: 0,
