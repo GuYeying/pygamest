@@ -116,6 +116,21 @@ use std::cell::Cell;
             Ok(())
         }
 
+        /// set_orientation(orientation)：请求屏幕方向（2026-11-12 竖屏
+        /// 应用支持）。orientation = "portrait" / "landscape" /
+        /// "sensor_portrait" / "sensor_landscape" / "sensor" /
+        /// "full_sensor" / "unspecified"。Android 实装（Activity 级旋转
+        /// ——运行时覆盖 manifest，宿主 configChanges 含 orientation 时
+        /// 只重表面）；桌面/web = no-op；OHOS = 站桩 Err。
+        #[pyfunction]
+        fn set_orientation(orientation: PyStrRef, vm: &VirtualMachine) -> PyResult<()> {
+            let o = orientation
+                .to_str()
+                .ok_or_else(|| vm.new_value_error("方向名含非 UTF-8 字符"))?;
+            starfish_pygame::display::set_orientation(o)
+                .map_err(|e| vm.new_runtime_error(e))
+        }
+
         /// set_click_through(enable)：鼠标事件穿透开关（点击落到下层
         /// 窗口——桌宠形态配套；穿透设计稿 M1。⚠️ 穿透后窗口收不到
         /// 任何鼠标事件——恢复须脚本逻辑/外部通道，防自锁）。

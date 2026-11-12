@@ -108,6 +108,24 @@ display 初始化态（`set_mode` 是否已调用）。
 关闭显示（窗口/屏句柄回收——pygame 标准对；`get_init` 归 False，
 可再 `set_mode` 重开）。
 
+#### <span class="c-func">set_orientation(orientation)</span>
+
+请求屏幕方向（2026-11-12 竖屏应用支持）。`orientation` =
+`"portrait"` / `"landscape"` / `"sensor_portrait"` /
+`"sensor_landscape"` / `"sensor"` / `"full_sensor"` / `"unspecified"`
+（Android ActivityInfo 常量同语义）。
+
+- **Android 实装**：Activity 级 `setRequestedOrientation`——运行时
+  即时覆盖 manifest 的 screenOrientation 初始请求（宿主
+  configChanges 含 orientation 时只重表面、不重建 Activity，引擎
+  surfaceResized 自动跟随）
+- **桌面 / Web**：no-op 成功（方向是移动端概念——跨端脚本零分支）
+- **OHOS**：站桩 Err（XComponent 后端建成后接入）
+
+```python
+pygame.display.set_orientation("sensor_portrait")   # 竖屏应用
+```
+
 #### <span class="c-func">map_point(x, y) -> (lx, ly)</span>
 
 物理点 → **逻辑中心系**点（呈现映射逆变换——letterbox 等比缩放 +
