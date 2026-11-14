@@ -150,6 +150,19 @@ pub(crate) fn init(vm: &VirtualMachine) -> PyResult<()> {
     } else {
         cjk = egui_starfish_we::load_system_cjk_fonts(&ctx);
     }
+    // egui 逻辑面恒 = set_mode 逻辑尺寸定约（2026-11-14 全平台"进入时
+    // 缩放调整→UI 变大"修复）：init 时显式 set_pixels_per_point(物理宽/
+    // 逻辑宽)。桌面 = 系统缩放同值零变；web/手机 = 掐掉 egui 每帧自动
+    // 应用 native（=devicePixelRatio）的缩放跳变——首帧即恒定不漂
+    {
+        let (lw, _) = starfish_pygame::display::get_screen().logical_size();
+        let phys = starfish_pygame::display::with_window(|w| w.size());
+        if let (true, Some((pw, _))) = (lw > 0, phys) {
+            if pw > 0 {
+                ctx.set_pixels_per_point(pw as f32 / lw as f32);
+            }
+        }
+    }
     let state = starfish_pygame::display::with_window(|w| {
         egui_starfish_we::State::new_we(ctx.clone(), egui::ViewportId::ROOT, None, w)
     })
