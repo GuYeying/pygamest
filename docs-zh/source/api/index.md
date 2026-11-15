@@ -29,4 +29,5 @@ pygame_physics <pygame_physics>
 pygame_spine <pygame_spine>
 pygame_ozz <pygame_ozz>
 pygame_live2d <pygame_live2d>
+pygame_voxelis <pygame_voxelis>
 ```

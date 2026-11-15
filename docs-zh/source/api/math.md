@@ -54,6 +54,12 @@
 
 4x4 单位矩阵。
 
+#### <span class="c-func">mat4_from_cols_array(cols) -> Mat4</span>
+
+16 元素列表 → 4x4 矩阵（**列主序**——to_cols_array 的逆；行主手算
+先自行转置展开）。相机 view 等手搓矩阵的入口（len ≠ 16 抛
+ValueError）。
+
 #### <span class="c-func">mat4_from_quat(q) -> Mat4</span>
 
 四元数 → 旋转矩阵。

@@ -929,6 +929,29 @@ use std::cell::Cell;
             PyMat4(Cell::new(starfish_pygame::math::Mat4::IDENTITY)).into_ref(&vm.ctx)
         }
 
+        /// 16 元素列表 → 4x4 矩阵（**列主序**——to_cols_array 的逆，
+        /// 相机 view 等手搓矩阵的面；行主手算先自行转置展开）。
+        #[pyfunction]
+        fn mat4_from_cols_array(
+            cols: Vec<ArgIntoFloat>,
+            vm: &VirtualMachine,
+        ) -> PyResult<PyRef<PyMat4>> {
+            if cols.len() != 16 {
+                return Err(vm.new_value_error(format!(
+                    "须 16 元素（列主序 4x4），得 {}",
+                    cols.len()
+                )));
+            }
+            let mut a = [0.0f32; 16];
+            for (i, v) in cols.into_iter().enumerate() {
+                a[i] = v.into_float() as f32;
+            }
+            Ok(PyMat4(Cell::new(
+                starfish_pygame::math::Mat4::from_cols_array(&a),
+            ))
+            .into_ref(&vm.ctx))
+        }
+
         /// 四元数 → 旋转矩阵。
         #[pyfunction]
         fn mat4_from_quat(q: PyRef<PyQuaternion>, vm: &VirtualMachine) -> PyRef<PyMat4> {

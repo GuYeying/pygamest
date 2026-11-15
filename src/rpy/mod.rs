@@ -36,6 +36,9 @@ pub mod pygame_live2d;
 // pygame_ozz = 3D 骨骼动画（ozz-animation-rs 适配；nightly 专属——阶段 4）
 #[cfg(feature = "ozz")]
 pub mod pygame_ozz;
+// pygame_voxelis = 稀疏体素八叉树（voxelis 25.4.0 适配——MC 类玩法供数）
+#[cfg(feature = "voxelis")]
+pub mod pygame_voxelis;
 pub mod registry;
 pub mod args;
 pub mod bridge;
