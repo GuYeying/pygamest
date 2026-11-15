@@ -906,6 +906,15 @@ impl PyUi {
     #[pymethod]
     fn text_edit(&self, text: PyStrRef, vm: &VirtualMachine) -> PyResult<String> {
         let t = as_str(&text, vm)?.to_owned();
+        // Web 禁用编辑（2026-11-14 用户定约：移动端 egui 文本编辑暂缓
+        // 不维护——egui 0.37 触屏文本编辑链深水区：首击聚焦/聚焦缩放/
+        // 触屏选区对齐/键盘回弹，两天修复四层仍残留）。web 上 text_edit
+        // 只读展示（返回原文本不进编辑），桌面/Android 原生不受影响。
+        // pygame 自绘输入链（text-agent）已随回退移除，egui 修复后删此
+        // cfg 即 reopen
+        #[cfg(target_arch = "wasm32")]
+        return Ok(t);
+        #[cfg(not(target_arch = "wasm32"))]
         with_ui(vm, |ui| {
             let mut s = t.clone();
             ui.text_edit_singleline(&mut s);
@@ -1191,6 +1200,11 @@ impl PyUi {
     #[pymethod]
     fn text_edit_multiline(&self, text: PyStrRef, vm: &VirtualMachine) -> PyResult<String> {
         let t = as_str(&text, vm)?.to_owned();
+        // Web 禁用编辑（同 text_edit——2026-11-14 用户定约：移动端 egui
+        // 文本编辑暂缓不维护）。web 上只读展示
+        #[cfg(target_arch = "wasm32")]
+        return Ok(t);
+        #[cfg(not(target_arch = "wasm32"))]
         with_ui(vm, |ui| {
             let mut s = t.clone();
             ui.add(egui::TextEdit::multiline(&mut s));
