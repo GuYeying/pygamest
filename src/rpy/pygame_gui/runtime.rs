@@ -163,10 +163,16 @@ pub(crate) fn init(vm: &VirtualMachine) -> PyResult<()> {
             }
         }
     }
-    let state = starfish_pygame::display::with_window(|w| {
+    let mut state = starfish_pygame::display::with_window(|w| {
         egui_starfish_we::State::new_we(ctx.clone(), egui::ViewportId::ROOT, None, w)
     })
     .ok_or_else(|| vm.new_runtime_error("窗口未就绪（display 未初始化）"))?;
+    // egui 逻辑面尺寸注入（screen_rect 直用逻辑——竖屏 letterbox 下
+    // ppp 单值无法表达 x/y 双向；黑边区点击不误触。draw_ui 侧每帧刷新）
+    state.set_logical_size(
+        starfish_pygame::display::get_screen().logical_size().0 as f32,
+        starfish_pygame::display::get_screen().logical_size().1 as f32,
+    );
     let gpu = starfish_pygame::render::gpu_info()
         .ok_or_else(|| vm.new_runtime_error("GPU 未就绪（set_mode 之后才可 init）"))?;
     let screen = starfish_pygame::display::get_screen();
@@ -450,6 +456,10 @@ pub(crate) fn draw_ui(vm: &VirtualMachine, panel: PyObjectRef) -> PyResult<()> {
         egui::Pos2::ZERO,
         egui::vec2(w as f32, h as f32),
     ));
+    // 逻辑面尺寸刷新（旋转/resize 跟随——每帧同步 State 的 logical_size）
+    if let Some(rc2) = EGUI.with(|c| c.borrow().as_ref().cloned()) {
+        rc2.borrow_mut().state.set_logical_size(w as f32, h as f32);
+    }
     let key: RendererKey = (screen.color_format(), screen.sample_count());
     let compose_mvp = screen.present_mvp().to_cols_array_2d();
     draw_ui_generic(vm, rc, panel, raw, key, compose_mvp, |boxed| {

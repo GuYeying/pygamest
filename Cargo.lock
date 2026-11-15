@@ -1324,8 +1324,8 @@ dependencies = [
 
 [[package]]
 name = "egui-starfish-we"
-version = "0.1.2"
-source = "git+https://github.com/GuYeying/egui-starfish-we#875dc3e00ab47651387a5da308e959d88ef33295"
+version = "0.1.3"
+source = "git+https://github.com/GuYeying/egui-starfish-we#1c412d7ea779aa7f76c6dda20f535991bbf14b7d"
 dependencies = [
  "arboard",
  "block2",
