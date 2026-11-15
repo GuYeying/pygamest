@@ -39,6 +39,9 @@ pub mod pygame_ozz;
 // pygame_voxelis = 稀疏体素八叉树（voxelis 25.4.0 适配——MC 类玩法供数）
 #[cfg(feature = "voxelis")]
 pub mod pygame_voxelis;
+// pygame_tilemap = Tiled 编辑器地图（tiled 0.16 适配——分层渲染供数）
+#[cfg(feature = "tilemap")]
+pub mod pygame_tilemap;
 pub mod registry;
 pub mod args;
 pub mod bridge;

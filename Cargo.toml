@@ -45,6 +45,10 @@ ozz = ["dep:pygame_ozz"]
 # 玩法配套：体素编辑 + 渲染数组出口；物理/渲染照旧走 physics3d +
 # mesh_builder，本模块只供数）
 voxelis = ["dep:voxelis", "dep:glam_v29", "dep:parking_lot_v12"]
+# tilemap = Tiled 编辑器地图解析（tiled 0.16——TMX/TSX 格式标准；
+# 层/图集/瓦片数据出口 + per-layer quad/UV 渲染数组，着色器分层
+# 渲染配套：每层一 mesh 一 pipeline 按层序 draw）
+tilemap = ["dep:tiled"]
 
 [dependencies]
 starfish-std        = { git = "https://github.com/GuYeying/starfish", features = ["we"] }
@@ -77,6 +81,9 @@ pygame_ozz = { path = "../pygame_ozz", optional = true }
 voxelis = { version = "25.4.0", optional = true }
 glam_v29 = { package = "glam", version = "0.29.3", optional = true }
 parking_lot_v12 = { package = "parking_lot", version = "0.12.3", optional = true }
+# tiled（registry crate 0.16.0——Tiled 编辑器 TMX 解析标准；
+# ResourceReader trait 闭包 blanket impl 接 sfx::read_block 密文链）
+tiled = { version = "0.16.0", optional = true }
 # egui 适配层（vendored fork；feature "render" 拉 egui-wgpu + starfish-render
 # 桥 SfEguiRenderer；egui 经它重导出，本 crate 不直依赖 egui）
 egui-starfish-we = { git = "https://github.com/GuYeying/egui-starfish-we", features = ["render"], optional = true }

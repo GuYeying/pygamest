@@ -36,6 +36,9 @@ use crate::rpy::pygame_ozz;
 #[cfg(feature = "voxelis")]
 use crate::rpy::pygame_voxelis;
 
+#[cfg(feature = "tilemap")]
+use crate::rpy::pygame_tilemap;
+
 /// 多阶段 init 后注入 sys.modules（宿主壳统一入口）。
 pub fn install(vm: &VirtualMachine) {
     // 颜色表装载（`Color("name")` 命名构造依赖；双 init 错误静默——
@@ -138,6 +141,15 @@ fn try_install(vm: &VirtualMachine) -> Result<(), String> {
         &sys_modules,
         pygame_voxelis::module_def(&vm.ctx),
         "pygame_voxelis",
+    )?;
+    // pygame_tilemap = Tiled 编辑器地图（tiled 0.16 适配——TMX 解析 +
+    // per-layer 渲染数组，着色器分层渲染配套）
+    #[cfg(feature = "tilemap")]
+    mount_top(
+        vm,
+        &sys_modules,
+        pygame_tilemap::module_def(&vm.ctx),
+        "pygame_tilemap",
     )?;
     Ok(())
 }
