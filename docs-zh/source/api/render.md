@@ -398,3 +398,41 @@ storage → mesh **索引缓冲**直搬（动态索引通路——粒子重生�
 ##### <span class="c-func">copy_buffer_to_texture(src, tex, bytes_per_row, w, h)</span>
 
 storage → 采样纹理（**bytes_per_row 须 256 对齐**）。
+
+### <span class="c-class">GpuSettings —— GPU 装配配置</span>
+
+`pygame.display.set_mode` 的 `gpu_settings=` kwargs 承载（**从平台
+默认起手**应用字段——Android 默认 GL 等特判保留；**仅首次 GPU 装配
+消费**——宿主先行装配形态走 display.md 的 env 通道）。
+
+```python
+gpu = pygame.render.GpuSettings(memory_hints="memory_usage",
+                                power_preference="low_power")
+screen = pygame.display.set_mode((800, 600), gpu_settings=gpu)
+```
+
+- `backends`：`"all"` / `"vulkan"` / `"dx12"` / `"metal"` / `"gl"`
+  （逗号组合）——默认平台最优（Android = GL）
+- `power_preference`：`"high_performance"`（默认）/ `"low_power"` /
+  `"none"`
+- `memory_hints`：`"performance"`（默认——分配器保池）/ `"memory_usage"`
+  （省内存——频繁回收，**空项目 WS 实测 -47%**）
+- `dx12_swapchain_kind`：`"hwnd"`（默认）/ `"visual"`（逐像素透明
+  专属）
+
+### <span class="c-class">SurfaceSettings —— 表面/交换链配置</span>
+
+`set_mode` 的 `surface_settings=` kwargs 承载（仅首次装配消费）。
+
+- `present_mode`：`"fifo"`（默认，三端通吃）/ `"fifo_relaxed"` /
+  `"mail_box"` / `"immediate"` / `"auto_no_vsync"`
+- `desired_maximum_frame_latency`：交换链帧数（默认 2；`1..=8`——
+  1 更省内存）
+- `sample_count`：MSAA（默认 1 = 关；渲染进表面的管线须同
+  sample_count 建）
+- `alpha_mode`：`"pre_multiplied"` / `"post_multiplied"` / `"opaque"`
+  / `"auto"`（默认 None = 引擎定——透明窗口走 TRANSPARENT 旗标自动
+  PreMultiplied，勿手动覆盖）
+- `color_format` / `depth_format`：`"rgba8unorm"` / `"bgra8unorm"` /
+  `"rgba8unorm_srgb"` / `"bgra8unorm_srgb"` / `"depth24plus"` /
+  `"depth32float"` / `"depth24plus_stencil8"`（None = 引擎定）

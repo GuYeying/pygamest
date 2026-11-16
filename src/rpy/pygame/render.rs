@@ -28,7 +28,10 @@ use rustpython_derive::pymodule;
 pub(crate) mod render {
     use rustpython_derive::{pyclass, FromArgs};
     use rustpython_vm::convert::TryFromObject;
-    use rustpython_vm::{PyPayload, PyObjectRef, PyRef, PyResult, VirtualMachine};
+    use rustpython_vm::{
+        Py, PyPayload, PyObjectRef, PyRef, PyResult, VirtualMachine,
+        types::Constructor, builtins::PyType,
+    };
 
     use crate::rpy::pygame::math::math::PyMat4;
     use crate::rpy::pygame::pygame::PySurface;
@@ -212,6 +215,254 @@ pub(crate) mod render {
             far,
         ))
         .into_ref(&vm.ctx)
+    }
+
+    // ── GPU/表面配置（set_mode kwargs 承载——2026-11-16）──────────
+
+    /// GpuSettings —— GPU 装配配置（pygame.display.set_mode 的
+    /// `gpu_settings=` kwargs 承载；**从平台默认起手**应用字段——
+    /// Android 默认 GL 等平台特判保留）。仅首次 GPU 装配消费（交换链
+    /// 重开不吃新配置）。
+    #[derive(PyPayload)]
+    #[pyattr]
+    #[pyclass(module = "pygame.render", name = "GpuSettings", unhashable = true)]
+    pub(crate) struct PyGpuSettings {
+        pub(crate) inner: starfish_render::settings::GpuSettings,
+    }
+
+    impl std::fmt::Debug for PyGpuSettings {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("GpuSettings(<gpu 装配配置>)")
+        }
+    }
+
+    /// GpuSettings 收参（全可选 kwargs——未传项保持平台默认）
+    #[derive(FromArgs)]
+    pub(crate) struct GpuSettingsArgs {
+        /// 后端族："all" / "vulkan" / "dx12" / "metal" / "gl"（逗号
+        /// 组合 "vulkan,gl"）
+        #[pyarg(named, optional)]
+        backends: Option<String>,
+        /// 适配器偏好："high_performance"（默认）/ "low_energy"
+        #[pyarg(named, optional)]
+        power_preference: Option<String>,
+        /// 内存策略："performance"（默认——分配器保池）/ "memory_usage"
+        ///（省内存——频繁回收，空项目运存优化主口）
+        #[pyarg(named, optional)]
+        memory_hints: Option<String>,
+        /// DX12 呈现系统："hwnd"（默认）/ "visual"（DirectComposition
+        /// 逐像素透明专属）
+        #[pyarg(named, optional)]
+        dx12_swapchain_kind: Option<String>,
+    }
+
+    #[pyclass(with(Constructor))]
+    impl PyGpuSettings {}
+
+    impl Constructor for PyGpuSettings {
+        type Args = GpuSettingsArgs;
+
+        fn py_new(
+            _cls: &Py<PyType>,
+            args: Self::Args,
+            vm: &VirtualMachine,
+        ) -> PyResult<Self> {
+            // 平台默认起手（Android 默认 GL 等特判保留）
+            let mut g = starfish_render::settings::GpuSettings::default();
+            if let Some(b) = &args.backends {
+                let mut set = wgpu::Backends::empty();
+                for part in b.split(|c| c == ',' || c == '+' || c == '|') {
+                    set |= match part.trim() {
+                        "all" => wgpu::Backends::all(),
+                        "vulkan" => wgpu::Backends::VULKAN,
+                        "dx12" => wgpu::Backends::DX12,
+                        "metal" => wgpu::Backends::METAL,
+                        "gl" | "gles" | "opengl" => wgpu::Backends::GL,
+                        "" => wgpu::Backends::empty(),
+                        other => {
+                            return Err(vm.new_value_error(format!(
+                                "backends 未识别：{other:?}（all/vulkan/dx12/metal/gl——逗号组合）"
+                            )));
+                        }
+                    };
+                }
+                if !set.is_empty() {
+                    g.backends = set;
+                }
+            }
+            if let Some(p) = &args.power_preference {
+                g.power_preference = match p.as_str() {
+                    "high_performance" => wgpu::PowerPreference::HighPerformance,
+                    "low_power" | "low_energy" => wgpu::PowerPreference::LowPower,
+                    "none" => wgpu::PowerPreference::None,
+                    other => {
+                        return Err(vm.new_value_error(format!(
+                            "power_preference 未识别：{other:?}（high_performance/low_power/none）"
+                        )));
+                    }
+                };
+            }
+            if let Some(m) = &args.memory_hints {
+                g.memory_hints = match m.as_str() {
+                    "performance" => wgpu::MemoryHints::Performance,
+                    "memory_usage" => wgpu::MemoryHints::MemoryUsage,
+                    other => {
+                        return Err(vm.new_value_error(format!(
+                            "memory_hints 未识别：{other:?}（performance/memory_usage）"
+                        )));
+                    }
+                };
+            }
+            if let Some(k) = &args.dx12_swapchain_kind {
+                g.dx12_swapchain_kind = match k.as_str() {
+                    "hwnd" => wgpu::Dx12SwapchainKind::DxgiFromHwnd,
+                    "visual" => wgpu::Dx12SwapchainKind::DxgiFromVisual,
+                    other => {
+                        return Err(vm.new_value_error(format!(
+                            "dx12_swapchain_kind 未识别：{other:?}（hwnd/visual）"
+                        )));
+                    }
+                };
+            }
+            Ok(PyGpuSettings { inner: g })
+        }
+    }
+
+    /// SurfaceSettings —— 表面/交换链配置（set_mode 的
+    /// `surface_settings=` kwargs 承载）。仅首次 GPU 装配消费。
+    #[derive(PyPayload)]
+    #[pyattr]
+    #[pyclass(module = "pygame.render", name = "SurfaceSettings", unhashable = true)]
+    pub(crate) struct PySurfaceSettings {
+        pub(crate) inner: starfish_render::settings::SurfaceSettings,
+    }
+
+    impl std::fmt::Debug for PySurfaceSettings {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("SurfaceSettings(<表面/交换链配置>)")
+        }
+    }
+
+    /// SurfaceSettings 收参（全可选 kwargs——未传项保持默认）
+    #[derive(FromArgs)]
+    pub(crate) struct SurfaceSettingsArgs {
+        /// 呈现模式："fifo"（默认，三端通吃）/ "fifo_relaxed" /
+        /// "mail_box" / "immediate"（后两者桌面低延迟，移动端/Web 回退）
+        #[pyarg(named, optional)]
+        present_mode: Option<String>,
+        /// 交换链帧数（默认 2——每帧画布 MB 级内存；1 = 更省内存 +
+        /// 更高撕裂概率）
+        #[pyarg(named, optional)]
+        desired_maximum_frame_latency: Option<u32>,
+        /// MSAA 采样数（1 = 关闭；4 = 常用——渲染进表面的管线须同
+        /// sample_count 建）
+        #[pyarg(named, optional)]
+        sample_count: Option<u32>,
+        /// 透明合成："pre_multiplied" / "post_multiplied" / "opaque" /
+        /// "auto"（默认 None = 引擎定——透明窗口走 TRANSPARENT 旗标
+        /// 自动 PreMultiplied，勿手动覆盖）
+        #[pyarg(named, optional)]
+        alpha_mode: Option<String>,
+        /// 交换链颜色格式（None = 引擎定；"rgba8unorm" / "bgra8unorm"
+        /// / "rgba8unorm_srgb" / "bgra8unorm_srgb"）
+        #[pyarg(named, optional)]
+        color_format: Option<String>,
+        /// 深度格式（None = 引擎定；"depth24plus" / "depth32float" /
+        /// "depth24plus_stencil8"）
+        #[pyarg(named, optional)]
+        depth_format: Option<String>,
+    }
+
+    #[pyclass(with(Constructor))]
+    impl PySurfaceSettings {}
+
+    impl Constructor for PySurfaceSettings {
+        type Args = SurfaceSettingsArgs;
+
+        fn py_new(
+            _cls: &Py<PyType>,
+            args: Self::Args,
+            vm: &VirtualMachine,
+        ) -> PyResult<Self> {
+            let mut s = starfish_render::settings::SurfaceSettings::default();
+            if let Some(p) = &args.present_mode {
+                s.present_mode = match p.as_str() {
+                    "fifo" => wgpu::PresentMode::Fifo,
+                    "fifo_relaxed" => wgpu::PresentMode::FifoRelaxed,
+                    "mail_box" => wgpu::PresentMode::Mailbox,
+                    "immediate" => wgpu::PresentMode::Immediate,
+                    "auto_no_vsync" => wgpu::PresentMode::AutoNoVsync,
+                    other => {
+                        return Err(vm.new_value_error(format!(
+                            "present_mode 未识别：{other:?}（fifo/fifo_relaxed/mail_box/immediate/auto_no_vsync）"
+                        )));
+                    }
+                };
+            }
+            if let Some(n) = args.desired_maximum_frame_latency {
+                if n == 0 || n > 8 {
+                    return Err(vm.new_value_error(format!(
+                        "desired_maximum_frame_latency 须 1..=8，得 {n}"
+                    )));
+                }
+                s.desired_maximum_frame_latency = n;
+            }
+            if let Some(n) = args.sample_count {
+                if ![1, 2, 4, 8].contains(&n) {
+                    return Err(vm.new_value_error(format!(
+                        "sample_count 须 1/2/4/8，得 {n}"
+                    )));
+                }
+                s.sample_count = n;
+            }
+            let parse_format = |name: &str| -> Option<wgpu::TextureFormat> {
+                match name {
+                    "rgba8unorm" => Some(wgpu::TextureFormat::Rgba8Unorm),
+                    "bgra8unorm" => Some(wgpu::TextureFormat::Bgra8Unorm),
+                    "rgba8unorm_srgb" => Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+                    "bgra8unorm_srgb" => Some(wgpu::TextureFormat::Bgra8UnormSrgb),
+                    _ => None,
+                }
+            };
+            let parse_depth = |name: &str| -> Option<wgpu::TextureFormat> {
+                match name {
+                    "depth24plus" => Some(wgpu::TextureFormat::Depth24Plus),
+                    "depth32float" => Some(wgpu::TextureFormat::Depth32Float),
+                    "depth24plus_stencil8" => {
+                        Some(wgpu::TextureFormat::Depth24PlusStencil8)
+                    }
+                    _ => None,
+                }
+            };
+            if let Some(a) = &args.alpha_mode {
+                s.alpha_mode = Some(match a.as_str() {
+                    "pre_multiplied" => wgpu::CompositeAlphaMode::PreMultiplied,
+                    "post_multiplied" => wgpu::CompositeAlphaMode::PostMultiplied,
+                    "opaque" => wgpu::CompositeAlphaMode::Opaque,
+                    "auto" => wgpu::CompositeAlphaMode::Auto,
+                    other => {
+                        return Err(vm.new_value_error(format!(
+                            "alpha_mode 未识别：{other:?}（pre_multiplied/post_multiplied/opaque/auto）"
+                        )));
+                    }
+                });
+            }
+            if let Some(f) = &args.color_format {
+                s.color_format = Some(parse_format(f).ok_or_else(|| {
+                    vm.new_value_error(format!(
+                        "color_format 未识别：{f:?}（rgba8unorm/bgra8unorm/rgba8unorm_srgb/bgra8unorm_srgb）"
+                    ))
+                })?);
+            }
+            if let Some(f) = &args.depth_format {
+                s.depth_format = Some(parse_depth(f).ok_or_else(|| {
+                    vm.new_value_error(format!(
+                        "depth_format 未识别：{f:?}（depth24plus/depth32float/depth24plus_stencil8）"
+                    ))
+                })?);
+            }
+            Ok(PySurfaceSettings { inner: s })
+        }
     }
 
     // ── 相机构造（模块函数）─────────────────────────────────────

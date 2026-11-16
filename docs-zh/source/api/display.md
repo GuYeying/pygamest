@@ -21,7 +21,7 @@
 
 ## <span class="c-func">函数</span>
 
-#### <span class="c-func">set_mode(size, flags=0) -> Screen</span>
+#### <span class="c-func">set_mode(size, flags=0, surface_settings=None, gpu_settings=None) -> Screen</span>
 
 开窗并返回 Screen 绘制目标。
 
@@ -29,14 +29,35 @@
 screen = pygame.display.set_mode((800, 600))
 screen = pygame.display.set_mode(
     (0, 0), [pygame.display.FULLSCREEN, pygame.display.RESIZABLE])
+# 省内存形态（运存优化——2026-11-16 批次）
+gpu = pygame.render.GpuSettings(memory_hints="memory_usage",
+                                power_preference="low_power")
+surf = pygame.render.SurfaceSettings(desired_maximum_frame_latency=1)
+screen = pygame.display.set_mode((800, 600), gpu_settings=gpu,
+                                 surface_settings=surf)
 ```
 
 - :param size: 逻辑尺寸
 - :type size: tuple[int, int]
 - :param flags: 旗标位集
 - :type flags: int | list[int]
+- :param surface_settings: 表面/交换链配置（[pygame.render.SurfaceSettings](render.md#surfacesettings-表面交换链配置)——**仅首次 GPU 装配消费**）
+- :param gpu_settings: GPU 装配配置（[pygame.render.GpuSettings](render.md#gpusettings-gpu-装配配置)——同上）
 - :returns: Screen 绘制目标
 - :rtype: Screen
+
+```{note}
+**宿主先行装配时序**：dev/runtime 壳在脚本执行前已装配 GPU（脚本
+set_mode = 窗口请求重开）——脚本 kwargs 在该形态下**不消费**（暂存
+面就位，宿主装配挪脚本期后自动生效）。运存优化走 **env 通道**（装
+配前可读，宿主/脚本两形态通用）：
+
+| 环境变量 | 取值 | 语义 |
+|---|---|---|
+| `PYGST_MEMORY_HINTS` | `performance`（默认）/ `memory_usage` | wgpu 分配器策略——`memory_usage` 实测空项目 WS **511→269MB（-47%）** |
+| `PYGST_POWER_PREF` | `high_performance`（默认）/ `low_power` / `none` | 适配器偏好 |
+| `PYGST_FRAME_LATENCY` | `1..=8`（默认 2） | 交换链帧数——`1` 更省内存 + 更高撕裂概率 |
+```
 
 ## <span class="c-class">Screen —— 绘制终点</span>
 

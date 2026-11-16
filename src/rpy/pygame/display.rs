@@ -44,16 +44,23 @@ use std::cell::Cell;
         #[pyattr]
         pub(crate) const OPENGLES: u32 = starfish_pygame::display::OPENGLES;
 
-        /// set_mode(size, flags=0) → Screen 占位（真身由宿主壳先行装配，
+        /// set_mode(size, flags=0, surface_settings=None,
+        /// gpu_settings=None) → Screen 占位（真身由宿主壳先行装配，
         /// 此处记录需求；flags 批次 O 落地——位集/序列翻译到运行时窗口
         /// 旗标（apply_window_flags：RESIZABLE/FULLSCREEN/NOFRAME 即时
-        /// 生效，创建期旗标垫底收下）。
+        /// 生效，创建期旗标垫底收下）；settings = pygame.render 的
+        /// SurfaceSettings/GpuSettings 对象——**仅首次 GPU 装配消费**
+        /// （交换链重开不吃新配置），None = 平台默认。
         #[derive(FromArgs)]
         struct SetModeArgs {
             #[pyarg(any)]
             size: SfPoint,
             #[pyarg(any, optional)]
             flags: Option<PyObjectRef>,
+            #[pyarg(named, optional)]
+            surface_settings: Option<PyObjectRef>,
+            #[pyarg(named, optional)]
+            gpu_settings: Option<PyObjectRef>,
         }
 
         /// flags 实参 → 位集（int 位掩码或 [位, ...] 序列，pygame 两形态）
@@ -82,6 +89,35 @@ use std::cell::Cell;
                 "[pygame] display.set_mode {:?} 旗标 {bits:#b}（真身由宿主壳装配）",
                 (args.size.0, args.size.1)
             ));
+            // 脚本级 GPU/表面配置注入（kwargs → 暂存——下一次 GPU 装
+            // 配 take 消费；对象类型不符 = TypeError）
+            let surface = match args.surface_settings {
+                Some(o) => Some(
+                    o.downcast::<crate::rpy::pygame::render::render::PySurfaceSettings>()
+                        .map_err(|_| {
+                            vm.new_type_error(
+                                "surface_settings 须 pygame.render.SurfaceSettings 对象",
+                            )
+                        })?
+                        .inner
+                        .clone(),
+                ),
+                None => None,
+            };
+            let gpu = match args.gpu_settings {
+                Some(o) => Some(
+                    o.downcast::<crate::rpy::pygame::render::render::PyGpuSettings>()
+                        .map_err(|_| {
+                            vm.new_type_error(
+                                "gpu_settings 须 pygame.render.GpuSettings 对象",
+                            )
+                        })?
+                        .inner
+                        .clone(),
+                ),
+                None => None,
+            };
+            starfish_pygame::display::set_pending_settings(surface, gpu);
             starfish_pygame::display::apply_window_request(
                 (args.size.0.max(0) as u32, args.size.1.max(0) as u32),
                 bits,
