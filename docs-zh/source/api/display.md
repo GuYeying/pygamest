@@ -39,7 +39,9 @@ screen = pygame.display.set_mode((800, 600), gpu_settings=gpu,
 
 - :param size: 逻辑尺寸
 - :type size: tuple[int, int]
-- :param flags: 旗标位集
+- :param flags: 旗标位集（窗口语义位；渲染后端位已迁
+  [GpuSettings.backends](render.md#gpusettings-gpu-装配配置)——
+  VULKAN/DIRECTX/METAL/OPENGLES/OPENGL 常量保留为 deprecated no-op）
 - :type flags: int | list[int]
 - :param surface_settings: 表面/交换链配置（[pygame.render.SurfaceSettings](render.md#surfacesettings-表面交换链配置)——**仅首次 GPU 装配消费**）
 - :param gpu_settings: GPU 装配配置（[pygame.render.GpuSettings](render.md#gpusettings-gpu-装配配置)——同上）
@@ -47,17 +49,28 @@ screen = pygame.display.set_mode((800, 600), gpu_settings=gpu,
 - :rtype: Screen
 
 ```{note}
-**宿主先行装配时序**：dev/runtime 壳在脚本执行前已装配 GPU（脚本
-set_mode = 窗口请求重开）——脚本 kwargs 在该形态下**不消费**（暂存
-面就位，宿主装配挪脚本期后自动生效）。运存优化走 **env 通道**（装
-配前可读，宿主/脚本两形态通用）：
+**拆步装配定约（2026-11-16）**：桌面 = **脚本期装配**（本调用真装
+配 GPU——settings kwargs/env 双通道全生效）；**web = 宿主先行装配**
+（无阻塞模型——脚本调用为窗口请求，settings 走 env/pack 构建期面）；
+**android = 嵌入门面先行装配**（attach 后满屏表面 + 缩放铺满）。
+幂等语义：已装配后重复 `set_mode` = 窗口请求重开（不再重装配）。
+
+**API 顺序约束**：依赖 GPU 面的调用（`egui.init()` / `render()` /
+`render.access()` …）必须**在 set_mode 之后**——拆步后装配点由脚本
+控制，顺序错误即守卫报错（如 "egui.init() 须在 set_mode 之后调用"）。
+
+`pygame.display.MULTIWINDOW`：多窗口能力开关（编译期定值——
+starfish-we multi-window feature + 平台白名单；当前 `False`——
+feature 白名单仅 windows，第二批接入后按构建配置翻转）。
+```
+
+**env 三口**（装配前可读，宿主/脚本两形态通用——与 kwargs 等效）：
 
 | 环境变量 | 取值 | 语义 |
 |---|---|---|
 | `PYGST_MEMORY_HINTS` | `performance`（默认）/ `memory_usage` | wgpu 分配器策略——`memory_usage` 实测空项目 WS **511→269MB（-47%）** |
 | `PYGST_POWER_PREF` | `high_performance`（默认）/ `low_power` / `none` | 适配器偏好 |
 | `PYGST_FRAME_LATENCY` | `1..=8`（默认 2） | 交换链帧数——`1` 更省内存 + 更高撕裂概率 |
-```
 
 ## <span class="c-class">Screen —— 绘制终点</span>
 

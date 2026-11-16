@@ -616,17 +616,10 @@ fn format_traceback(
 ///   清屏——桌宠/悬浮件形态。透明时跳过铺底，脚本内勿填不透明底色）。
 pub async fn run(script: &str, tag: &str, transparent: bool) -> Result<(), Box<dyn std::error::Error>> {
     use starfish_pygame::display as dflags;
+    let _ = transparent; // 透明旗标随脚本 set_mode 真值来（拆步装配定约
+                         // ——本壳不再先行装配；wasm 形态走宿主先行）
     dlog(tag, "starting");
-    let flags = if transparent { dflags::TRANSPARENT } else { 0 };
-    match display::set_mode_ex((800, 600), flags).await {
-        Ok(_) => {
-            dlog(tag, "set_mode OK");
-        }
-        Err(e) => {
-            dlog(tag, &format!("set_mode ERR: {e}"));
-            return Err(e.into());
-        }
-    }
+    dlog(tag, "GPU 装配 = 脚本期（脚本 set_mode 触发）");
 
     preload_cjk(tag).await;
 

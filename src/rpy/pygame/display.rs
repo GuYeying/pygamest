@@ -44,6 +44,12 @@ use std::cell::Cell;
         #[pyattr]
         pub(crate) const OPENGLES: u32 = starfish_pygame::display::OPENGLES;
 
+        /// 多窗口能力开关（编译期定值——starfish-we multi-window
+        /// feature + 平台白名单（当前仅 windows）。False = 建窗多开
+        /// 口直接抛错；True 时 pygame.display.create_window 可用）
+        #[pyattr]
+        pub(crate) const MULTIWINDOW: bool = false;
+
         /// set_mode(size, flags=0, surface_settings=None,
         /// gpu_settings=None) → Screen 占位（真身由宿主壳先行装配，
         /// 此处记录需求；flags 批次 O 落地——位集/序列翻译到运行时窗口
@@ -117,11 +123,27 @@ use std::cell::Cell;
                 ),
                 None => None,
             };
-            starfish_pygame::display::set_pending_settings(surface, gpu);
-            starfish_pygame::display::apply_window_request(
-                (args.size.0.max(0) as u32, args.size.1.max(0) as u32),
-                bits,
-            );
+            // 装配分流（2026-11-16 拆步装配批次）：native = 脚本期真装
+            // 配（set_mode_blocking——settings kwargs/env 在此真消费，
+            // 宿主先行装配已删）；wasm = 窗口请求 + 宿主先行装配（无阻
+            // 塞模型——settings 走 env/pack 构建期面）。已装配 = 幂等直
+            // 返回（重复 set_mode 是窗口请求语义，走 apply_window_
+            // request 的调用方不经过此口）
+            let size = (args.size.0.max(0) as u32, args.size.1.max(0) as u32);
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                if starfish_pygame::display::screen(None).is_none() {
+                    starfish_pygame::display::set_mode_blocking(size, bits, surface, gpu)
+                        .map_err(|e| vm.new_runtime_error(e))?;
+                } else {
+                    starfish_pygame::display::apply_window_request(size, bits);
+                }
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                starfish_pygame::display::set_pending_settings(surface, gpu);
+                starfish_pygame::display::apply_window_request(size, bits);
+            }
             bridge::devlog(&format!(
                 "[set_mode] 落地 {}ms",
                 t.ms()
