@@ -1,4 +1,4 @@
-//! 逐模块独立测试案例的共享宿主壳（binding_probe 同构固化）。
+//! 逐模块独立游戏脚本的内嵌宿主壳（host 模块——2026-11-16 去 test_ 前缀定约）（binding_probe 同构固化）。
 //!
 //! 模块专项案例（examples/<模块>_test.rs）只提供 Python 脚本，装配/
 //! 字体预载/事件泵/帧循环/收口全部由 [`run`] 固化——案例间零重复。
@@ -9,7 +9,7 @@
 //! ```rust, ignore
 //! const SCRIPT: &str = include_str!("font_test.py");
 //! async fn run() -> Result<(), Box<dyn std::error::Error>> {
-//!     pygamest::rpy::testhost::run(SCRIPT, "font_test").await
+//!     pygamest::rpy::host::run(SCRIPT, "font_test").await
 //! }
 //! starfish::app_entry!(run());
 //! ```
@@ -923,7 +923,7 @@ pub async fn run_script_in(
         &format!("装配段完成（+{}ms）——进入帧循环", t0.ms()),
     );
 
-    // ── 帧驱动循环（与 testhost::run 同构）：事件泵 → 协程 send 步进
+    // ── 帧驱动循环（与 host::run 同构）：事件泵 → 协程 send 步进
     // → StopIteration 正常收尾 → 帧拍。首帧打点 = 启动诊断仪表。
     let mut first_frame = true;
     let mut frame_n: u64 = 0;

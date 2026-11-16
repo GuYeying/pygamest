@@ -35,30 +35,10 @@ use std::cell::Cell;
         pub(crate) const ALWAYS_ON_TOP: u32 = starfish_pygame::display::ALWAYS_ON_TOP;
         #[pyattr]
         pub(crate) const TRANSPARENT: u32 = starfish_pygame::display::TRANSPARENT;
-        #[pyattr]
-        pub(crate) const VULKAN: u32 = starfish_pygame::display::VULKAN;
-        #[pyattr]
-        pub(crate) const DIRECTX: u32 = starfish_pygame::display::DIRECTX;
-        #[pyattr]
-        pub(crate) const METAL: u32 = starfish_pygame::display::METAL;
-        #[pyattr]
-        pub(crate) const OPENGLES: u32 = starfish_pygame::display::OPENGLES;
-
-        /// 多窗口能力开关（编译期定值——starfish-we multi-window
-        /// feature + 平台白名单（当前仅 windows）。False = 建窗多开
-        /// 口直接抛错；True 时 pygame.display.create_window 可用。
-        /// 属性形态常量（fn 名即属性名——rustpython pyattr fn 惯例））
-        #[pyattr]
-        pub(crate) fn MULTIWINDOW(vm: &VirtualMachine) -> bool {
-            starfish_pygame::display::multi_window_supported()
-        }
-
-        /// 平台常量（编译期注入优先——PYGST_PLATFORM env；缺省 cfg 推
-        /// 导：windows/macos/linux/android/web/harmonyos/ios）
-        #[pyattr]
-        pub(crate) fn PLATFORM(vm: &VirtualMachine) -> &'static str {
-            starfish_pygame::display::platform()
-        }
+        // ⚠️ 渲染后端位（VULKAN/DIRECTX/METAL/OPENGLES/OPENGL）已剔除
+        //（2026-11-16 拆步装配批次定约）——后端选择走
+        // pygame.render.GpuSettings(backends=...)；透明窗直接用
+        // TRANSPARENT 位（DX12 推导自动承载）
 
         /// set_mode(size, flags=0, surface_settings=None,
         /// gpu_settings=None) → Screen 占位（真身由宿主壳先行装配，

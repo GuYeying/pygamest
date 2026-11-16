@@ -3,7 +3,7 @@
 //! `yield "frame"` 轮询 `poll`，就绪后 `take` 取结果（构造 PyObject 在
 //! 引擎线程——后台线程零 VM 接触）。
 //!
-//! 与 testhost.rs FRAME_BRIDGE 的关系：那是 Python 微调度器（协程挂起
+//! 与 host.rs FRAME_BRIDGE 的关系：那是 Python 微调度器（协程挂起
 //! 语义），本模块是它的原生搭档——`("io_read", path)` 双拍模式的"非
 //! 字节载荷"推广形态（dialog 结果是对象、video 结果是 Video 句柄）。
 //!

@@ -67,10 +67,8 @@ fn try_install(vm: &VirtualMachine) -> Result<(), String> {
         ("HIDDEN", starfish_pygame::display::HIDDEN),
         ("ALWAYS_ON_TOP", starfish_pygame::display::ALWAYS_ON_TOP),
         ("TRANSPARENT", starfish_pygame::display::TRANSPARENT),
-        ("VULKAN", starfish_pygame::display::VULKAN),
-        ("DIRECTX", starfish_pygame::display::DIRECTX),
-        ("METAL", starfish_pygame::display::METAL),
-        ("OPENGLES", starfish_pygame::display::OPENGLES),
+        // ⚠️ 后端位（VULKAN/DIRECTX/…）已剔除——后端选择走
+        // pygame.render.GpuSettings(backends=...)（2026-11-16 定约）
     ] {
         let flag_obj: PyObjectRef = vm.ctx.new_int(v).into();
         pygame_mod

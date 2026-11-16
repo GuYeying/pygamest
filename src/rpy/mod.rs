@@ -12,7 +12,7 @@
 //! （feature "gui"）、`pygame_physics/`（feature "physics2d"）；文件夹内
 //! 自含各自的 #[pymodule] 声明 / 类型 / 运行时本体。**rpy 根只放共用
 //! 面**：本文件（解释器装配 + 安装入口）、[`registry`]（共享挂载器）、
-//! [`args`]（收参层）、[`bridge`]（RP 薄壳）、testhost/smoke（宿主）。
+//! [`args`]（收参层）、[`bridge`]（RP 薄壳）、host/smoke（宿主）。
 //! **新增模块 = 建文件夹（照抄 pygame_gui）+ registry 一行 + Cargo
 //! feature 按需**。
 //!
@@ -49,7 +49,7 @@ pub mod modfind;
 // 原生异步 Job 注册表（dialog/video 异步面机制层——帧轮询式后台任务）
 pub mod jobs;
 pub mod smoke;
-pub mod testhost;
+pub mod host;
 
 use rustpython_vm::{Interpreter, Settings};
 

@@ -16,8 +16,11 @@
 | NOFRAME | 无边框 |
 | HIDDEN | 创建期隐藏窗口 |
 | ALWAYS_ON_TOP | 置顶（桌宠形态）|
-| TRANSPARENT | 透明窗口（alpha 0 区域透出桌面）|
-| VULKAN / DIRECTX / METAL / OPENGLES | 渲染后端声明（前向兼容，收下不解析）|
+| TRANSPARENT | 透明窗口（alpha 0 区域透出桌面——DX12 推导自动承载）|
+
+⚠️ **渲染后端位已剔除（2026-11-16 定约）**：VULKAN/DIRECTX/METAL/
+OPENGLES/OPENGL 常量已删——后端选择走
+[GpuSettings.backends](render.md#gpusettings-gpu-装配配置)。
 
 ## <span class="c-func">函数</span>
 
@@ -39,9 +42,8 @@ screen = pygame.display.set_mode((800, 600), gpu_settings=gpu,
 
 - :param size: 逻辑尺寸
 - :type size: tuple[int, int]
-- :param flags: 旗标位集（窗口语义位；渲染后端位已迁
-  [GpuSettings.backends](render.md#gpusettings-gpu-装配配置)——
-  VULKAN/DIRECTX/METAL/OPENGLES/OPENGL 常量保留为 deprecated no-op）
+- :param flags: 旗标位集（纯窗口语义位——渲染后端位已剔除，后端走
+  [GpuSettings.backends](render.md#gpusettings-gpu-装配配置)）
 - :type flags: int | list[int]
 - :param surface_settings: 表面/交换链配置（[pygame.render.SurfaceSettings](render.md#surfacesettings-表面交换链配置)——**仅首次 GPU 装配消费**）
 - :param gpu_settings: GPU 装配配置（[pygame.render.GpuSettings](render.md#gpusettings-gpu-装配配置)——同上）
@@ -59,9 +61,11 @@ screen = pygame.display.set_mode((800, 600), gpu_settings=gpu,
 `render.access()` …）必须**在 set_mode 之后**——拆步后装配点由脚本
 控制，顺序错误即守卫报错（如 "egui.init() 须在 set_mode 之后调用"）。
 
-`pygame.display.MULTIWINDOW`：多窗口能力开关（编译期定值——
-starfish-we multi-window feature + 平台白名单；当前 `False`——
-feature 白名单仅 windows，第二批接入后按构建配置翻转）。
+**平台查询**：`pygame.get_platform()`（SDL 惯例**函数形态**——防开
+发者覆盖变量；值 = 编译期注入 `PYGST_PLATFORM` env 优先，缺省 cfg
+推导：windows/macos/linux/android/web/harmonyos/ios）。多窗口预判 =
+`pygame.get_platform() == "windows"`（不支持时 create_window 运行
+时抛 RuntimeError）。
 ```
 
 ## <span class="c-class">多窗口（windows-only，2026-11-16 第二批）</span>
@@ -69,9 +73,9 @@ feature 白名单仅 windows，第二批接入后按构建配置翻转）。
 ```{warning}
 ⚠️ **能力白名单**：multi-window feature 链（we 层 compile_error 编译
 期把关）**仅 windows 目标构建可带**（`--features multi-window`——
-Linux/macOS/移动/Web 白名单外，构建直接失败）；**运行时再判**
-`pygame.display.MULTIWINDOW`——False 时 `create_window` 抛
-RuntimeError（用户定约：编译期注入平台常量 + 运行时检测抛错）。
+Linux/macOS/移动/Web 白名单外，构建直接失败）；**运行时再判**——
+`create_window` 在不支持构建/平台直接抛 RuntimeError（判定 =
+starfish-pygame 底层基于平台常量的运行时检测）。
 ```
 
 #### <span class="c-func">create_window(size=(w,h), flags=0, id="win2") -> Screen</span>
@@ -80,11 +84,6 @@ RuntimeError（用户定约：编译期注入平台常量 + 运行时检测抛�
 绘制终点**——`win.render()` / `win.flip()` 独立会话/present）。约束：
 `"main"` 为主窗保留 id；id 冲突 Err；**gfxdraw 绘制面多窗 v2**（纹理
 usage 冲突挂账——副窗 v1 支持 render/fill/flip/get_size）。
-
-#### <span class="c-func">PLATFORM</span> / <span class="c-func">MULTIWINDOW</span>
-
-平台常量（编译期注入优先 `PYGST_PLATFORM` env，缺省 cfg 推导）与多
-窗口能力开关（脚本预判用——create_window 前查）。
 
 **env 三口**（装配前可读，宿主/脚本两形态通用——与 kwargs 等效）：
 

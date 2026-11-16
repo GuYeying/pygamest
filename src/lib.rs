@@ -43,7 +43,7 @@
 //! VULKAN/DIRECTX/METAL/OPENGLES/OPENGL→GpuSettings.backends +
 //! 不可用隐式退化回全后端；TRANSPARENT 创建期透明 + Screen 透明底
 //! 清屏 + set_opacity 窗口透明度——桌宠形态 v1）已完成。**逐模块独立测试阶段启动**：共享测试宿主
-//! `rpy::testhost::run(script, tag, transparent)`（装配/字体预载/事件泵/帧循环/收口
+//! `rpy::host::run(script, tag, transparent)`（装配/字体预载/事件泵/帧循环/收口
 //! 固化）+ 每模块一个 `examples/<模块>_test` 案例（[模块-test] 行逐项
 //! 断言 + 样张上屏）；首例 `font_test`（font 模块 15 项断言含旋转/缩放/
 //! 半透明）已三端跑通。**批次 41**（bridge 瘦身七步——状态归属移交

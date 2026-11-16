@@ -335,6 +335,13 @@ pub mod pygame {
     // 宏承载）。
 
 
+    // ── 平台查询（SDL 惯例 get_platform——函数形态防变量覆盖；值 =
+    //    编译期注入 PYGST_PLATFORM env 优先，缺省 cfg 推导）──
+    #[pyfunction]
+    fn get_platform() -> &'static str {
+        starfish_pygame::display::platform()
+    }
+
     // ── Screen：set_mode 返回的绘制终点（真身 = Rust 注册表 Screen——
     //    宿主壳/脚本 set_mode 装配；多窗批次 per-id——"main" = 主窗）──
     #[derive(Debug, PyPayload)]
