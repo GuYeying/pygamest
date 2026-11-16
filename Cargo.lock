@@ -6779,7 +6779,6 @@ dependencies = [
  "base64",
  "flate2",
  "quick-xml 0.31.0",
- "zstd",
 ]
 
 [[package]]

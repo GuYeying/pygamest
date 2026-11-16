@@ -169,11 +169,25 @@ use std::cell::Cell;
                 None => 0,
             };
             let id = args.id.unwrap_or_else(|| "win2".to_string());
-            starfish_pygame::display::create_window_id(id.clone(), size, bits)
-                .map_err(|e| vm.new_runtime_error(e))?;
-            starfish_pygame::display::create_screen_for(&id, None, None)
-                .map_err(|e| vm.new_runtime_error(e))?;
-            Ok(PyScreen { id }.into_ref(&vm.ctx))
+            // 编译期分支：底层口仅 windows + multi-window feature 构建存
+            // 在（we 白名单 compile_error 把关）——其余构建恒 Err（运行
+            // 时抛错语义保留——用户定约）
+            #[cfg(all(feature = "multi-window", target_os = "windows"))]
+            {
+                starfish_pygame::display::create_window_id(id.clone(), size, bits)
+                    .map_err(|e| vm.new_runtime_error(e))?;
+                starfish_pygame::display::create_screen_for(&id, None, None)
+                    .map_err(|e| vm.new_runtime_error(e))?;
+                Ok(PyScreen { id }.into_ref(&vm.ctx))
+            }
+            #[cfg(not(all(feature = "multi-window", target_os = "windows")))]
+            {
+                Err(vm.new_runtime_error(format!(
+                    "多窗口不支持当前构建/平台（PLATFORM = {}）——multi-window \
+                     feature 需 windows 目标构建",
+                    starfish_pygame::display::platform()
+                )))
+            }
         }
 
         /// create_window 收参

@@ -60,14 +60,22 @@ pub mod pygame_tilemap {
 
         fn read_from(&mut self, path: &Path) -> Result<Self::Resource, Self::Error> {
             let s = path.to_string_lossy().to_string();
-            starfish_pygame::sfx::read_block(&s)
-                .map(Cursor::new)
-                .map_err(|e| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        format!("sfx 读取 {s} 失败: {e}"),
-                    )
-                })
+            // 双路径 fallback：①原路径（dev 宿主 base_dir = 脚本目录直读）
+            // ②资源根前缀（runtime 形态——RES_DIR_NAME = "assets"，wasm 上
+            // fetch 相对页面需带 assets/ 前缀；desktop base_dir = exe 同级
+            // 同前缀语义）。②为 runtime/wasm 部署形态的资源根读法。
+            if let Ok(b) = starfish_pygame::sfx::read_block(&s) {
+                return Ok(Cursor::new(b));
+            }
+            let res_dir = std::option_env!("RES_DIR_NAME").unwrap_or("assets");
+            let prefixed = format!("{res_dir}/{s}");
+            match starfish_pygame::sfx::read_block(&prefixed) {
+                Ok(b) => Ok(Cursor::new(b)),
+                Err(e) => Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("sfx 读取 {s}（含 {prefixed} fallback）失败: {e}"),
+                )),
+            }
         }
     }
 

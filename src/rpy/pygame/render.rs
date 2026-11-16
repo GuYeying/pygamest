@@ -156,6 +156,13 @@ pub(crate) mod render {
             PyMat4(std::cell::Cell::new(self.0.mvp())).into_ref(&vm.ctx)
         }
 
+
+        /// raw_mvp() -> Mat4：**无 letterbox 的原始投影×视图**（自建管线配自管相机的原始量——2026-11-16 类型补齐；区别于 mvp() 的 fit 组合形态）。
+        #[pymethod]
+        fn raw_mvp(&self, vm: &VirtualMachine) -> PyRef<PyMat4> {
+            PyMat4(std::cell::Cell::new(self.0.raw_mvp())).into_ref(&vm.ctx)
+        }
+
         /// 物理点 → 逻辑点。
         #[pymethod]
         fn physical_to_logical(
@@ -1506,7 +1513,28 @@ pub(crate) mod render {
     }
 
     #[pyclass]
-    impl PyBuffer {}
+    impl PyBuffer {
+        /// size() -> int：缓冲字节容量（copy/update 守卫自查基准——2026-11-16 类型补齐）。
+        #[pymethod]
+        fn size(&self) -> u64 {
+            self.size
+        }
+
+        /// usage() -> str：用途位集语义化（"uniform+copy_src" 等连字符形态）。
+        #[pymethod]
+        fn usage(&self) -> String {
+            let u = self.inner.usage();
+            let mut parts: Vec<&str> = Vec::new();
+            if u.contains(wgpu::BufferUsages::UNIFORM) { parts.push("uniform"); }
+            if u.contains(wgpu::BufferUsages::STORAGE) { parts.push("storage"); }
+            if u.contains(wgpu::BufferUsages::INDIRECT) { parts.push("indirect"); }
+            if u.contains(wgpu::BufferUsages::COPY_SRC) { parts.push("copy_src"); }
+            if u.contains(wgpu::BufferUsages::COPY_DST) { parts.push("copy_dst"); }
+            if u.contains(wgpu::BufferUsages::VERTEX) { parts.push("vertex"); }
+            if u.contains(wgpu::BufferUsages::INDEX) { parts.push("index"); }
+            parts.join("+")
+        }
+    }
 
     /// 顶点网格（access.mesh 产物；透明句柄——vertex_count 可查）
     #[derive(PyPayload)]
@@ -1629,6 +1657,13 @@ pub(crate) mod render {
         #[pymethod]
         fn size(&self) -> (u32, u32) {
             (self.texture.width(), self.texture.height())
+        }
+
+        /// format() -> str：纹理格式（Debug 名——"Rgba8Unorm"/"Rgba32Float"
+        /// 等；sampled/rgba32f/数据纹理格式查询——2026-11-16 类型补齐）。
+        #[pymethod]
+        fn format(&self) -> String {
+            format!("{:?}", self.texture.format())
         }
 
         /// 默认采样视图（2D 全 mip；缓存于纹理内部）
@@ -1785,9 +1820,15 @@ pub(crate) mod render {
         BindGroup(u32, PyRef<PyBindGroup>),
         Mesh(PyRef<PyMesh>),
         Draw(u32, u32),
+        /// 实例化绘制（instances 段——GPU 粒子 instanced 通路，2026-11-16 补齐）
+        DrawInstances(u32, u32, u32),
         DrawIndexed(u32, u32),
+        /// 索引实例化绘制（instances + base_vertex——蒙皮/批量形态）
+        DrawIndexedInstances(u32, u32, u32, i32),
         /// 全量绘制（set_mesh + 按自身计数——免手填顶点范围）
         DrawMesh(PyRef<PyMesh>),
+        /// 全量实例化绘制（draw_mesh_instanced——mesh 自身计数 + 实例数）
+        DrawMeshInstanced(PyRef<PyMesh>, u32),
         Scissor(u32, u32, u32, u32),
         Viewport(f32, f32, f32, f32, f32, f32),
         /// 模板动态状态（管线开 stencil 面时）
@@ -1847,10 +1888,19 @@ pub(crate) mod render {
                             RawCmd::BindGroup(i, g) => pass.set_bind_group(*i, &g.inner),
                             RawCmd::Mesh(m) => pass.set_mesh(&m.inner),
                             RawCmd::Draw(a, b) => pass.draw(*a..*b, 0..1),
+                            RawCmd::DrawInstances(a, b, i) => {
+                                pass.draw(*a..*b, 0..*i)
+                            }
+                            RawCmd::DrawIndexedInstances(a, b, i, bv) => {
+                                pass.draw_indexed(*a..*b, *bv, 0..*i)
+                            }
                             RawCmd::DrawIndexed(a, b) => {
                                 pass.draw_indexed(*a..*b, 0, 0..1)
                             }
                             RawCmd::DrawMesh(m) => pass.draw_mesh(&m.inner),
+                            RawCmd::DrawMeshInstanced(m, i) => {
+                                pass.draw_mesh_instanced(&m.inner, 0..*i)
+                            }
                             RawCmd::Scissor(x, y, w, h) => {
                                 pass.set_scissor_rect(*x, *y, *w, *h)
                             }
@@ -1953,6 +2003,42 @@ pub(crate) mod render {
             self.cmds.borrow_mut().push(RawCmd::DrawMesh(mesh));
         }
 
+
+        /// draw_mesh_instanced(mesh, instances)：全量**实例化**绘制
+        /// （GPU 粒子 instanced 通路——mesh 自身计数 × 实例数；
+        /// copy_mesh_vertices 供数的最后一环，2026-11-16 补齐）。
+        #[pymethod]
+        fn draw_mesh_instanced(&self, mesh: PyRef<PyMesh>, instances: u32) {
+            self.cmds
+                .borrow_mut()
+                .push(RawCmd::DrawMeshInstanced(mesh, instances));
+        }
+
+        /// draw_instances(first, end, instances)：顶点范围实例化绘制。
+        #[pymethod]
+        fn draw_instances(&self, first: u32, end: u32, instances: u32) {
+            self.cmds
+                .borrow_mut()
+                .push(RawCmd::DrawInstances(first, end, instances));
+        }
+
+        /// draw_indexed_instances(first, end, instances, base_vertex)：
+        /// 索引范围实例化绘制（base_vertex 显式传 0 = 不偏移）。
+        #[pymethod]
+        fn draw_indexed_instances(
+            &self,
+            first: u32,
+            end: u32,
+            instances: u32,
+            base_vertex: i32,
+        ) {
+            self.cmds.borrow_mut().push(RawCmd::DrawIndexedInstances(
+                first,
+                end,
+                instances,
+                base_vertex,
+            ));
+        }
         /// set_stencil_reference(value)：模板动态参考值（管线开
         /// stencil 面时的 per-draw 动态状态）
         #[pymethod]

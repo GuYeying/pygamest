@@ -268,6 +268,58 @@ use std::cell::Cell;
                 (self.x.get() * self.x.get() + self.y.get() * self.y.get()).sqrt()
             }
 
+            /// length_squared()：模长平方（距离平方判据——免 sqrt）。
+            #[pymethod]
+            fn length_squared(&self) -> f32 {
+                self.x.get() * self.x.get() + self.y.get() * self.y.get()
+            }
+
+            /// rotate_degrees(deg) -> Vector2：绕原点旋转（度数制；y-down
+            /// 屏幕系 = 顺时针——Vector2Ext 度数制实现）。
+            #[pymethod]
+            fn rotate_degrees(&self, deg: ArgIntoFloat, vm: &VirtualMachine) -> PyRef<Self> {
+                use starfish_pygame::math::Vector2Ext;
+                Self::from_vec2(vm, self.vec2().rotate_degrees(deg.into_float() as f32))
+            }
+
+            /// rotate_rad(rad) -> Vector2：弧度制旋转。
+            #[pymethod]
+            fn rotate_rad(&self, rad: ArgIntoFloat, vm: &VirtualMachine) -> PyRef<Self> {
+                use starfish_pygame::math::Vector2Ext;
+                Self::from_vec2(vm, self.vec2().rotate_rad(rad.into_float() as f32))
+            }
+
+            /// scale_to_length(length)：**就地**缩放至模长（pygame 语义）。
+            #[pymethod]
+            fn scale_to_length(&self, len: ArgIntoFloat) {
+                use starfish_pygame::math::Vector2Ext;
+                let mut v = self.vec2();
+                v.scale_to_length(len.into_float() as f32);
+                self.x.set(v.x);
+                self.y.set(v.y);
+            }
+
+            /// distance_to(other)：欧氏距离。
+            #[pymethod]
+            fn distance_to(&self, other: PyRef<Self>) -> f32 {
+                use starfish_pygame::math::Vector2Ext;
+                self.vec2().distance_to(other.vec2())
+            }
+
+            /// distance_squared_to(other)：距离平方（判据免 sqrt）。
+            #[pymethod]
+            fn distance_squared_to(&self, other: PyRef<Self>) -> f32 {
+                use starfish_pygame::math::Vector2Ext;
+                self.vec2().distance_squared_to(other.vec2())
+            }
+
+            /// angle_to_deg(other) -> f32：到 other 的转向角（度数制）。
+            #[pymethod]
+            fn angle_to_deg(&self, other: PyRef<Self>) -> f32 {
+                use starfish_pygame::math::Vector2Ext;
+                self.vec2().angle_to_deg(other.vec2())
+            }
+
             #[pymethod]
             fn normalize(&self, vm: &VirtualMachine) -> PyResult<PyRef<Self>> {
                 let len = self.length();
@@ -601,6 +653,21 @@ use std::cell::Cell;
                     return Ok(Self(Cell::new(y.0.get() * (k.into_float() as f32)))
                         .into_ref(&vm.ctx)
                         .into());
+                }
+                // quat × Vector3：**旋转向量**（四元数核心用途——单位四元
+                // 数 q 作用于向量 v = q·v·q⁻¹，glam 原生支持）
+                if let (Some(q), Some(v)) = (
+                    a.downcast_ref::<Self>(),
+                    b.downcast_ref::<PyVector3>(),
+                ) {
+                    let out = q.0.get() * v.vec();
+                    return Ok(PyVector3 {
+                        x: Cell::new(out.x),
+                        y: Cell::new(out.y),
+                        z: Cell::new(out.z),
+                    }
+                    .into_ref(&vm.ctx)
+                    .into());
                 }
                 Ok(vm.ctx.not_implemented())
             }

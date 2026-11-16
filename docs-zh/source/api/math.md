@@ -115,6 +115,27 @@ for obj in objects:
 
 欧氏长度。
 
+##### <span class="c-func">length_squared() -> float</span>
+
+长度平方（距离判据免 sqrt——2026-11-16 类型补齐）。
+
+##### <span class="c-func">rotate_degrees(deg) -> Vector2 / rotate_rad(rad) -> Vector2</span>
+
+绕原点旋转（度数制 / 弧度制；y-down 屏幕系 = 顺时针——Vector2Ext
+度数制实现，返回**新**向量）。
+
+##### <span class="c-func">scale_to_length(length)</span>
+
+**就地**缩放至模长（pygame 语义）。
+
+##### <span class="c-func">distance_to(other) -> float / distance_squared_to(other) -> float</span>
+
+到 other 的欧氏距离 / 距离平方。
+
+##### <span class="c-func">angle_to_deg(other) -> float</span>
+
+到 other 的转向角（度数制——转向 AI/弹道标配）。
+
 ##### <span class="c-func">normalize() -> Vector2</span>
 
 归一化（返回**新**向量；零向量归一化 = 零向量）。

@@ -265,6 +265,18 @@ ValueError（index 建立须走 mesh() 的 indices/index_bytes 口）；超
 
 **`depth_mode` 须配 `raw_render(depth=True)`**（深度目标严格配对）。
 
+### 透明对象处理（四层透明面盘点，2026-11-16）
+
+| 层级 | 口 | 语义 |
+|---|---|---|
+| 管线级 | `pipeline(blend="alpha")` | 片元 alpha（WGSL 返回 `vec4(r,g,b,a)` 第四分量）参与混合；`"additive"` = 发光/粒子叠加；`"multiply"` = 阴影 |
+| Surface 级 | `Surface.set_alpha(0..255)` | 面级整体透明度（`draw_surface` 时生效）；图片 alpha 通道（PNG 带透明内容 blit 自然透） |
+| 会话序 | **画家序** | alpha 混合无深度排序——会话内绘制顺序 = 叠加顺序；最佳实践 = **先画 opaque 再画 transparent**，透明管线建议 `depth_write=False`（透明像素写深度会遮挡后续对象） |
+| 窗口级 | `TRANSPARENT` 旗标 + `display.set_opacity(0..1)` | 创建期逐像素透出桌面（DX12 推导自动承载）+ 整窗均匀 alpha |
+
+样张：`tilemap_layers_test.py` fx 层（`blend="alpha"` + WGSL `alpha 0.62` 水波 +
+`depth_mode="disabled"`——透明管线标准形态）。
+
 ##### <span class="c-func">compute_pipeline(shader, bind_groups, entry="cs_main", label=None) -> ComputePipeline</span>
 
 计算管线。
