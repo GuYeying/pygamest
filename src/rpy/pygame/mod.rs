@@ -335,19 +335,25 @@ pub mod pygame {
     // 宏承载）。
 
 
-    // ── Screen：set_mode 返回的绘制终点占位（真身 = Rust 全局 Screen，
-    //    由宿主壳装配）──
+    // ── Screen：set_mode 返回的绘制终点（真身 = Rust 注册表 Screen——
+    //    宿主壳/脚本 set_mode 装配；多窗批次 per-id——"main" = 主窗）──
     #[derive(Debug, PyPayload)]
     #[pyclass(no_attr, module = false, name = "Screen", unhashable = true)]
-    pub(crate) struct PyScreen;
+    pub(crate) struct PyScreen {
+        pub(crate) id: String,
+    }
 
     #[pyclass]
     impl PyScreen {
-        /// ADR-5 with 会话入口：进入 = 开启 RenderPass，退出 = finish 打包。
+        /// ADR-5 with 会话入口：进入 = 开启 RenderPass，退出 = finish 打包
+        /// （per-id 会话槽——多窗批次各窗独立）。
         #[pymethod]
         fn render(&self, vm: &VirtualMachine) -> PyResult<PyRef<PyScreenSession>> {
-            starfish_pygame::render::session::begin_screen();
-            Ok(PyScreenSession.into_ref(&vm.ctx))
+            starfish_pygame::render::session::begin_screen_id(&self.id);
+            Ok(PyScreenSession {
+                id: self.id.clone(),
+            }
+            .into_ref(&vm.ctx))
         }
 
         /// raw_render(depth=False) -> RawPass：底层直绘会话（批次 D，
@@ -370,6 +376,11 @@ pub mod pygame {
                     bool::try_from_borrowed_object(vm, o).ok()
                 })
                 .unwrap_or(false);
+            if self.id != "main" {
+                return Err(vm.new_runtime_error(
+                    "多窗 raw overlay 为 v2 面——当前仅主窗（raw_render on main）",
+                ));
+            }
             crate::rpy::pygame::render::render::raw_pass(depth, None, vm)
         }
 
@@ -382,6 +393,11 @@ pub mod pygame {
             &self,
             vm: &VirtualMachine,
         ) -> PyResult<PyRef<crate::rpy::pygame::render::render::PyRawCompute>> {
+            if self.id != "main" {
+                return Err(vm.new_runtime_error(
+                    "多窗 raw compute 为 v2 面——当前仅主窗（raw_compute on main）",
+                ));
+            }
             crate::rpy::pygame::render::render::raw_compute_session(vm)
         }
 
@@ -393,7 +409,7 @@ pub mod pygame {
             cam: PyRef<crate::rpy::pygame::render::render::PyGameCamera>,
             vm: &VirtualMachine,
         ) -> PyResult<()> {
-            starfish_pygame::display::get_screen().set_game_camera(cam.0);
+            starfish_pygame::display::get_screen_id(&self.id).set_game_camera(cam.0);
             Ok(())
         }
 
@@ -401,7 +417,15 @@ pub mod pygame {
         /// canvas 下跟随页面布局变化——脚本查询用）
         #[pymethod]
         fn get_size(&self) -> (u32, u32) {
-            starfish_pygame::display::get_screen().logical_size()
+            starfish_pygame::display::get_screen_id(&self.id).logical_size()
+        }
+
+        /// flip()：本窗帧提交（per-id——pygame.display.flip() 恒主窗，
+        /// 多窗批次各窗独立 present）。
+        #[pymethod]
+        fn flip(&self, vm: &VirtualMachine) {
+            let _ = vm;
+            starfish_pygame::display::get_screen_id(&self.id).present();
         }
 
         /// render_depth() -> Session：**深度会话**（绘制走深度测试管线，
@@ -411,8 +435,11 @@ pub mod pygame {
         /// Screen 会话共用——开启即替换，`with` 块收口照常打包。
         #[pymethod]
         fn render_depth(&self, vm: &VirtualMachine) -> PyResult<PyRef<PyScreenSession>> {
-            starfish_pygame::render::session::begin_screen_depth();
-            Ok(PyScreenSession.into_ref(&vm.ctx))
+            starfish_pygame::render::session::begin_screen_depth_id(&self.id);
+            Ok(PyScreenSession {
+                id: self.id.clone(),
+            }
+            .into_ref(&vm.ctx))
         }
 
         // /// 全局屏填充（真身 bridge::sf_draw_fill——批次 A 签名）。
@@ -430,7 +457,9 @@ pub mod pygame {
     //    fill(color) ──
     #[derive(Debug, PyPayload)]
     #[pyclass(no_attr, module = false, name = "Session", unhashable = true)]
-    pub(crate) struct PyScreenSession;
+    pub(crate) struct PyScreenSession {
+        pub(crate) id: String,
+    }
 
     #[pyclass]
     impl PyScreenSession {
@@ -442,7 +471,7 @@ pub mod pygame {
         /// 异常不吞（返回 False 交回宿主壳打印收口）。
         #[pymethod]
         fn __exit__(&self, _exc_info: FuncArgs) -> bool {
-            starfish_pygame::render::session::end_screen();
+            starfish_pygame::render::session::end_screen_id(&self.id);
             false
         }
 

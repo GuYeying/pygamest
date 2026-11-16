@@ -46,9 +46,19 @@ use std::cell::Cell;
 
         /// 多窗口能力开关（编译期定值——starfish-we multi-window
         /// feature + 平台白名单（当前仅 windows）。False = 建窗多开
-        /// 口直接抛错；True 时 pygame.display.create_window 可用）
+        /// 口直接抛错；True 时 pygame.display.create_window 可用。
+        /// 属性形态常量（fn 名即属性名——rustpython pyattr fn 惯例））
         #[pyattr]
-        pub(crate) const MULTIWINDOW: bool = false;
+        pub(crate) fn MULTIWINDOW(vm: &VirtualMachine) -> bool {
+            starfish_pygame::display::multi_window_supported()
+        }
+
+        /// 平台常量（编译期注入优先——PYGST_PLATFORM env；缺省 cfg 推
+        /// 导：windows/macos/linux/android/web/harmonyos/ios）
+        #[pyattr]
+        pub(crate) fn PLATFORM(vm: &VirtualMachine) -> &'static str {
+            starfish_pygame::display::platform()
+        }
 
         /// set_mode(size, flags=0, surface_settings=None,
         /// gpu_settings=None) → Screen 占位（真身由宿主壳先行装配，
@@ -148,7 +158,53 @@ use std::cell::Cell;
                 "[set_mode] 落地 {}ms",
                 t.ms()
             ));
-            Ok(PyScreen.into_ref(&vm.ctx))
+            Ok(PyScreen {
+                id: "main".to_string(),
+            }
+            .into_ref(&vm.ctx))
+        }
+
+        /// create_window(size=(w,h), flags=0, id="win2") -> Screen：**多
+        /// 窗口建窗 + per-id 装配**（返回新 Screen 绘制终点——render/
+        /// raw_render/flip_id 独立）。⚠️ MULTIWINDOW=False 构建/平台抛
+        /// RuntimeError（we 层 multi-window feature 白名单仅 windows
+        /// + 编译期 compile_error 把关——feature 链构建须 windows 目
+        /// 标）；"main" 为主窗保留 id；已装配重复建 = id 冲突 Err。
+        #[pyfunction]
+        fn create_window(
+            args: CreateWindowArgs,
+            vm: &VirtualMachine,
+        ) -> PyResult<PyRef<PyScreen>> {
+            if !starfish_pygame::display::multi_window_supported() {
+                return Err(vm.new_runtime_error(format!(
+                    "多窗口不支持当前构建/平台（pygame.display.MULTIWINDOW = False；\
+                     平台 = {}）——multi-window feature 需 windows 目标构建",
+                    starfish_pygame::display::platform()
+                )));
+            }
+            let sp = args.size.unwrap_or(SfPoint(400, 300));
+            let size = (sp.0.max(0) as u32, sp.1.max(0) as u32);
+            let bits = match &args.flags {
+                Some(f) => flags_bits(f, vm)?,
+                None => 0,
+            };
+            let id = args.id.unwrap_or_else(|| "win2".to_string());
+            starfish_pygame::display::create_window_id(id.clone(), size, bits)
+                .map_err(|e| vm.new_runtime_error(e))?;
+            starfish_pygame::display::create_screen_for(&id, None, None)
+                .map_err(|e| vm.new_runtime_error(e))?;
+            Ok(PyScreen { id }.into_ref(&vm.ctx))
+        }
+
+        /// create_window 收参
+        #[derive(FromArgs)]
+        struct CreateWindowArgs {
+            #[pyarg(any, optional)]
+            size: Option<SfPoint>,
+            #[pyarg(any, optional)]
+            flags: Option<PyObjectRef>,
+            #[pyarg(named, optional)]
+            id: Option<String>,
         }
 
         #[pyfunction]

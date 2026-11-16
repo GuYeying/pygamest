@@ -49,6 +49,10 @@ voxelis = ["dep:voxelis", "dep:glam_v29", "dep:parking_lot_v12"]
 # 层/图集/瓦片数据出口 + per-layer quad/UV 渲染数组，着色器分层
 # 渲染配套：每层一 mesh 一 pipeline 按层序 draw）
 tilemap = ["dep:tiled"]
+# multi-window = 多窗口（starfish-we multi-window feature 透传——白
+# 名单 windows 编译期把关，feature 链构建须 windows 目标；python 面
+# create_window 运行时再判抛错）
+multi-window = ["starfish-pygame/multi-window"]
 
 [dependencies]
 starfish-std        = { git = "https://github.com/GuYeying/starfish", features = ["we"] }

@@ -64,6 +64,28 @@ starfish-we multi-window feature + 平台白名单；当前 `False`——
 feature 白名单仅 windows，第二批接入后按构建配置翻转）。
 ```
 
+## <span class="c-class">多窗口（windows-only，2026-11-16 第二批）</span>
+
+```{warning}
+⚠️ **能力白名单**：multi-window feature 链（we 层 compile_error 编译
+期把关）**仅 windows 目标构建可带**（`--features multi-window`——
+Linux/macOS/移动/Web 白名单外，构建直接失败）；**运行时再判**
+`pygame.display.MULTIWINDOW`——False 时 `create_window` 抛
+RuntimeError（用户定约：编译期注入平台常量 + 运行时检测抛错）。
+```
+
+#### <span class="c-func">create_window(size=(w,h), flags=0, id="win2") -> Screen</span>
+
+副窗建窗 + per-id GPU 装配（settings 走 env 通道；返回**新 Screen
+绘制终点**——`win.render()` / `win.flip()` 独立会话/present）。约束：
+`"main"` 为主窗保留 id；id 冲突 Err；**gfxdraw 绘制面多窗 v2**（纹理
+usage 冲突挂账——副窗 v1 支持 render/fill/flip/get_size）。
+
+#### <span class="c-func">PLATFORM</span> / <span class="c-func">MULTIWINDOW</span>
+
+平台常量（编译期注入优先 `PYGST_PLATFORM` env，缺省 cfg 推导）与多
+窗口能力开关（脚本预判用——create_window 前查）。
+
 **env 三口**（装配前可读，宿主/脚本两形态通用——与 kwargs 等效）：
 
 | 环境变量 | 取值 | 语义 |
