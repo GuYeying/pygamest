@@ -209,18 +209,34 @@ WGSL 源码编译。
 raw 缓冲（字节自管——相机定约 64B）。`usage`:
 `"uniform"`（默认）/ `"indirect"` / `"storage"`。
 
-##### <span class="c-func">mesh(layout, vertices, indices=None, floats=None, label=None) -> Mesh</span>
+##### <span class="c-func">mesh(layout, vertices, indices=None, index_bytes=None, index_format=None, floats=None, vertices_bytes=None, label=None) -> Mesh</span>
 
 顶点网格。`layout` 布局预设：`pos3`(3) / `pos3uv2`(5) / `pos3color4`(7)
 / `pos3uv2color4`(9) / `corner2`(2) / `inst_pos2`(2)（GPU 粒子
 instanced 通路）；`vertices` 扁平数值列表（按布局 stride 校验）；
+`vertices_bytes` 原始字节（任意格式混用——struct.pack 形态）；
 `vertices=None` 须同时给 `floats=N`（零填充容量预留）；`indices`
-u16 列表（0..=65535）。
+u16 列表（0..=65535）；**`index_bytes` 原始字节索引 + `index_format`
+"u16"/"u32"**（高级口——大 mesh >65535 顶点 / LE 字节直喂，越界校
+验调用方自担；两参数互斥——indices 列表口恒 u16）。
 
 ##### <span class="c-func">update_mesh(mesh, vertices, indices=None)</span>
 
 动态几何——顶点（/索引）就地更新，免每帧重建。**容量以建时为准**
-（超出 = wgpu 越界校验错；更大容量请重建）。
+（超出 = wgpu 越界校验错；更大容量请重建）。indices 列表口恒 u16。
+
+##### <span class="c-func">update_mesh_index_bytes(mesh, data, format="u16")</span>
+
+**原始字节索引更新**（LE 直喂——u32 大 mesh 通路）。格式须与 mesh
+建时 index_format 一致（不匹配抛 ValueError）；无索引 mesh 抛
+ValueError（index 建立须走 mesh() 的 indices/index_bytes 口）；超
+容量截断告警。
+
+##### <span class="c-func">mesh.index_format() -> str | None</span>
+
+`"u16"` / `"u32"`；无索引 = None。配套查询：`index_count()` /
+`has_index_buffer()` / `index_buffer_size()`（字节容量）/ 
+`vertex_buffer_size()`（copy/update 守卫基准）。
 
 ##### <span class="c-func">bind_group(bindings, label=None) -> BindGroup</span>
 
@@ -372,6 +388,12 @@ storage → uniform GPU 闭环。
 ##### <span class="c-func">copy_mesh_vertices(mesh, src, size)</span>
 
 storage → mesh 顶点缓冲直搬（GPU 粒子 instanced 通路）。
+
+##### <span class="c-func">copy_mesh_indices(mesh, src, size)</span>
+
+storage → mesh **索引缓冲**直搬（动态索引通路——粒子重生序/实例筛
+选 GPU 侧维护）。无索引 mesh（建时未给 indices/index_bytes）回放期
+跳过 + 告警；超容量截断告警。
 
 ##### <span class="c-func">copy_buffer_to_texture(src, tex, bytes_per_row, w, h)</span>
 

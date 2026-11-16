@@ -389,6 +389,18 @@ pub(crate) mod render {
         indices: Option<PyObjectRef>,
     }
 
+    /// update_mesh_index_bytes(mesh, data, format="u16") 收参——原始字
+    /// 节索引更新（u32 大 mesh 通路；format 可选缺省 u16）
+    #[derive(FromArgs)]
+    pub(crate) struct UpdateMeshIndexBytesArgs {
+        #[pyarg(any)]
+        mesh: PyRef<PyMesh>,
+        #[pyarg(any)]
+        data: PyObjectRef,
+        #[pyarg(any, optional)]
+        format: Option<String>,
+    }
+
     /// mesh_builder(layout, vertices, ...) 收参——layout = 格式名列表
     #[derive(FromArgs)]
     pub(crate) struct MeshBuilderArgs {
@@ -406,6 +418,14 @@ pub(crate) mod render {
         floats: Option<usize>,
         #[pyarg(any, optional)]
         indices: Option<PyObjectRef>,
+        /// 原始字节索引（高级口——LE 字节直喂 + index_format 显式格式；
+        /// 大 mesh / struct.pack 通路，越界校验调用方自担）
+        #[pyarg(named, optional)]
+        index_bytes: Option<PyObjectRef>,
+        /// 索引格式："u16"（默认）/ "u32"——index_bytes 必配；indices
+        /// 列表口恒 u16（0..=65535——大 mesh 用 index_bytes）
+        #[pyarg(named, optional)]
+        index_format: Option<String>,
         #[pyarg(named, optional)]
         label: Option<String>,
         /// 实例步进（GPU 粒子——每实例一粒）
@@ -728,13 +748,36 @@ pub(crate) mod render {
                     .mesh_builder(formats, bytes)
                     .with_vertex_usages(wgpu::BufferUsages::COPY_DST)
             };
-            if let Some(idx) = args.indices {
+            if let Some(ibytes) = &args.index_bytes {
+                // 原始字节索引（高级口——LE 直喂 + 显式格式；越界调用方
+                // 自担。>65535 顶点 / struct.pack 通路）
+                let raw = ibytes.try_bytes_like(vm, |b| b.to_vec())?;
+                let fmt = match args.index_format.as_deref() {
+                    Some("u16") | None => wgpu::IndexFormat::Uint16,
+                    Some("u32") => wgpu::IndexFormat::Uint32,
+                    Some(o) => {
+                        return Err(vm.new_value_error(format!(
+                            "index_format 须 u16/u32，得 {o:?}"
+                        )));
+                    }
+                };
+                b = b
+                    .with_index_bytes(raw, fmt)
+                    .with_index_usages(wgpu::BufferUsages::COPY_DST);
+            } else if let Some(idx) = args.indices {
                 let idx: Vec<i64> =
                     vm.extract_elements_with(&idx, |o| i64::try_from_object(vm, o.to_owned()))?;
+                if args.index_format.is_some() {
+                    return Err(vm.new_value_error(
+                        "index_format 仅配 index_bytes（indices 列表口恒 u16）",
+                    ));
+                }
                 let mut u16s = Vec::with_capacity(idx.len());
                 for i in idx {
                     u16s.push(u16::try_from(i).map_err(|_| {
-                        vm.new_value_error(format!("索引越界（0..=65535）：{i}"))
+                        vm.new_value_error(format!(
+                            "索引越界（0..=65535）：{i}——大 mesh 走 index_bytes + index_format='u32'"
+                        ))
                     })?);
                 }
                 b = b
@@ -1023,6 +1066,56 @@ pub(crate) mod render {
             Ok(())
         }
 
+        /// update_mesh_index_bytes(mesh, data, format="u16")：**原始字
+        /// 节索引更新**（LE 直喂——u32 大 mesh / struct.pack 通路；
+        /// update_mesh 的 indices 列表口恒 u16，本口补格式自由度）。
+        /// ⚠️ 无索引 mesh 报 ValueError（index 建立须走 mesh() 的
+        /// indices/index_bytes 口）；超容量截断告警。
+        #[pymethod]
+        fn update_mesh_index_bytes(
+            &self,
+            args: UpdateMeshIndexBytesArgs,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            let (mesh, data, format) = (args.mesh, args.data, args.format);
+            let fmt = match format.as_deref() {
+                Some("u16") | None => wgpu::IndexFormat::Uint16,
+                Some("u32") => wgpu::IndexFormat::Uint32,
+                Some(o) => {
+                    return Err(vm.new_value_error(format!(
+                        "format 须 u16/u32，得 {o:?}"
+                    )));
+                }
+            };
+            if mesh.inner.index_format() != Some(fmt) {
+                return Err(vm.new_value_error(format!(
+                    "index 格式不匹配（mesh = {:?}，传 {fmt:?}）——index 缓冲格式建时定死",
+                    mesh.inner.index_format()
+                )));
+            }
+            let bytes = data.try_bytes_like(vm, |b| b.to_vec())?;
+            let cap = mesh
+                .inner
+                .index_buffer()
+                .map(|b| b.size())
+                .unwrap_or(0);
+            let n = if bytes.len() as u64 > cap {
+                starfish_debug::log_warn!(format!(
+                    "[update_mesh_index_bytes] {len}B 超索引缓冲 {cap}B——截断",
+                    len = bytes.len()
+                ));
+                cap as usize
+            } else {
+                bytes.len()
+            };
+            self.access
+                .write_index_buffer(&mesh.inner, &bytes[..n])
+                .map_err(|e| {
+                    vm.new_value_error(format!("索引缓冲更新失败：{e:?}"))
+                })?;
+            Ok(())
+        }
+
         /// sampler(mag="linear", min="linear", mipmap="linear",
         /// address="clamp", label=None) -> Sampler：采样器（字符串安全
         /// 收参；address 同时应用 u/v/w；compare 语义 v2 再放）
@@ -1190,6 +1283,32 @@ pub(crate) mod render {
         #[pymethod]
         fn has_index_buffer(&self) -> bool {
             self.inner.has_index_buffer()
+        }
+
+        /// index_format() -> str | None（"u16" / "u32"；无索引 = None）
+        #[pymethod]
+        fn index_format(&self, vm: &VirtualMachine) -> PyObjectRef {
+            match self.inner.index_format() {
+                Some(wgpu::IndexFormat::Uint16) => vm.ctx.new_str("u16").into(),
+                Some(wgpu::IndexFormat::Uint32) => vm.ctx.new_str("u32").into(),
+                None => vm.ctx.none(),
+            }
+        }
+
+        /// index_buffer_size() -> int（字节容量；无索引 = 0——copy/
+        /// update 守卫基准）
+        #[pymethod]
+        fn index_buffer_size(&self) -> u64 {
+            match self.inner.index_buffer() {
+                Some(b) => b.size(),
+                None => 0,
+            }
+        }
+
+        /// vertex_buffer_size() -> int（字节容量——copy 守卫基准）
+        #[pymethod]
+        fn vertex_buffer_size(&self) -> u64 {
+            self.inner.vertex_buffer().size()
         }
     }
 
@@ -1680,6 +1799,9 @@ pub(crate) mod render {
         CopyBufferToTexture(PyRef<PyBuffer>, PyRef<PyTexture>, u32, u32, u32),
         /// storage → mesh 顶点缓冲（instanced 粒子——顶点属性通路）
         CopyMeshVertices(PyRef<PyMesh>, PyRef<PyBuffer>, u64),
+        /// storage → mesh 索引缓冲（动态索引通路——粒子重生序/实例筛选
+        /// GPU 侧维护；无索引 mesh = 回放期跳过 + 告警）
+        CopyMeshIndices(PyRef<PyMesh>, PyRef<PyBuffer>, u64),
     }
 
     /// raw_compute 计算会话（`with t.raw_compute() as p:`——p 记录
@@ -1714,6 +1836,7 @@ pub(crate) mod render {
                         ComputeCmd::CopyBuffer(_, _, _)
                             | ComputeCmd::CopyBufferToTexture(..)
                             | ComputeCmd::CopyMeshVertices(..)
+                            | ComputeCmd::CopyMeshIndices(..)
                     )
                 });
             let replay = move |octx: &mut sf::OverlayCtx| {
@@ -1759,6 +1882,28 @@ pub(crate) mod render {
                             *size
                         };
                         octx.copy_buffer_to_buffer(&src.inner, mesh.inner.vertex_buffer(), n);
+                    }
+                }
+                for c in &copies {
+                    if let ComputeCmd::CopyMeshIndices(mesh, src, size) = c {
+                        // 守卫同顶点口 + 无索引 mesh = 跳过 + 告警（index
+                        // 缓冲只能建时建立——builder indices/index_bytes）
+                        let Some(ib) = mesh.inner.index_buffer() else {
+                            starfish_debug::log_warn!(
+                                "[copy_mesh_indices] mesh 无索引缓冲——跳过（建时未给 indices/index_bytes）"
+                            );
+                            continue;
+                        };
+                        let cap = ib.size();
+                        let n = if *size > cap {
+                            starfish_debug::log_warn!(format!(
+                                "[copy_mesh_indices] 拷贝 {size}B 超索引缓冲 {cap}B——截断"
+                            ));
+                            cap
+                        } else {
+                            *size
+                        };
+                        octx.copy_buffer_to_buffer(&src.inner, ib, n);
                     }
                 }
             };
@@ -1809,6 +1954,22 @@ pub(crate) mod render {
             size: u64,
         ) {
             self.cmds.borrow_mut().push(ComputeCmd::CopyMeshVertices(
+                mesh, src, size,
+            ));
+        }
+
+        /// copy_mesh_indices(mesh, src, size)：storage → mesh 索引缓冲
+        /// 直搬（动态索引通路——粒子重生序/实例筛选 GPU 侧维护）。⚠️
+        /// 无索引 mesh（建时未给 indices/index_bytes）回放期跳过 + 告
+        /// 警；超容量截断告警。
+        #[pymethod]
+        fn copy_mesh_indices(
+            &self,
+            mesh: PyRef<PyMesh>,
+            src: PyRef<PyBuffer>,
+            size: u64,
+        ) {
+            self.cmds.borrow_mut().push(ComputeCmd::CopyMeshIndices(
                 mesh, src, size,
             ));
         }
