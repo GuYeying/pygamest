@@ -940,6 +940,43 @@ impl PyPhysicsWorld3D {
             .map(|(ch, toi)| (pack_collider(ch), toi as f64)))
     }
 
+    /// cast_ray_filtered(origin, dir, max_toi, filter)——**带 QueryFilter
+    /// 变体**的射线查询（2026-11-17 体素案例拾取报障配套——屏幕中心
+    /// 射线先打到动态球 → 拾取落空；filter="only_fixed" 排除动态刚体 =
+    /// 地形拾取标准形态）。filter ∈ "default" / "only_fixed" /
+    /// "exclude_dynamic" / "only_dynamic" / "exclude_sensors"。
+    #[pymethod]
+    fn cast_ray_filtered(
+        &self,
+        origin: SfFPoint3,
+        dir: SfFPoint3,
+        max_toi: Option<ArgIntoFloat>,
+        filter: String,
+        vm: &VirtualMachine,
+    ) -> PyResult<Option<(u64, f64)>> {
+        let f = match filter.as_str() {
+            "default" => QueryFilter::default(),
+            "only_fixed" => QueryFilter::only_fixed(),
+            "exclude_dynamic" => QueryFilter::exclude_dynamic(),
+            "only_dynamic" => QueryFilter::only_dynamic(),
+            "exclude_sensors" => QueryFilter::default().exclude_sensors(),
+            other => {
+                return Err(vm.new_value_error(format!(
+                    "filter 未识别：{other:?}（default/only_fixed/exclude_dynamic/only_dynamic/exclude_sensors）"
+                )));
+            }
+        };
+        let w = self.inner.borrow();
+        let ray = SfRay3::new(
+            [origin.0, origin.1, origin.2].into(),
+            [dir.0, dir.1, dir.2].into(),
+        );
+        let max = max_toi.map(|m| m.into_float() as f32).unwrap_or(100.0);
+        Ok(w.get_ref()
+            .cast_ray(&ray, max, true, f)
+            .map(|(ch, toi)| (pack_collider(ch), toi as f64)))
+    }
+
     /// intersection_pair(h1, h2) -> bool：两碰撞体当前是否相交
     #[pymethod]
     fn intersection_pair(&self, h1: u64, h2: u64, vm: &VirtualMachine) -> PyResult<bool> {
