@@ -1,45 +1,52 @@
-//! pygame_physics 3D 类面运行时——rapier-starfish-debug dim3 绑定本体
-//! （3D v1，2026-10-24；与 pygame_physics 完全镜像，差异见下）。
+//! pygame.rapier —— rapier-starfish-debug 原生风格绑定面（2D v1，2026-10-24）。
 //!
-//! 维度差异（相对 pygame_physics/2D）：
-//! - 相机 = look-at 透视（`set_camera_lookat(eye, target, fov_y)` 弧度；
-//!   视口宽高比随屏幕尺寸自动跟随）；
-//! - 通道契约**相反**：调试线叠加**必须带深度附件**（3D 线管线
-//!   Depth24Plus 硬契约）——`with_pass(..., depth=true)`；
-//! - rotation 收**欧拉角向量** (rx, ry, rz)（rapier 0.36 `AngVector`
-//!   原生语义，dim3 官例同款）；查询 `rotation()` 返回四元数
-//!   (x, y, z, w)（Python 惯例 xyzw 序）；
-//! - 坐标契约：米制、y 向上、原点在视口中心（透视相机看向 target）。
+//! 接口风格定约：**第三方库等价物，不 pygame 化**——类型/方法名与
+//! rapier-starfish-debug（rapier 0.36 词汇）一致，Rust 侧文档直接适用；
+//! Python 难度控制 = builder 配置全走构造 kwargs（RP 链式返回 self 的
+//! 成本 > 收益，v1 不做链式——原生 `RigidBodyBuilder::dynamic().translation(..)`
+//! 的链式位在这里是 `RigidBodyBuilder("dynamic", translation=..)`）。
 //!
-//! 帧序/风格定约与 2D 相同（第三方库等价物、不 pygame 化、builder 构造
-//! kwargs）——见 pygame_physics/runtime.rs 文档。
+//! 帧序定约（对齐 rapier-starfish-debug 设计文档 §6）：
+//! `event 泵 → step_frame(dt) → collect → 游戏会话绘制 →
+//! renderer.draw(sink)（叠加通道）→ flip`。**叠加绘制必须在 render 会话
+//! 之后、flip 之前**（提交序 = 画家序；放会话内会被游戏 batch 覆盖）。
+//!
+//! 坐标契约：物理世界 = 米制、y 向上、原点在视口中心（ortho 相机，
+//! `set_camera(ppm)` 调缩放）——与 pygame 像素坐标（y 向下、左上原点）
+//! **不同系**，调试线独立成景显示。
+//!
+//! 惯例提醒（rapier 行为，非 bug）：默认 `sleep_color_multiplier` 把静止
+//! 体画暗（亮度 ×0.2）——"物体不动就变暗消失"是 rapier 状态编码。
+//!
+//! 结构体声明 + `#[pyclass] impl` 块在 `mods/rapier.rs` 的 pymodule
+//! 树内（RP 宏要求 struct 与方法收集块同宿；批次 43 拆分定约），
+//! 本文件 = 会话实现本体（pyegui 同构：运行时 + draw_debug 排程）。
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use rapier_starfish_debug::dim3::debug::render::DebugLinesRenderer as SfDebugLinesRenderer;
-use rapier_starfish_debug::dim3::debug::{
-    collect as sf_collect, DebugDraw as SfDebugDraw, LineSink as SfLineSink,
-};
-use rapier_starfish_debug::dim3::prelude::{
+use rapier_starfish_debug::dim2::debug::render::DebugLinesRenderer as SfDebugLinesRenderer;
+use rapier_starfish_debug::dim2::debug::{collect as sf_collect, DebugDraw as SfDebugDraw,
+    LineSink as SfLineSink};
+use rapier_starfish_debug::dim2::prelude::{
     ChannelEventCollector, ColliderBuilder as SfColliderBuilder, ColliderHandle,
-    CollisionEvent, ContactForceEvent, DebugRenderMode, FillMode as SfFillMode3, QueryFilter,
-    Ray as SfRay3, IVector as SfIVector3, ActiveEvents as SfActiveEvents3, Group as SfGroup,
+    CollisionEvent, ContactForceEvent, DebugRenderMode, QueryFilter, Ray as SfRay,
+    IVector as SfIVector2, ActiveEvents as SfActiveEvents, Group as SfGroup,
     ImpulseJointHandle, InteractionGroups, InteractionTestMode,
     RigidBodyBuilder as SfRigidBodyBuilder, RigidBodyHandle,
-    SpringJointBuilder as SfSpringJointBuilder3,
+    SpringJointBuilder as SfSpringJointBuilder2,
 };
-use rapier_starfish_debug::dim3::world::PhysicsWorld as SfPhysicsWorld;
+use rapier_starfish_debug::dim2::world::PhysicsWorld as SfPhysicsWorld;
 use rustpython_derive::{FromArgs, pyclass};
 use rustpython_vm::function::ArgIntoFloat;
 use rustpython_vm::types::Constructor;
 use rustpython_vm::{PyObjectRef, Py, PyRef, PyResult, VirtualMachine, builtins::PyType};
 
-use crate::rpy::args::SfFPoint3;
-use super::{
-    PyColliderBuilder3D, PyDebugDraw3D, PyDebugLinesRenderer3D, PyLineSink3D, PyPhysicsWorld3D,
-    PyRigidBodyBuilder3D,
+use crate::rpy::args::SfFPoint;
+use crate::rpy::pygame_physics::{
+    PyColliderBuilder, PyDebugDraw, PyDebugLinesRenderer, PyLineSink, PyPhysicsWorld,
+    PyRigidBodyBuilder,
 };
 
 // ── handle 打包（(generation, index) → 不透明 u64；Python 侧当黑盒 int）──
@@ -73,18 +80,18 @@ fn unpack_joint(v: u64) -> ImpulseJointHandle {
 
 // ── 收参结构体（构造 kwargs）────────────────────────────────────
 
-/// PhysicsWorld(gravity=(0, -9.81, 0), dt=1/60)
+/// PhysicsWorld(gravity=(0, -9.81), dt=1/60)
 #[derive(FromArgs)]
 pub(crate) struct PhysicsWorldArgs {
     /// 重力（米/秒²；y 向上为正）
     #[pyarg(any, optional)]
-    pub(crate) gravity: Option<SfFPoint3>,
+    pub(crate) gravity: Option<SfFPoint>,
     /// 固定步长（秒；缺省 1/60）
     #[pyarg(any, optional)]
     pub(crate) dt: Option<ArgIntoFloat>,
 }
 
-impl Constructor for PyPhysicsWorld3D {
+impl Constructor for PyPhysicsWorld {
     type Args = PhysicsWorldArgs;
 
     fn py_new(
@@ -92,8 +99,8 @@ impl Constructor for PyPhysicsWorld3D {
         args: Self::Args,
         _vm: &VirtualMachine,
     ) -> PyResult<Self> {
-        let g = args.gravity.unwrap_or(SfFPoint3(0.0, -9.81, 0.0));
-        let mut world = SfPhysicsWorld::new([g.0, g.1, g.2]);
+        let g = args.gravity.unwrap_or(SfFPoint(0.0, -9.81));
+        let mut world = SfPhysicsWorld::new([g.0, g.1]);
         if let Some(dt) = args.dt {
             world.set_dt(dt.into_float() as f32);
         }
@@ -113,7 +120,7 @@ impl Constructor for PyPhysicsWorld3D {
 }
 
 /// RigidBodyBuilder(kind="dynamic"|"fixed"|"kinematic", translation=,
-///                  rotation=欧拉角向量, linvel=, angvel=, can_sleep=True,
+///                  rotation=弧度, linvel=, angvel=, can_sleep=True,
 ///                  linear_damping=, angular_damping=, ccd_enabled=,
 ///                  lock_rotations=)
 #[derive(FromArgs)]
@@ -121,17 +128,17 @@ pub(crate) struct RigidBodyBuilderArgs {
     #[pyarg(any)]
     pub(crate) kind: String,
     #[pyarg(any, optional)]
-    pub(crate) translation: Option<SfFPoint3>,
-    /// 欧拉角向量 (rx, ry, rz) 弧度（rapier 0.36 AngVector 原生语义）
+    pub(crate) translation: Option<SfFPoint>,
+    /// 弧度（rapier 原生单位）
     #[pyarg(any, optional)]
-    pub(crate) rotation: Option<SfFPoint3>,
+    pub(crate) rotation: Option<ArgIntoFloat>,
     #[pyarg(any, optional)]
-    pub(crate) linvel: Option<SfFPoint3>,
+    pub(crate) linvel: Option<SfFPoint>,
     #[pyarg(any, optional)]
-    pub(crate) angvel: Option<SfFPoint3>,
+    pub(crate) angvel: Option<ArgIntoFloat>,
     #[pyarg(any, optional)]
     pub(crate) can_sleep: Option<bool>,
-    /// 线性阻尼（缺省 0）
+    /// 线性阻尼（缺省 0；数值越大停得越快）
     #[pyarg(any, optional)]
     pub(crate) linear_damping: Option<ArgIntoFloat>,
     /// 角阻尼
@@ -140,12 +147,12 @@ pub(crate) struct RigidBodyBuilderArgs {
     /// 连续碰撞检测（高速穿墙防线）
     #[pyarg(any, optional)]
     pub(crate) ccd_enabled: Option<bool>,
-    /// 锁定全部旋转（3D = 姿态四元数冻结——方向固定物体）
+    /// 锁定旋转（不倒翁/角色胶囊）
     #[pyarg(any, optional)]
     pub(crate) lock_rotations: Option<bool>,
 }
 
-impl Constructor for PyRigidBodyBuilder3D {
+impl Constructor for PyRigidBodyBuilder {
     type Args = RigidBodyBuilderArgs;
 
     fn py_new(
@@ -164,16 +171,16 @@ impl Constructor for PyRigidBodyBuilder3D {
             }
         };
         if let Some(t) = args.translation {
-            b = b.translation([t.0, t.1, t.2].into());
+            b = b.translation([t.0, t.1].into());
         }
         if let Some(r) = args.rotation {
-            b = b.rotation([r.0, r.1, r.2].into());
+            b = b.rotation(r.into_float() as f32);
         }
         if let Some(v) = args.linvel {
-            b = b.linvel([v.0, v.1, v.2].into());
+            b = b.linvel([v.0, v.1].into());
         }
         if let Some(w) = args.angvel {
-            b = b.angvel([w.0, w.1, w.2].into());
+            b = b.angvel(w.into_float() as f32);
         }
         b = b.can_sleep(args.can_sleep.unwrap_or(true));
         if let Some(v) = args.linear_damping {
@@ -194,48 +201,57 @@ impl Constructor for PyRigidBodyBuilder3D {
     }
 }
 
-/// ColliderBuilder(kind="cuboid"|"ball", 半尺寸/半径, friction=,
-///                 restitution=, density=, sensor=, translation=)
+/// ColliderBuilder(kind="cuboid"|"ball"|"capsule"|"segment"|"triangle",
+///                 半尺寸/半径/端点坐标, friction=, restitution=, density=,
+///                 sensor=, translation=, events=,
+///                 groups_memberships=+groups_filter=, force_events=,
+///                 force_threshold=)
 #[derive(FromArgs)]
 pub(crate) struct ColliderBuilderArgs {
-    /// "cuboid"（hx/hy/hz 半尺寸）/ "ball"（radius）/ "capsule"（
-    /// half_height + radius，纵轴 y）/ "cylinder" / "cone"（同 capsule
-    /// 参数形态）/ "trimesh"（vertices 扁平 xyz + indices 扁平三角索引）/
-    /// "voxels"（voxel_size 立方边长 + voxels 扁平格子坐标）/ 
-    /// "voxelized_mesh"（trimesh 体素化——vertices/indices/voxel_size/
-    /// fill_mode="surface"|"flood_fill"）
+    /// "cuboid"（hx/hy 半尺寸）/ "ball"（radius）/ "capsule"（half_height
+    /// + radius，纵轴 y）/ "segment"（ax ay bx by）/ "triangle"（六坐标）/
+    /// "voxels"（voxel_size 方格边长 + voxels 扁平格子坐标）
     #[pyarg(any)]
     pub(crate) kind: String,
+    /// 体素方格边长（米；"voxels" 用）
+    #[pyarg(any, optional)]
+    pub(crate) voxel_size: Option<ArgIntoFloat>,
+    /// 体素格子坐标（扁平 [i,j, ...]，长度须为 2 的倍数；"voxels" 用）
+    #[pyarg(any, optional)]
+    pub(crate) voxels: Option<Vec<i32>>,
     #[pyarg(any, optional)]
     pub(crate) hx: Option<ArgIntoFloat>,
     #[pyarg(any, optional)]
     pub(crate) hy: Option<ArgIntoFloat>,
     #[pyarg(any, optional)]
-    pub(crate) hz: Option<ArgIntoFloat>,
-    #[pyarg(any, optional)]
     pub(crate) radius: Option<ArgIntoFloat>,
-    /// capsule / cylinder / cone 半高（纵轴 y）
+    /// capsule 半高（总长 = 2×half_height + 2×radius，纵轴 y）
     #[pyarg(any, optional)]
     pub(crate) half_height: Option<ArgIntoFloat>,
-    /// trimesh 顶点（扁平 [x,y,z, ...]）
+    /// segment / triangle 端点坐标
     #[pyarg(any, optional)]
-    pub(crate) vertices: Option<Vec<f32>>,
-    /// trimesh 三角索引（扁平 [i0,i1,i2, ...]，长度须为 3 的倍数）
+    pub(crate) ax: Option<ArgIntoFloat>,
     #[pyarg(any, optional)]
-    pub(crate) indices: Option<Vec<u32>>,
-    /// 体素立方边长（米；"voxels" / "voxelized_mesh" 用）
+    pub(crate) ay: Option<ArgIntoFloat>,
     #[pyarg(any, optional)]
-    pub(crate) voxel_size: Option<ArgIntoFloat>,
-    /// 体素格子坐标（扁平 [i,j,k, ...]；"voxels" 用）
+    pub(crate) bx: Option<ArgIntoFloat>,
     #[pyarg(any, optional)]
-    pub(crate) voxels: Option<Vec<i32>>,
-    /// 体素化填充模式（"voxelized_mesh" 用）："surface"（只表面体素）/
-    /// "flood_fill"（表面 + 内部泛洪——实心体；缺省 flood_fill）
+    pub(crate) by: Option<ArgIntoFloat>,
     #[pyarg(any, optional)]
-    pub(crate) fill_mode: Option<String>,
+    pub(crate) x1: Option<ArgIntoFloat>,
+    #[pyarg(any, optional)]
+    pub(crate) y1: Option<ArgIntoFloat>,
+    #[pyarg(any, optional)]
+    pub(crate) x2: Option<ArgIntoFloat>,
+    #[pyarg(any, optional)]
+    pub(crate) y2: Option<ArgIntoFloat>,
+    #[pyarg(any, optional)]
+    pub(crate) x3: Option<ArgIntoFloat>,
+    #[pyarg(any, optional)]
+    pub(crate) y3: Option<ArgIntoFloat>,
     /// 相对刚体原点的偏移（米）
     #[pyarg(any, optional)]
-    pub(crate) translation: Option<SfFPoint3>,
+    pub(crate) translation: Option<SfFPoint>,
     #[pyarg(any, optional)]
     pub(crate) friction: Option<ArgIntoFloat>,
     #[pyarg(any, optional)]
@@ -250,7 +266,8 @@ pub(crate) struct ColliderBuilderArgs {
     #[pyarg(any, optional)]
     pub(crate) events: Option<bool>,
     /// 碰撞分组（两者同给生效）：memberships = 本体所属组位集，
-    /// filter = 可碰撞组位集（bit i = 组 i）
+    /// filter = 可碰撞组位集（bit i = 组 i；组 i 物体只与
+    /// filter 含组 i 的物体碰撞——位掩码语义）
     #[pyarg(any, optional)]
     pub(crate) groups_memberships: Option<u32>,
     #[pyarg(any, optional)]
@@ -258,7 +275,7 @@ pub(crate) struct ColliderBuilderArgs {
     /// 冲击力事件（drain_force_events 产出——撞击力度门槛检测）
     #[pyarg(any, optional)]
     pub(crate) force_events: Option<bool>,
-    /// 力事件门槛（总力幅值超过才发事件）
+    /// 力事件门槛（总力幅值超过才发事件；缺省用 rapier 默认）
     #[pyarg(any, optional)]
     pub(crate) force_threshold: Option<ArgIntoFloat>,
 }
@@ -284,16 +301,16 @@ pub(crate) struct CreateJointArgs {
     pub(crate) damping: Option<ArgIntoFloat>,
     /// 体 1 局部系锚点（缺省质心）
     #[pyarg(any, optional)]
-    pub(crate) anchor1: Option<SfFPoint3>,
+    pub(crate) anchor1: Option<SfFPoint>,
     /// 体 2 局部系锚点（缺省质心）
     #[pyarg(any, optional)]
-    pub(crate) anchor2: Option<SfFPoint3>,
+    pub(crate) anchor2: Option<SfFPoint>,
     /// 两体间碰撞是否保留（缺省 false——弹簧互连体互不碰撞）
     #[pyarg(any, optional)]
     pub(crate) contacts_enabled: Option<bool>,
 }
 
-impl Constructor for PyColliderBuilder3D {
+impl Constructor for PyColliderBuilder {
     type Args = ColliderBuilderArgs;
 
     fn py_new(
@@ -303,14 +320,10 @@ impl Constructor for PyColliderBuilder3D {
     ) -> PyResult<Self> {
         let mut c = match args.kind.as_str() {
             "cuboid" => {
-                let (Some(hx), Some(hy), Some(hz)) = (args.hx, args.hy, args.hz) else {
-                    return Err(vm.new_value_error("cuboid 须给 hx / hy / hz（半尺寸，米）"));
+                let (Some(hx), Some(hy)) = (args.hx, args.hy) else {
+                    return Err(vm.new_value_error("cuboid 须给 hx / hy（半尺寸，米）"));
                 };
-                SfColliderBuilder::cuboid(
-                    hx.into_float() as f32,
-                    hy.into_float() as f32,
-                    hz.into_float() as f32,
-                )
+                SfColliderBuilder::cuboid(hx.into_float() as f32, hy.into_float() as f32)
             }
             "ball" => {
                 let Some(r) = args.radius else {
@@ -324,93 +337,53 @@ impl Constructor for PyColliderBuilder3D {
                 };
                 SfColliderBuilder::capsule_y(hh.into_float() as f32, r.into_float() as f32)
             }
-            "cylinder" => {
-                let (Some(hh), Some(r)) = (args.half_height, args.radius) else {
-                    return Err(vm.new_value_error("cylinder 须给 half_height / radius（米）"));
-                };
-                SfColliderBuilder::cylinder(hh.into_float() as f32, r.into_float() as f32)
-            }
-            "cone" => {
-                let (Some(hh), Some(r)) = (args.half_height, args.radius) else {
-                    return Err(vm.new_value_error("cone 须给 half_height / radius（米）"));
-                };
-                SfColliderBuilder::cone(hh.into_float() as f32, r.into_float() as f32)
-            }
-            "trimesh" => {
-                let (Some(verts), Some(idx)) = (args.vertices.clone(), args.indices.clone())
+            "segment" => {
+                let (Some(ax), Some(ay), Some(bx), Some(by)) =
+                    (args.ax, args.ay, args.bx, args.by)
                 else {
-                    return Err(vm.new_value_error("trimesh 须给 vertices / indices"));
+                    return Err(vm.new_value_error("segment 须给 ax ay bx by（线段两端点）"));
                 };
-                if verts.len() % 3 != 0 {
-                    return Err(vm.new_value_error("vertices 长度须为 3 的倍数（扁平 xyz）"));
-                }
-                if idx.len() % 3 != 0 {
-                    return Err(vm.new_value_error("indices 长度须为 3 的倍数（三角索引）"));
-                }
-                let points: Vec<_> = verts
-                    .chunks_exact(3)
-                    .map(|p| [p[0], p[1], p[2]].into())
-                    .collect();
-                let tris: Vec<_> = idx.chunks_exact(3).map(|t| [t[0], t[1], t[2]]).collect();
-                SfColliderBuilder::trimesh(points, tris).map_err(|e| {
-                    vm.new_value_error(format!("trimesh 构建失败: {e:?}"))
-                })?
+                SfColliderBuilder::segment(
+                    [ax.into_float() as f32, ay.into_float() as f32].into(),
+                    [bx.into_float() as f32, by.into_float() as f32].into(),
+                )
+            }
+            "triangle" => {
+                let (Some(x1), Some(y1), Some(x2), Some(y2), Some(x3), Some(y3)) = (
+                    args.x1, args.y1, args.x2, args.y2, args.x3, args.y3,
+                ) else {
+                    return Err(vm.new_value_error("triangle 须给 x1 y1 x2 y2 x3 y3（三顶点）"));
+                };
+                SfColliderBuilder::triangle(
+                    [x1.into_float() as f32, y1.into_float() as f32].into(),
+                    [x2.into_float() as f32, y2.into_float() as f32].into(),
+                    [x3.into_float() as f32, y3.into_float() as f32].into(),
+                )
             }
             "voxels" => {
                 let (Some(vs), Some(vox)) = (args.voxel_size, args.voxels.clone()) else {
                     return Err(
-                        vm.new_value_error("voxels 须给 voxel_size（立方边长，米）/ voxels（扁平格子坐标）")
+                        vm.new_value_error("voxels 须给 voxel_size（方格边长，米）/ voxels（扁平格子坐标）")
                     );
                 };
-                if vox.is_empty() || vox.len() % 3 != 0 {
-                    return Err(vm.new_value_error("voxels 长度须为 3 的倍数（扁平 i,j,k）"));
+                if vox.is_empty() || vox.len() % 2 != 0 {
+                    return Err(vm.new_value_error("voxels 长度须为 2 的倍数（扁平 i,j）"));
                 }
                 let s = vs.into_float() as f32;
                 let cells: Vec<_> = vox
-                    .chunks_exact(3)
-                    .map(|c| SfIVector3::new(c[0], c[1], c[2]))
+                    .chunks_exact(2)
+                    .map(|c| SfIVector2::new(c[0], c[1]))
                     .collect();
-                SfColliderBuilder::voxels([s, s, s].into(), &cells)
-            }
-            "voxelized_mesh" => {
-                let (Some(verts), Some(idx)) = (args.vertices.clone(), args.indices.clone())
-                else {
-                    return Err(vm.new_value_error("voxelized_mesh 须给 vertices / indices"));
-                };
-                let Some(vs) = args.voxel_size else {
-                    return Err(vm.new_value_error("voxelized_mesh 须给 voxel_size（体素边长，米）"));
-                };
-                if verts.len() % 3 != 0 || idx.len() % 3 != 0 || idx.is_empty() {
-                    return Err(vm.new_value_error(
-                        "vertices 须为 3 的倍数（扁平 xyz）/ indices 须为 3 的倍数且非空",
-                    ));
-                }
-                let points: Vec<_> = verts
-                    .chunks_exact(3)
-                    .map(|p| [p[0], p[1], p[2]].into())
-                    .collect();
-                let tris: Vec<_> = idx.chunks_exact(3).map(|t| [t[0], t[1], t[2]]).collect();
-                let fill = match args.fill_mode.as_deref().unwrap_or("flood_fill") {
-                    "surface" => SfFillMode3::SurfaceOnly,
-                    "flood_fill" | "flood_fill_cavities" => SfFillMode3::FloodFill {
-                        detect_cavities: args.fill_mode.as_deref() == Some("flood_fill_cavities"),
-                    },
-                    other => {
-                        return Err(vm.new_value_error(format!(
-                            "fill_mode 须为 'surface' / 'flood_fill' / 'flood_fill_cavities'，实际 {other:?}"
-                        )))
-                    }
-                };
-                SfColliderBuilder::voxelized_mesh(&points, &tris, vs.into_float() as f32, fill)
+                SfColliderBuilder::voxels([s, s].into(), &cells)
             }
             other => {
                 return Err(vm.new_value_error(format!(
-                    "kind 须为 'cuboid' / 'ball' / 'capsule' / 'cylinder' / 'cone' / 'trimesh' / 'voxels' / 'voxelized_mesh'，实际 {other:?}"
+                    "kind 须为 'cuboid' / 'ball' / 'capsule' / 'segment' / 'triangle' / 'voxels'，实际 {other:?}"
                 )))
             }
         };
         if let Some(t) = args.translation {
-            c = c.translation([t.0, t.1, t.2].into());
+            c = c.translation([t.0, t.1].into());
         }
         if let Some(f) = args.friction {
             c = c.friction(f.into_float() as f32);
@@ -424,6 +397,7 @@ impl Constructor for PyColliderBuilder3D {
         if args.sensor.unwrap_or(false) {
             c = c.sensor(true);
         }
+        // 碰撞分组（两 kwarg 同给生效——位掩码语义见字段注释）
         if let (Some(m), Some(f)) = (args.groups_memberships, args.groups_filter) {
             c = c.collision_groups(InteractionGroups::new(
                 SfGroup::from_bits_truncate(m),
@@ -431,17 +405,18 @@ impl Constructor for PyColliderBuilder3D {
                 InteractionTestMode::And,
             ));
         }
-        let mut ev = SfActiveEvents3::default();
+        // 事件位集合并（碰撞事件 + 冲击力事件可同开）
+        let mut ev = SfActiveEvents::default();
         if args.events.unwrap_or(false) {
-            ev |= SfActiveEvents3::COLLISION_EVENTS;
+            ev |= SfActiveEvents::COLLISION_EVENTS;
         }
         if args.force_events.unwrap_or(false) {
-            ev |= SfActiveEvents3::CONTACT_FORCE_EVENTS;
+            ev |= SfActiveEvents::CONTACT_FORCE_EVENTS;
             if let Some(t) = args.force_threshold {
                 c = c.contact_force_event_threshold(t.into_float() as f32);
             }
         }
-        if ev != SfActiveEvents3::default() {
+        if ev != SfActiveEvents::default() {
             c = c.active_events(ev);
         }
         Ok(Self {
@@ -466,7 +441,10 @@ pub(crate) struct DebugDrawArgs {
     pub(crate) axes: Option<bool>,
 }
 
-fn mode_from_args(args: &DebugDrawArgs, base: DebugRenderMode) -> DebugRenderMode {
+fn mode_from_args(
+    args: &DebugDrawArgs,
+    base: DebugRenderMode,
+) -> DebugRenderMode {
     let mut m = base;
     let set = |on: Option<bool>, flag: DebugRenderMode, m: &mut DebugRenderMode| match on {
         Some(true) => *m |= flag,
@@ -481,7 +459,7 @@ fn mode_from_args(args: &DebugDrawArgs, base: DebugRenderMode) -> DebugRenderMod
     m
 }
 
-impl Constructor for PyDebugDraw3D {
+impl Constructor for PyDebugDraw {
     type Args = DebugDrawArgs;
 
     fn py_new(
@@ -498,21 +476,16 @@ impl Constructor for PyDebugDraw3D {
     }
 }
 
-/// DebugLinesRenderer(eye=(0, 6, 14), target=(0, 0, 0), fov=1.0)——调试线
-/// 绘制器（3D：look-at 透视相机；GPU 惰性装配——首次 draw_debug_3d 时
-/// 须已 set_mode；fov = 垂直视场角**弧度**）
+/// DebugLinesRenderer(ppm=50.0)——调试线绘制器（GPU 惰性装配：首次
+/// draw() 时须已 set_mode；表面尺寸变化自动重设相机）
 #[derive(FromArgs)]
 pub(crate) struct DebugLinesRendererArgs {
+    /// 像素/米（ortho 相机缩放）
     #[pyarg(any, optional)]
-    pub(crate) eye: Option<SfFPoint3>,
-    #[pyarg(any, optional)]
-    pub(crate) target: Option<SfFPoint3>,
-    /// 垂直视场角（**弧度**；1.0 ≈ 57°）
-    #[pyarg(any, optional)]
-    pub(crate) fov: Option<ArgIntoFloat>,
+    pub(crate) ppm: Option<ArgIntoFloat>,
 }
 
-impl Constructor for PyDebugLinesRenderer3D {
+impl Constructor for PyDebugLinesRenderer {
     type Args = DebugLinesRendererArgs;
 
     fn py_new(
@@ -520,54 +493,33 @@ impl Constructor for PyDebugLinesRenderer3D {
         args: Self::Args,
         _vm: &VirtualMachine,
     ) -> PyResult<Self> {
-        let eye = args
-            .eye
-            .unwrap_or(SfFPoint3(0.0, 6.0, 14.0));
-        let target = args.target.unwrap_or(SfFPoint3(0.0, 0.0, 0.0));
         Ok(Self {
-            camera: RefCell::new(Camera3 {
-                eye: [eye.0, eye.1, eye.2],
-                target: [target.0, target.1, target.2],
-                fov_y: args.fov.map(|f| f.into_float() as f32).unwrap_or(1.0),
-            }),
-            camera_epoch: Cell::new(1),
-            explicit_mvp: RefCell::new(None),
+            ppm: Cell::new(args.ppm.map(|p| p.into_float() as f32).unwrap_or(50.0)),
             follow_global: Cell::new(false),
             states: RefCell::new(Vec::new()),
         })
     }
 }
 
-// ── 相机参数 + 渲染器惰性装配状态（GPU 句柄在首次 draw 时取）──
+// ── 渲染器惰性装配状态（GPU 句柄在首次 draw 时取——set_mode 后必有）──
 
-/// look-at 相机参数（Python 侧可改；draw 时按 epoch/视口脏置应用）
-pub(crate) struct Camera3 {
-    pub(crate) eye: [f32; 3],
-    pub(crate) target: [f32; 3],
-    pub(crate) fov_y: f32,
-}
-
-pub(crate) struct RendererGpu3D {
+pub(crate) struct RendererGpu {
     pub(crate) renderer: SfDebugLinesRenderer,
     pub(crate) access: Arc<starfish_render::render_resource_access::RenderResourceAccess>,
     pub(crate) viewport: (u32, u32),
-    pub(crate) camera_epoch: u32,
 }
 
 // ── pymethod 实现（#[pyclass] impl 块——每类型 crate 内唯一）──────
 
 // builder 无实例方法面——仅声明构造协议归属（RP 空属性 impl 块）
+#[pyclass(with(Constructor))]
+impl PyRigidBodyBuilder {}
 
 #[pyclass(with(Constructor))]
-impl PyRigidBodyBuilder3D {}
-
-
-#[pyclass(with(Constructor))]
-impl PyColliderBuilder3D {}
-
+impl PyColliderBuilder {}
 
 #[pyclass(with(Constructor))]
-impl PyPhysicsWorld3D {
+impl PyPhysicsWorld {
     /// step_frame(real_dt) -> int：真实帧距累积积分（0 = 余量不足一步；
     /// 上限节流防死亡螺旋）
     #[pymethod]
@@ -600,8 +552,8 @@ impl PyPhysicsWorld3D {
     #[pymethod]
     fn insert(
         &self,
-        body: PyRef<PyRigidBodyBuilder3D>,
-        collider: PyRef<PyColliderBuilder3D>,
+        body: PyRef<PyRigidBodyBuilder>,
+        collider: PyRef<PyColliderBuilder>,
         vm: &VirtualMachine,
     ) -> PyResult<(u64, u64)> {
         let rb = body
@@ -618,9 +570,9 @@ impl PyPhysicsWorld3D {
         Ok((pack_body(bh), pack_collider(ch)))
     }
 
-    /// translation(body_handle) -> (x, y, z)（米，世界系）
+    /// translation(body_handle) -> (x, y)（米，世界系）
     #[pymethod]
-    fn translation(&self, body_handle: u64, vm: &VirtualMachine) -> PyResult<(f32, f32, f32)> {
+    fn translation(&self, body_handle: u64, vm: &VirtualMachine) -> PyResult<(f32, f32)> {
         let w = self.inner.borrow();
         let body = w
             .get_ref()
@@ -628,26 +580,24 @@ impl PyPhysicsWorld3D {
             .get(unpack_body(body_handle))
             .ok_or_else(|| vm.new_value_error("无效的 body handle"))?;
         let t = body.translation();
-        Ok((t.x, t.y, t.z))
+        Ok((t.x, t.y))
     }
 
-    /// rotation(body_handle) -> (x, y, z, w)：姿态四元数（Python 惯例
-    /// xyzw 序；nalgebra 内部标量在前的换序在此收口）
+    /// rotation(body_handle) -> float（弧度）
     #[pymethod]
-    fn rotation(&self, body_handle: u64, vm: &VirtualMachine) -> PyResult<(f32, f32, f32, f32)> {
+    fn rotation(&self, body_handle: u64, vm: &VirtualMachine) -> PyResult<f32> {
         let w = self.inner.borrow();
         let body = w
             .get_ref()
             .bodies
             .get(unpack_body(body_handle))
             .ok_or_else(|| vm.new_value_error("无效的 body handle"))?;
-        let q = body.rotation();
-        Ok((q.x, q.y, q.z, q.w))
+        Ok(body.rotation().angle())
     }
 
-    /// linvel(body_handle) -> (vx, vy, vz)（米/秒）
+    /// linvel(body_handle) -> (vx, vy)（米/秒）
     #[pymethod]
-    fn linvel(&self, body_handle: u64, vm: &VirtualMachine) -> PyResult<(f32, f32, f32)> {
+    fn linvel(&self, body_handle: u64, vm: &VirtualMachine) -> PyResult<(f32, f32)> {
         let w = self.inner.borrow();
         let body = w
             .get_ref()
@@ -655,7 +605,7 @@ impl PyPhysicsWorld3D {
             .get(unpack_body(body_handle))
             .ok_or_else(|| vm.new_value_error("无效的 body handle"))?;
         let v = body.linvel();
-        Ok((v.x, v.y, v.z))
+        Ok((v.x, v.y))
     }
 
     /// is_sleeping(body_handle) -> bool（静止体休眠态）
@@ -670,35 +620,24 @@ impl PyPhysicsWorld3D {
         Ok(body.is_sleeping())
     }
 
-    // ── 写入面（3D v2：游戏操控 / 触发器 / 查询——与 2D 同款语义）──
+    // ── 写入面（2D v2：游戏操控 / 触发器 / 查询）──────────────────
 
-    /// set_translation(body_handle, (x, y, z))：瞬移（自动唤醒）
+    /// set_translation(body_handle, (x, y))：瞬移（自动唤醒）
     #[pymethod]
-    fn set_translation(
-        &self,
-        body_handle: u64,
-        pos: SfFPoint3,
-        vm: &VirtualMachine,
-    ) -> PyResult<()> {
+    fn set_translation(&self, body_handle: u64, pos: SfFPoint, vm: &VirtualMachine) -> PyResult<()> {
         let mut w = self.inner.borrow_mut();
         let body = w
             .get()
             .bodies
             .get_mut(unpack_body(body_handle))
             .ok_or_else(|| vm.new_value_error("无效的 body handle"))?;
-        body.set_translation([pos.0, pos.1, pos.2].into(), true);
+        body.set_translation([pos.0, pos.1].into(), true);
         Ok(())
     }
 
-    /// set_rotation(body_handle, (rx, ry, rz))：设姿态（欧拉角向量弧度；
-    /// 自动唤醒——与构造 kwargs 同语义）
+    /// set_rotation(body_handle, angle)：设姿态（弧度；自动唤醒）
     #[pymethod]
-    fn set_rotation(
-        &self,
-        body_handle: u64,
-        r: SfFPoint3,
-        vm: &VirtualMachine,
-    ) -> PyResult<()> {
+    fn set_rotation(&self, body_handle: u64, angle: ArgIntoFloat, vm: &VirtualMachine) -> PyResult<()> {
         let mut w = self.inner.borrow_mut();
         let body = w
             .get()
@@ -706,53 +645,48 @@ impl PyPhysicsWorld3D {
             .get_mut(unpack_body(body_handle))
             .ok_or_else(|| vm.new_value_error("无效的 body handle"))?;
         body.set_rotation(
-            rapier_starfish_debug::dim3::prelude::rotation_from_angle([r.0, r.1, r.2].into()),
+            rapier_starfish_debug::dim2::prelude::Rotation::new(angle.into_float() as f32),
             true,
         );
         Ok(())
     }
 
-    /// set_linvel(body_handle, (vx, vy, vz))：设线速度（自动唤醒）
+    /// set_linvel(body_handle, (vx, vy))：设线速度（自动唤醒）
     #[pymethod]
-    fn set_linvel(&self, body_handle: u64, v: SfFPoint3, vm: &VirtualMachine) -> PyResult<()> {
+    fn set_linvel(&self, body_handle: u64, v: SfFPoint, vm: &VirtualMachine) -> PyResult<()> {
         let mut w = self.inner.borrow_mut();
         let body = w
             .get()
             .bodies
             .get_mut(unpack_body(body_handle))
             .ok_or_else(|| vm.new_value_error("无效的 body handle"))?;
-        body.set_linvel([v.0, v.1, v.2].into(), true);
+        body.set_linvel([v.0, v.1].into(), true);
         Ok(())
     }
 
-    /// set_angvel(body_handle, (wx, wy, wz))：设角速度（自动唤醒）
+    /// set_angvel(body_handle, w)：设角速度（自动唤醒）
     #[pymethod]
-    fn set_angvel(&self, body_handle: u64, w: SfFPoint3, vm: &VirtualMachine) -> PyResult<()> {
+    fn set_angvel(&self, body_handle: u64, w: ArgIntoFloat, vm: &VirtualMachine) -> PyResult<()> {
         let mut world = self.inner.borrow_mut();
         let body = world
             .get()
             .bodies
             .get_mut(unpack_body(body_handle))
             .ok_or_else(|| vm.new_value_error("无效的 body handle"))?;
-        body.set_angvel([w.0, w.1, w.2].into(), true);
+        body.set_angvel(w.into_float() as f32, true);
         Ok(())
     }
 
-    /// apply_impulse(body_handle, (ix, iy, iz))：施加冲量（自动唤醒）
+    /// apply_impulse(body_handle, (ix, iy))：施加冲量（自动唤醒）
     #[pymethod]
-    fn apply_impulse(
-        &self,
-        body_handle: u64,
-        impulse: SfFPoint3,
-        vm: &VirtualMachine,
-    ) -> PyResult<()> {
+    fn apply_impulse(&self, body_handle: u64, impulse: SfFPoint, vm: &VirtualMachine) -> PyResult<()> {
         let mut w = self.inner.borrow_mut();
         let body = w
             .get()
             .bodies
             .get_mut(unpack_body(body_handle))
             .ok_or_else(|| vm.new_value_error("无效的 body handle"))?;
-        body.apply_impulse([impulse.0, impulse.1, impulse.2].into(), true);
+        body.apply_impulse([impulse.0, impulse.1].into(), true);
         Ok(())
     }
 
@@ -764,10 +698,10 @@ impl PyPhysicsWorld3D {
         Ok(())
     }
 
-    /// set_gravity((gx, gy, gz))：改重力（下一帧生效）
+    /// set_gravity((gx, gy))：改重力（下一帧生效）
     #[pymethod]
-    fn set_gravity(&self, g: SfFPoint3) {
-        self.inner.borrow_mut().get().gravity = [g.0, g.1, g.2].into();
+    fn set_gravity(&self, g: SfFPoint) {
+        self.inner.borrow_mut().get().gravity = [g.0, g.1].into();
     }
 
     /// remove_body(body_handle) -> bool：移除刚体（连带其全部碰撞体；
@@ -786,8 +720,8 @@ impl PyPhysicsWorld3D {
     /// 关节句柄——remove_joint 消费）。v1 kind = "spring"（弹簧约束：
     /// rest_length 自然长/ stiffness 刚度/ damping 阻尼；anchor1/anchor2
     /// = 各自体的局部系锚点，缺省体质心）。
-    /// ⚠️ debug：`DebugDraw3D(set_mode(joints=True))` 后 rapier 自绘关
-    /// 节线（impulse joint 专属配色——与碰撞线框区分，弹簧不另做花哨
+    /// ⚠️ debug：`DebugDraw(set_mode(joints=True))` 后 rapier 自绘关节
+    /// 线（impulse joint 专属配色——与碰撞线框区分，弹簧不另做花哨
     /// 渲染定约）。
     /// ⚠️ panic 面：rest_length ≤ 0 上游断言（SpringJoint::new 文档
     /// 契约）——须 > 0；无其余 panic 面。
@@ -813,12 +747,12 @@ impl PyPhysicsWorld3D {
                 if rest <= 0.0 {
                     return Err(vm.new_value_error("rest_length 须 > 0（上游断言防线）"));
                 }
-                let mut j = SfSpringJointBuilder3::new(rest, k, d);
+                let mut j = SfSpringJointBuilder2::new(rest, k, d);
                 if let Some(a) = args.anchor1 {
-                    j = j.local_anchor1([a.0, a.1, a.2].into());
+                    j = j.local_anchor1([a.0, a.1].into());
                 }
                 if let Some(a) = args.anchor2 {
-                    j = j.local_anchor2([a.0, a.1, a.2].into());
+                    j = j.local_anchor2([a.0, a.1].into());
                 }
                 if args.contacts_enabled.unwrap_or(false) {
                     j = j.contacts_enabled(true);
@@ -840,8 +774,8 @@ impl PyPhysicsWorld3D {
 
     /// drain_events() -> [(kind, collider_handle1, collider_handle2), ...]：
     /// 排空自上帧以来的碰撞事件（kind = "started" | "stopped"；仅
-    /// `ColliderBuilder3D(events=True)` 的碰撞体产生事件——传感器触发器
-    /// 同此通道）。每帧调用一次，不清也不丢（通道缓冲按步累积）。
+    /// `ColliderBuilder(events=True)` 的碰撞体产生事件——传感器触发器同
+    /// 此通道）。每帧调用一次，不清也不丢（通道缓冲按步累积）。
     #[pymethod]
     fn drain_events(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
         let mut out: Vec<PyObjectRef> = Vec::new();
@@ -866,7 +800,7 @@ impl PyPhysicsWorld3D {
 
     /// drain_force_events() -> [(h1, h2, 总力幅值, 最大接触力幅值)]：冲击
     /// 力事件排空（collider 须 force_events=True 开启 + force_threshold
-    /// 设门槛——撞击伤害判定/击碎反馈的判定源）。
+    /// 设门槛——落体撞地伤害判定/击打反馈的判定源）。
     #[pymethod]
     fn drain_force_events(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
         let mut out: Vec<PyObjectRef> = Vec::new();
@@ -889,7 +823,8 @@ impl PyPhysicsWorld3D {
     }
 
     /// set_collider_groups(handle, memberships, filter)：运行时改碰撞
-    /// 分组（换阵营/临时免伤的运行时开关）。
+    /// 分组（句柄取自 drain_events/force_events 事件或 insert 产物；
+    /// 换阵营/临时免伤的运行时开关）。
     #[pymethod]
     fn set_collider_groups(
         &self,
@@ -903,13 +838,7 @@ impl PyPhysicsWorld3D {
             SfGroup::from_bits_truncate(filter),
             InteractionTestMode::And,
         );
-        match self
-            .inner
-            .borrow_mut()
-            .get()
-            .colliders
-            .get_mut(unpack_collider(handle))
-        {
+        match self.inner.borrow_mut().get().colliders.get_mut(unpack_collider(handle)) {
             Some(co) => {
                 co.set_collision_groups(g);
                 Ok(())
@@ -918,6 +847,7 @@ impl PyPhysicsWorld3D {
         }
     }
 
+    /// cast_ray(origin, dir, max_toi) -> None | (collider_handle, 距离)：
     /// 射线查询（dir 非单位向量按其模长定射线长；max_toi 为 dir 模长的
     /// 倍数上限，None = 缺省 100.0——RP 方法参数无缺省，Python 侧显式传
     /// None）。⚠️ 时序契约：insert 后**须至少 step 一次**方可查询
@@ -925,56 +855,16 @@ impl PyPhysicsWorld3D {
     #[pymethod]
     fn cast_ray(
         &self,
-        origin: SfFPoint3,
-        dir: SfFPoint3,
+        origin: SfFPoint,
+        dir: SfFPoint,
         max_toi: Option<ArgIntoFloat>,
         vm: &VirtualMachine,
     ) -> PyResult<Option<(u64, f64)>> {
         let w = self.inner.borrow();
-        let ray = SfRay3::new(
-            [origin.0, origin.1, origin.2].into(),
-            [dir.0, dir.1, dir.2].into(),
-        );
+        let ray = SfRay::new([origin.0, origin.1].into(), [dir.0, dir.1].into());
         let max = max_toi.map(|m| m.into_float() as f32).unwrap_or(100.0);
         Ok(w.get_ref()
             .cast_ray(&ray, max, true, QueryFilter::default())
-            .map(|(ch, toi)| (pack_collider(ch), toi as f64)))
-    }
-
-    /// cast_ray_filtered(origin, dir, max_toi, filter)——**带 QueryFilter
-    /// 变体**的射线查询（2026-11-17 体素案例拾取报障配套——屏幕中心
-    /// 射线先打到动态球 → 拾取落空；filter="only_fixed" 排除动态刚体 =
-    /// 地形拾取标准形态）。filter ∈ "default" / "only_fixed" /
-    /// "exclude_dynamic" / "only_dynamic" / "exclude_sensors"。
-    #[pymethod]
-    fn cast_ray_filtered(
-        &self,
-        origin: SfFPoint3,
-        dir: SfFPoint3,
-        max_toi: Option<ArgIntoFloat>,
-        filter: String,
-        vm: &VirtualMachine,
-    ) -> PyResult<Option<(u64, f64)>> {
-        let f = match filter.as_str() {
-            "default" => QueryFilter::default(),
-            "only_fixed" => QueryFilter::only_fixed(),
-            "exclude_dynamic" => QueryFilter::exclude_dynamic(),
-            "only_dynamic" => QueryFilter::only_dynamic(),
-            "exclude_sensors" => QueryFilter::default().exclude_sensors(),
-            other => {
-                return Err(vm.new_value_error(format!(
-                    "filter 未识别：{other:?}（default/only_fixed/exclude_dynamic/only_dynamic/exclude_sensors）"
-                )));
-            }
-        };
-        let w = self.inner.borrow();
-        let ray = SfRay3::new(
-            [origin.0, origin.1, origin.2].into(),
-            [dir.0, dir.1, dir.2].into(),
-        );
-        let max = max_toi.map(|m| m.into_float() as f32).unwrap_or(100.0);
-        Ok(w.get_ref()
-            .cast_ray(&ray, max, true, f)
             .map(|(ch, toi)| (pack_collider(ch), toi as f64)))
     }
 
@@ -988,9 +878,20 @@ impl PyPhysicsWorld3D {
     }
 }
 
+#[pyclass(with(Constructor))]
+impl PyDebugDraw {
+    /// set_mode(collider_shapes=, contacts=, joints=, aabbs=, axes=)
+    /// ——运行期改渲染内容位（只更新给出的位）
+    #[pymethod]
+    fn set_mode(&self, args: DebugDrawArgs) {
+        let mut d = self.inner.borrow_mut();
+        let base = d.pipeline().mode;
+        d.pipeline().mode = mode_from_args(&args, base);
+    }
+}
 
 #[pyclass(with(Constructor))]
-impl PyLineSink3D {
+impl PyLineSink {
     /// line_count() -> int：当前线段数（collect 后有效）
     #[pymethod]
     fn line_count(&self) -> u64 {
@@ -1010,12 +911,12 @@ impl PyLineSink3D {
     }
 }
 
-impl Constructor for PyLineSink3D {
+impl Constructor for PyLineSink {
     type Args = ();
 
     fn py_new(
         _cls: &Py<PyType>,
-        args: Self::Args,
+        _args: Self::Args,
         _vm: &VirtualMachine,
     ) -> PyResult<Self> {
         Ok(Self {
@@ -1024,58 +925,38 @@ impl Constructor for PyLineSink3D {
     }
 }
 
-// 调试渲染控制面无实例方法面（内容位集构造期定格）——空 impl 块归属
-
 #[pyclass(with(Constructor))]
-impl PyDebugDraw3D {}
-
-
-#[pyclass(with(Constructor))]
-impl PyDebugLinesRenderer3D {
-    /// set_mvp(mat4)：**显式 MVP 直写**（2026-11-17 线框对齐原语——
-    /// 与主绘制自管相机共用同一矩阵的绝对对齐口：主管线 uniform 喂什么
-    /// 这里就画什么；优先于 lookat/全局跟随）。每帧调用即每帧跟随。
+impl PyDebugLinesRenderer {
+    /// set_camera(ppm)：ortho 缩放（像素/米；下次 draw_debug 生效——
+    /// 全部样本数槽置脏）
     #[pymethod]
-    fn set_mvp(
-        &self,
-        m: PyRef<crate::rpy::pygame::math::math::PyMat4>,
-    ) {
-        *self.explicit_mvp.borrow_mut() = Some((*m).clone());
-        self.camera_epoch.set(self.camera_epoch.get() + 1);
-        self.follow_global.set(false);
-    }
-
-    /// set_camera_lookat(eye, target, fov)：look-at 透视相机（fov =
-    /// 垂直视场角**弧度**；下次 draw_debug_3d 生效，视口宽高比自动跟随）
-    #[pymethod]
-    fn set_camera_lookat(&self, eye: SfFPoint3, target: SfFPoint3, fov: ArgIntoFloat) {
-        let mut c = self.camera.borrow_mut();
-        c.eye = [eye.0, eye.1, eye.2];
-        c.target = [target.0, target.1, target.2];
-        c.fov_y = fov.into_float() as f32;
-        drop(c);
-        self.camera_epoch.set(self.camera_epoch.get() + 1);
+    fn set_camera(&self, ppm: ArgIntoFloat) {
+        self.ppm.set(ppm.into_float() as f32);
         self.follow_global.set(false); // 显式相机优先（全局跟随解除）
+        for (_, st) in self.states.borrow_mut().iter_mut() {
+            st.viewport = (0, 0); // 置脏 → 下次 draw_debug 重设相机
+        }
     }
 
     /// follow_global_camera(enable=True)：切全局相机跟随（渲染架构
     /// 批次 B）——draw 前同步引擎全局 MVP（`pygame.render.set_camera`
-    /// 一处设置、全体生效；Auto 状态按目标尺寸自动解算）。再调
-    /// set_camera_lookat 即解除。
+    /// 一处设置、全体生效）。注意 2D 调试线世界坐标为米：Auto2d 全局
+    /// 相机按像素正交，米坐标直入会过小——跟随时请配 Manual 相机
+    /// （set_camera 时按 ppm 计入视图矩阵）。再调 set_camera 即解除。
     #[pymethod]
     fn follow_global_camera(&self, enable: Option<bool>) {
         self.follow_global.set(enable.unwrap_or(true));
     }
 }
 
-// ── 模块级自由函数（mod.rs 的 #[pymodule] 面委托目标）──────────────
+// ── 模块级自由函数（mods/rapier.rs 的 #[pymodule] 面委托目标）──────
 
 /// collect(world, draw, sink)：物理状态 → 线段流（每帧渲染前调用；
 /// sink 内部先清后收，零分配复用）
 pub(crate) fn collect(
-    world: PyRef<PyPhysicsWorld3D>,
-    draw: PyRef<PyDebugDraw3D>,
-    sink: PyRef<PyLineSink3D>,
+    world: PyRef<PyPhysicsWorld>,
+    draw: PyRef<PyDebugDraw>,
+    sink: PyRef<PyLineSink>,
 ) {
     sf_collect(
         &world.inner.borrow(),
@@ -1084,23 +965,17 @@ pub(crate) fn collect(
     );
 }
 
-/// draw_debug_3d(renderer, sink)（`t.draw_debug_3d(renderer, sink)` 的
-/// 本体，t = `with screen.render()` 的会话对象）：GPU 惰性装配 + look-at
-/// 相机跟随（调用时点尺寸快照）→ 经活跃会话排程延迟叠加（引擎泛型
-/// `RenderPass::defer_overlay`——零 rapier 感知）。**3D 通道带深度附件**
-/// （with_pass depth=true——3D 线管线硬契约，与 2D 相反）；深度附件每
-/// 上下文一条，本通道执行于游戏会话全部 pass 收口之后（deferred），独占
-/// 无冲突。每帧一次。
-pub(crate) fn draw_debug_3d(
-    renderer: PyRef<PyDebugLinesRenderer3D>,
-    sink: PyRef<PyLineSink3D>,
+/// draw_debug(renderer, sink)（`t.draw_debug(renderer, sink)` 的本体，
+/// t = `with screen.render()` 的会话对象）：会话探针 → 泛化本体（样本数
+/// = 屏 MSAA）。每帧一次；2D 通道无深度附件（线管线硬契约）。
+pub(crate) fn draw_debug(
+    renderer: PyRef<PyDebugLinesRenderer>,
+    sink: PyRef<PyLineSink>,
     vm: &VirtualMachine,
 ) -> PyResult<()> {
-    // 会话探针先行（同 draw_ui/draw_debug——会话外调用先报错）
+    // 会话探针先行（同 draw_ui——会话外调用先报错）
     starfish_pygame::render::session::with_screen(|_| {}).map_err(|_| {
-        vm.new_type_error(
-            "draw_debug_3d 须在 `with screen.render():` 会话块内调用（t = 会话对象）",
-        )
+        vm.new_type_error("draw_debug 须在 `with screen.render():` 会话块内调用（t = 会话对象）")
     })?;
     let screen = starfish_pygame::display::get_screen();
     let samples = screen.sample_count();
@@ -1108,7 +983,7 @@ pub(crate) fn draw_debug_3d(
     let gpu = starfish_pygame::render::gpu_info().ok_or_else(|| {
         vm.new_runtime_error("GPU 未就绪：须在 pygame.display.set_mode 之后调用")
     })?;
-    draw_debug_3d_generic(
+    draw_debug_generic(
         renderer,
         sink,
         samples,
@@ -1119,27 +994,27 @@ pub(crate) fn draw_debug_3d(
         false,
         &gpu,
         |boxed| {
-        starfish_pygame::render::session::with_screen(|pass| {
-            pass.defer_overlay(boxed);
-        })
-        .expect("会话探针刚确认存在（同栈同步，无中途收口路径）");
-    })
+            starfish_pygame::render::session::with_screen(|pass| {
+                pass.defer_overlay(boxed);
+            })
+            .expect("会话探针刚确认存在（同栈同步，无中途收口路径）");
+        },
+    )
 }
 
-/// Surface 变体（`t.draw_debug_3d(renderer, sink)`，t = `with surf.render()`
+/// Surface 变体（`t.draw_debug(renderer, sink)`，t = `with surf.render()`
 /// 会话对象）——排程到本面 flush 收口（画中画物理动画）。样本数 = 1
-/// （离屏面无 MSAA），**表面须 `depth_buffer=True` 创建**（3D 线管线
-/// 深度通道硬契约——无深度面 wgpu 校验 panic，错误信息已指路）。
-pub(crate) fn draw_debug_3d_on_surface(
-    renderer: PyRef<PyDebugLinesRenderer3D>,
-    sink: PyRef<PyLineSink3D>,
+/// （离屏面无 MSAA），按目标分槽自持管线。
+pub(crate) fn draw_debug_on_surface(
+    renderer: PyRef<PyDebugLinesRenderer>,
+    sink: PyRef<PyLineSink>,
     surface: &starfish_pygame::render::Surface,
     vm: &VirtualMachine,
 ) -> PyResult<()> {
     let gpu = starfish_pygame::render::gpu_info().ok_or_else(|| {
         vm.new_runtime_error("GPU 未就绪：须在 pygame.display.set_mode 之后调用")
     })?;
-    draw_debug_3d_generic(
+    draw_debug_generic(
         renderer,
         sink,
         1, // 离屏：无 MSAA
@@ -1155,15 +1030,14 @@ pub(crate) fn draw_debug_3d_on_surface(
     )
 }
 
-/// draw_debug_3d 本体（调度泛化，批次 48）：GPU 惰性装配（**按
-/// (样本数, 目标系) 分槽**——管线按 (color_format, sample_count) 分套
-/// 是 wgpu 硬约束：Screen = 交换链格式 access / Surface = Rgba8Unorm
-/// 离屏 access，交换链格式随平台漂移不得跨目标复用）+ look-at 相机
-/// 跟随（viewport/epoch 脏置）→ 经 schedule 排程（Screen = present
-/// 收口 / Surface = flush 收口）。深度通道契约同前。
-fn draw_debug_3d_generic(
-    renderer: PyRef<PyDebugLinesRenderer3D>,
-    sink: PyRef<PyLineSink3D>,
+/// draw_debug 本体（调度泛化，批次 48）：GPU 惰性装配（**按 (样本数,
+/// 目标系) 分槽**——管线按 (color_format, sample_count) 分套是 wgpu
+/// 硬约束：Screen = 交换链格式 access / Surface = Rgba8Unorm 离屏
+/// access）+ 相机跟随（viewport 脏置）→ 经 schedule 排程（Screen =
+/// present 收口 / Surface = flush 收口）。
+fn draw_debug_generic(
+    renderer: PyRef<PyDebugLinesRenderer>,
+    sink: PyRef<PyLineSink>,
     samples: u32,
     size: (u32, u32),
     follow_mvp: [[f32; 4]; 4],
@@ -1171,8 +1045,7 @@ fn draw_debug_3d_generic(
     gpu: &starfish_pygame::render::GpuInfo,
     schedule: impl FnOnce(Box<dyn FnOnce(&mut starfish_pygame::render::OverlayCtx) + 'static>),
 ) -> PyResult<()> {
-    // 按目标系选 access：离屏 = Rgba8Unorm（Surface 恒此格式）/ 主屏 =
-    // 交换链格式（Web/macOS Bgra8、Windows Rgba8——按 access 默认值建）
+    // 按目标系选 access（离屏 Rgba8Unorm / 主屏交换链格式——同 3D）
     let access = if offscreen {
         gpu.offscreen_access.clone()
     } else {
@@ -1185,42 +1058,25 @@ fn draw_debug_3d_generic(
             None => {
                 slots.push((
                     (samples, offscreen),
-                    RendererGpu3D {
+                    RendererGpu {
                         renderer: SfDebugLinesRenderer::new(&access, samples),
                         access,
                         viewport: (0, 0),
-                        camera_epoch: 0,
                     },
                 ));
                 slots.last_mut().expect("槽刚 push")
             }
         };
         let st = &mut slot.1;
-        let camera = renderer.camera.borrow();
-        if let Some(m) = renderer.explicit_mvp.borrow().as_ref() {
-            // 显式 MVP 直写（最高优先——主管线同矩阵绝对对齐；epoch 变
-            // 即重写，每帧 set_mvp = 每帧跟随）
-            if st.camera_epoch != renderer.camera_epoch.get() {
-                st.renderer.set_camera_mvp(&st.access, m.0.get().to_cols_array_2d());
-                st.viewport = size;
-                st.camera_epoch = renderer.camera_epoch.get();
-            }
-        } else if renderer.follow_global.get() {
+        if renderer.follow_global.get() {
             // 全局相机跟随（批次 B）：每帧同步引擎全局 MVP（调用方按
             // 目标传入——Screen = present_mvp，与主绘制同一映射）
             st.renderer.set_camera_mvp(&st.access, follow_mvp);
             st.viewport = size;
-            st.camera_epoch = renderer.camera_epoch.get();
-        } else if st.viewport != size || st.camera_epoch != renderer.camera_epoch.get() {
-            st.renderer.set_camera_lookat(
-                &st.access,
-                camera.eye,
-                camera.target,
-                camera.fov_y,
-                size,
-            );
+        } else if st.viewport != size {
+            st.renderer
+                .set_camera_ortho(&st.access, size, renderer.ppm.get());
             st.viewport = size;
-            st.camera_epoch = renderer.camera_epoch.get();
         }
     }
     // 排程（PyRef 'static——闭包持引用计数，present/flush 时段解引用载荷；
@@ -1230,8 +1086,7 @@ fn draw_debug_3d_generic(
         let mut slots = renderer.states.borrow_mut();
         if let Some(slot) = slots.iter_mut().find(|(k, _)| *k == key) {
             let sink_ref = sink.inner.borrow();
-            // 3D 通道契约：**带深度附件**（与 2D 的 false 相反）
-            octx.with_pass("rapier_debug_3d", true, |pass| {
+            octx.with_pass("rapier_debug", false, |pass| {
                 slot.1.renderer.draw(&slot.1.access, pass, &sink_ref);
             });
         }

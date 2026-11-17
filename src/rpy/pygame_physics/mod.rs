@@ -23,10 +23,11 @@ use rustpython_vm::{
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+// solid 子模块 = 现有刚体物理面（runtime_2d/runtime_3d 平移入目录——
+// 2026-11-17 solid/fluid 分层重构第一批；py API 零变化）
 #[cfg(feature = "physics2d")]
-pub(crate) mod runtime_2d;
-#[cfg(feature = "physics3d")]
-pub(crate) mod runtime_3d;
+pub(crate) mod solid;
+
 
 #[pymodule(name = "pygame_physics")]
     pub mod pygame_physics {
@@ -158,7 +159,7 @@ pub(crate) mod runtime_3d;
             /// Rgba8Unorm 各持管线——批次 48 画中画 + 附件格式分套定约：
             /// 同一渲染器可同时服务两类目标）
             pub(crate) states: RefCell<
-                Vec<((u32, bool), crate::rpy::pygame_physics::runtime_2d::RendererGpu)>,
+                Vec<((u32, bool), crate::rpy::pygame_physics::solid::runtime_2d::RendererGpu)>,
             >,
         }
 
@@ -179,7 +180,7 @@ pub(crate) mod runtime_3d;
             sink: PyRef<PyLineSink>,
             _vm: &VirtualMachine,
         ) -> PyResult<()> {
-            crate::rpy::pygame_physics::runtime_2d::collect(world, draw, sink);
+            crate::rpy::pygame_physics::solid::runtime_2d::collect(world, draw, sink);
             Ok(())
         }
 
@@ -280,7 +281,7 @@ pub(crate) mod runtime_3d;
         #[pyattr]
         #[pyclass(module = "pygame_physics", name = "DebugLinesRenderer3D", unhashable = true)]
         pub(crate) struct PyDebugLinesRenderer3D {
-            pub(crate) camera: RefCell<crate::rpy::pygame_physics::runtime_3d::Camera3>,
+            pub(crate) camera: RefCell<crate::rpy::pygame_physics::solid::runtime_3d::Camera3>,
             pub(crate) camera_epoch: Cell<u32>,
             /// **显式 MVP 直写**（2026-11-17 线框对齐原语——与主绘制
             /// 自管相机共用同一矩阵的绝对对齐口；Some = 优先于 lookat/
@@ -294,7 +295,7 @@ pub(crate) mod runtime_3d;
             /// 按 (样本数, 目标系) 分槽（同 2D——批次 48 画中画 + 附件
             /// 格式分套定约）
             pub(crate) states: RefCell<
-                Vec<((u32, bool), crate::rpy::pygame_physics::runtime_3d::RendererGpu3D)>,
+                Vec<((u32, bool), crate::rpy::pygame_physics::solid::runtime_3d::RendererGpu3D)>,
             >,
         }
 
@@ -319,7 +320,7 @@ pub(crate) mod runtime_3d;
             sink: PyRef<PyLineSink3D>,
             _vm: &VirtualMachine,
         ) -> PyResult<()> {
-            crate::rpy::pygame_physics::runtime_3d::collect(world, draw, sink);
+            crate::rpy::pygame_physics::solid::runtime_3d::collect(world, draw, sink);
             Ok(())
         }
     }

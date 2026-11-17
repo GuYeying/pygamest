@@ -305,7 +305,7 @@ pub mod pygame {
             sink: PyRef<crate::rpy::pygame_physics::PyLineSink>,
             vm: &VirtualMachine,
         ) -> PyResult<()> {
-            crate::rpy::pygame_physics::runtime_2d::draw_debug_on_surface(
+            crate::rpy::pygame_physics::solid::runtime_2d::draw_debug_on_surface(
                 renderer,
                 sink,
                 &self.surface,
@@ -323,7 +323,7 @@ pub mod pygame {
             sink: PyRef<crate::rpy::pygame_physics::PyLineSink3D>,
             vm: &VirtualMachine,
         ) -> PyResult<()> {
-            crate::rpy::pygame_physics::runtime_3d::draw_debug_3d_on_surface(
+            crate::rpy::pygame_physics::solid::runtime_3d::draw_debug_3d_on_surface(
                 renderer,
                 sink,
                 &self.surface,
@@ -503,7 +503,7 @@ pub mod pygame {
             sink: PyRef<crate::rpy::pygame_physics::PyLineSink>,
             vm: &VirtualMachine,
         ) -> PyResult<()> {
-            crate::rpy::pygame_physics::runtime_2d::draw_debug(renderer, sink, vm)
+            crate::rpy::pygame_physics::solid::runtime_2d::draw_debug(renderer, sink, vm)
         }
 
         /// draw_debug_3d(renderer, sink)（feature "physics3d"）：3D 调试线
@@ -517,7 +517,7 @@ pub mod pygame {
             sink: PyRef<crate::rpy::pygame_physics::PyLineSink3D>,
             vm: &VirtualMachine,
         ) -> PyResult<()> {
-            crate::rpy::pygame_physics::runtime_3d::draw_debug_3d(renderer, sink, vm)
+            crate::rpy::pygame_physics::solid::runtime_3d::draw_debug_3d(renderer, sink, vm)
         }
 
         #[pymethod]
