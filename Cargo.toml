@@ -41,6 +41,9 @@ spine = ["dep:pygame_spine"]
 live2d = ["dep:pygame_live2d", "pygame_live2d/render"]
 # ozz = 3D 骨骼动画（pygame_ozz——ozz-animation-rs 适配；上游 std::simd 需 nightly 构建，不入 default）
 ozz = ["dep:pygame_ozz"]
+# fluid = 流体物理（salva3d 0.11 SPH——DFSPH 压力求解器；rapier3d
+# 0.36.1 版本精确匹配我们 lock 的 rapier——coupling 官方通路直接可用）
+fluid = ["dep:salva3d", "dep:nalgebra035"]
 # voxelis = 稀疏体素八叉树（VoxModel 数据 + 内建 mesh 生成——MC 类
 # 玩法配套：体素编辑 + 渲染数组出口；物理/渲染照旧走 physics3d +
 # mesh_builder，本模块只供数）
@@ -88,6 +91,10 @@ parking_lot_v12 = { package = "parking_lot", version = "0.12.3", optional = true
 # tiled（registry crate 0.16.0——Tiled 编辑器 TMX 解析标准；
 # ResourceReader trait 闭包 blanket impl 接 sfx::read_block 密文链）
 tiled = { version = "0.16.0", default-features = false, optional = true }
+# salva3d（registry crate 0.11.0——SPH 粒子流体 DFSPH 求解器；
+# rapier3d 0.36.1 与 lock 精确匹配——官方 coupling 通路直接可用）
+salva3d = { version = "0.11.0", optional = true, features = ["rapier", "dim3", "f32"] }
+nalgebra035 = { package = "nalgebra", version = "0.35", optional = true, features = ["convert-glam033"] }
 # egui 适配层（vendored fork；feature "render" 拉 egui-wgpu + starfish-render
 # 桥 SfEguiRenderer；egui 经它重导出，本 crate 不直依赖 egui）
 egui-starfish-we = { git = "https://github.com/GuYeying/egui-starfish-we", features = ["render"], optional = true }

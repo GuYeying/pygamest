@@ -1789,6 +1789,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "generational-arena"
+version = "0.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "877e94aff08e743b651baaea359664321055749b398adff8740a7399af7796e7"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4773,6 +4782,7 @@ dependencies = [
  "egui-wgpu",
  "glam 0.29.3",
  "glam 0.33.11",
+ "nalgebra",
  "parking_lot",
  "pollster",
  "pygame_live2d",
@@ -4782,6 +4792,7 @@ dependencies = [
  "rustpython-derive",
  "rustpython-pylib",
  "rustpython-vm",
+ "salva3d",
  "starfish-audio",
  "starfish-debug",
  "starfish-font",
@@ -5801,6 +5812,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42c6efa15875e6ecb39ca61fb0b0c1a40b84fac5a5ffe71eef7d1000c8eb3f5f"
 dependencies = [
  "bytemuck",
+]
+
+[[package]]
+name = "salva3d"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eafa2f5ef8a60d288ddee7ba939ca2433064edb23a84b3545ed4fb818cd22ded"
+dependencies = [
+ "approx",
+ "bitflags 2.13.2",
+ "fnv",
+ "generational-arena",
+ "glamx",
+ "itertools 0.14.0",
+ "nalgebra",
+ "num-traits",
+ "parry3d",
+ "rapier3d",
 ]
 
 [[package]]

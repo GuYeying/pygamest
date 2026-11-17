@@ -354,3 +354,50 @@ look-at 透视相机（`fov` = 垂直视场角**弧度**，1.0 ≈ 57°）。
 
 3D 叠加绘制——**带深度通道**（Depth24Plus 硬契约）。Surface 变体
 须以 `depth_buffer=True` 创建离屏面（无深度面报错并指路）。
+
+## <span class="c-class">FluidWorld —— 流体世界（salva SPH，2026-11-17 fluid feature）</span>
+
+```{warning}
+⚠️ feature `fluid` 门控（`--features fluid`——依赖 salva3d 0.11 +
+rapier3d 0.36.1 版本精确匹配）。solid/fluid 分层重构第二批——
+rapier 刚体耦合（ColliderCouplingSet 边界化 + 力回传）为第三批。
+```
+
+粒子流体世界（salva DFSPH 压力求解器——体积守恒旗舰求解器）。
+`pygame_physics.scheduler_status()` / `scheduler_enable(name, on)` 为
+总调度器运行时开关（关闭 = step 直返暂停推进，世界对象生命周期不变）。
+
+#### <span class="c-func">FluidWorld(particle_radius=0.2, smoothing_factor=2.0, density0=1000.0)</span>
+
+构造（DFSPH 求解器固定；SPH 核半径 = radius × smoothing_factor × 2）。
+
+#### <span class="c-func">add_fluid_cuboid(corner, dims, spacing=None) -> int</span>
+
+cuboid 均匀网格采样流体（spacing 缺省 = 2×粒子半径）。返回 py 句柄。
+
+#### <span class="c-func">add_boundary_cuboid(corner, dims, spacing=None) -> int</span>
+
+容器**壁壳**边界粒子（六面静态零速——流体被约束在壳内）。
+
+#### <span class="c-func">step(dt)</span>
+
+DFSPH 步进（调度器 fluid 关闭 = 直返）。
+
+#### <span class="c-func">fluid_particles(handle) -> (positions, velocities)</span>
+
+粒子出口（平面化 [x,y,z,...] × 2 列表——instanced 球渲染供数）。
+
+#### <span class="c-func">fluid_particle_count(handle) -> int</span>
+
+粒子数（渲染 instance 数基准）。
+
+#### <span class="c-func">set_gravity(x, y, z) / particle_radius() / boundary_count()</span>
+
+重力 / 粒子半径 / 边界数诊断。
+
+**调度器**：`pygame_physics.scheduler_status()` 快照 +
+`scheduler_enable(name, on)` 运行时开关（"solid"/"fluid"——关闭 =
+step 直返暂停推进，世界对象生命周期不变；未编译子系统报错）。
+
+样张：`fluid_test.py`（容器水柱 + instanced 球渲染 + F1/F2 debug 切
+换 + 空格注水 + G 调度器切换）。
