@@ -531,6 +531,7 @@ impl Constructor for PyDebugLinesRenderer3D {
                 fov_y: args.fov.map(|f| f.into_float() as f32).unwrap_or(1.0),
             }),
             camera_epoch: Cell::new(1),
+            explicit_mvp: RefCell::new(None),
             follow_global: Cell::new(false),
             states: RefCell::new(Vec::new()),
         })
@@ -1031,6 +1032,19 @@ impl PyDebugDraw3D {}
 
 #[pyclass(with(Constructor))]
 impl PyDebugLinesRenderer3D {
+    /// set_mvp(mat4)：**显式 MVP 直写**（2026-11-17 线框对齐原语——
+    /// 与主绘制自管相机共用同一矩阵的绝对对齐口：主管线 uniform 喂什么
+    /// 这里就画什么；优先于 lookat/全局跟随）。每帧调用即每帧跟随。
+    #[pymethod]
+    fn set_mvp(
+        &self,
+        m: PyRef<crate::rpy::pygame::math::math::PyMat4>,
+    ) {
+        *self.explicit_mvp.borrow_mut() = Some((*m).clone());
+        self.camera_epoch.set(self.camera_epoch.get() + 1);
+        self.follow_global.set(false);
+    }
+
     /// set_camera_lookat(eye, target, fov)：look-at 透视相机（fov =
     /// 垂直视场角**弧度**；下次 draw_debug_3d 生效，视口宽高比自动跟随）
     #[pymethod]
@@ -1183,7 +1197,15 @@ fn draw_debug_3d_generic(
         };
         let st = &mut slot.1;
         let camera = renderer.camera.borrow();
-        if renderer.follow_global.get() {
+        if let Some(m) = renderer.explicit_mvp.borrow().as_ref() {
+            // 显式 MVP 直写（最高优先——主管线同矩阵绝对对齐；epoch 变
+            // 即重写，每帧 set_mvp = 每帧跟随）
+            if st.camera_epoch != renderer.camera_epoch.get() {
+                st.renderer.set_camera_mvp(&st.access, m.0.get().to_cols_array_2d());
+                st.viewport = size;
+                st.camera_epoch = renderer.camera_epoch.get();
+            }
+        } else if renderer.follow_global.get() {
             // 全局相机跟随（批次 B）：每帧同步引擎全局 MVP（调用方按
             // 目标传入——Screen = present_mvp，与主绘制同一映射）
             st.renderer.set_camera_mvp(&st.access, follow_mvp);

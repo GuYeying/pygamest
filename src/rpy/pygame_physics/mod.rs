@@ -282,6 +282,11 @@ pub(crate) mod runtime_3d;
         pub(crate) struct PyDebugLinesRenderer3D {
             pub(crate) camera: RefCell<crate::rpy::pygame_physics::runtime_3d::Camera3>,
             pub(crate) camera_epoch: Cell<u32>,
+            /// **显式 MVP 直写**（2026-11-17 线框对齐原语——与主绘制
+            /// 自管相机共用同一矩阵的绝对对齐口；Some = 优先于 lookat/
+            /// 全局跟随）
+            pub(crate) explicit_mvp:
+                RefCell<Option<crate::rpy::pygame::math::math::PyMat4>>,
             /// 全局相机跟随（渲染架构批次 B）：true = draw 前同步引擎
             /// 全局 MVP（camera_mvp_for——set_camera 一处设置全体生效）；
             /// 默认 false（构造的 look-at 相机 = 显式，优先于全局）
