@@ -4792,6 +4792,7 @@ dependencies = [
  "rustpython-derive",
  "rustpython-pylib",
  "rustpython-vm",
+ "salva2d",
  "salva3d",
  "starfish-audio",
  "starfish-debug",
@@ -5812,6 +5813,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42c6efa15875e6ecb39ca61fb0b0c1a40b84fac5a5ffe71eef7d1000c8eb3f5f"
 dependencies = [
  "bytemuck",
+]
+
+[[package]]
+name = "salva2d"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "550117e1edacde32accefc04d671aa0d85c7341b29bb92e821a7a9e27baa9c50"
+dependencies = [
+ "approx",
+ "bitflags 2.13.2",
+ "fnv",
+ "generational-arena",
+ "glamx",
+ "itertools 0.14.0",
+ "nalgebra",
+ "num-traits",
+ "parry2d",
+ "rapier2d",
 ]
 
 [[package]]

@@ -12,3 +12,8 @@
 
 #[cfg(feature = "fluid")]
 pub(crate) mod runtime_fluid;
+
+// fluid2d = salva2d 0.11（与 salva3d 同一 src 的 dim2 编译形态——API
+// 同代同型，2D 耦合走 physics2d 刚体轴）
+#[cfg(feature = "fluid2d")]
+pub(crate) mod runtime_fluid2d;

@@ -415,3 +415,47 @@ step 直返暂停推进，世界对象生命周期不变；未编译子系统报
 DC 耦合、水柱滑落摊开 + instanced icosphere 球渲染（渲染半径
 1.4×粒子半径——视觉重叠连贯表面）+ T solid 线框对齐检查 + 空格注水
 + G 调度器切换；9 项断言含未穿地/滑落交互/静置衰减）。
+
+## <span class="c-class">FluidWorld2D —— 流体世界 2D（salva2d SPH，2026-11-18 fluid2d feature）</span>
+
+```{warning}
+⚠️ feature `fluid2d` 门控（`--features fluid2d`——salva2d 0.11 与
+salva3d 0.11 为 crates.io 两个独立 crate，同一 src 的 dim2/dim3 编
+译形态，API 同代同型；rapier2d 0.36.1 已在 lock 零新增）。`fluid3d`
+为 `fluid` 的轴语义正名别名（两者同义，逐步退役）；physics2d/3d 即
+刚体轴不另设别名。
+```
+
+2D 粒子流体世界——与 FluidWorld（3D）**API 全同型**，仅维度差异
+（gravity 二元 / corner+dims 二元 / 粒子出口 [x,y,...]）。耦合走
+`physics2d` 刚体轴（`step(dt, solid)` 的 solid 收 `PhysicsWorld`）。
+XSPH 粘性默认挂载（fluid 2.0 / boundary 1.0）、DC 投影耦合边界定约
+同 3D（冲击场景一律走耦合）。
+
+#### <span class="c-func">FluidWorld2D(particle_radius=0.2, smoothing_factor=2.0)</span>
+
+构造（DFSPH 求解器固定；SPH 核半径 = radius × smoothing_factor × 2）。
+
+#### <span class="c-func">add_fluid_cuboid(corner, dims, spacing=None) -> int</span>
+
+矩形均匀网格采样流体（corner/dims 二元 `(x, y)`；spacing 缺省 =
+2×粒子半径）。返回 py 句柄。
+
+#### <span class="c-func">add_boundary_cuboid(corner, dims, spacing=None) -> int</span>
+
+容器边界粒子（体填充）。⚠️ 同 3D 边界定约：冲击场景一律走
+`step(dt, solid)` 耦合。
+
+#### <span class="c-func">step(dt, solid=None)</span>
+
+DFSPH 步进（调度器 fluid 关闭 = 直返）。solid 给定 = rapier 2D 耦合
+（DC 硬投影 + 旋转 collider 位姿重采样 + 非动态刚体力回传自动关）。
+
+#### <span class="c-func">fluid_particles / fluid_particle_count / set_gravity / particle_radius / boundary_count</span>
+
+同 3D 语义（粒子出口 [x,y,...] 平面化）。
+
+样张：`fluid2d_test.py`（**2D 静态刚体×流体碰撞**——rapier 2D 斜面
++大地面 DC 耦合 + instanced quad 片元圆判渲染（2D 粒子 debug 渲染）
++ `game_camera_ortho` 正交相机 + T 键 2D solid 线框（DebugLinesRenderer
+ppm 相机 + draw_debug 会话级形态）；9 项断言 SUMMARY PASS）。

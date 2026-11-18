@@ -25,7 +25,9 @@ use std::rc::Rc;
 // 2026-11-17 solid/fluid 分层重构第一批；py API 零变化）
 #[cfg(feature = "physics2d")]
 pub(crate) mod solid;
-#[cfg(feature = "fluid")]
+// fluid = salva 绑定模块（fluid/fluid2d/fluid3d 任一轴启用即编译；
+// 内部 runtime_fluid(3D)/runtime_fluid2d 各自按轴 cfg 挂载）
+#[cfg(any(feature = "fluid", feature = "fluid2d"))]
 pub(crate) mod fluid;
 pub(crate) mod scheduler;
 
@@ -50,7 +52,7 @@ pub(crate) mod scheduler;
         };
         #[cfg(feature = "physics3d")]
         use rapier_starfish_debug::dim3::world::PhysicsWorld as SfPhysicsWorld3;
-        use crate::rpy::args::SfFPoint3;
+        use crate::rpy::args::{SfFPoint, SfFPoint3};
         use rustpython_derive::{pyclass, FromArgs};
         use rustpython_vm::types::Constructor;
         use rustpython_vm::{
@@ -333,6 +335,283 @@ pub(crate) mod scheduler;
             pub(crate) corner: SfFPoint3,
             #[pyarg(any)]
             pub(crate) dims: SfFPoint3,
+            #[pyarg(named, optional)]
+            pub(crate) spacing: Option<f64>,
+        }
+
+        // ── fluid 2D 类面（feature "fluid2d"；salva2d 0.11——与 3D 同一
+        // 上游 src 的 dim2 编译形态，API 全同型；耦合走 physics2d 刚体
+        // 轴。类名 FluidWorld 不动（3D 现状零破坏），2D 加后缀）──
+
+        /// 流体世界 2D（salva2d `FluidsPipeline` 薄壳——DFSPH + DC 投影
+        /// 耦合 + XSPH 粘性，语义与 FluidWorld(3D) 全同型）。
+        #[cfg(feature = "fluid2d")]
+        #[derive(PyPayload)]
+        #[pyattr]
+        #[pyclass(module = "pygame_physics", name = "FluidWorld2D", unhashable = true)]
+        pub(crate) struct PyFluidWorld2D {
+            pub(crate) pipeline:
+                RefCell<crate::rpy::pygame_physics::fluid::runtime_fluid2d::FluidsPipeline>,
+            /// 粒子半径快照（add_fluid spacing 基准）
+            pub(crate) particle_radius: Cell<f64>,
+            /// 重力（step 时传入 salva；set_gravity 可改）
+            pub(crate) gravity: RefCell<[f32; 2]>,
+            pub(crate) next_fluid: Cell<u32>,
+            pub(crate) next_boundary: Cell<u32>,
+        }
+
+        #[cfg(feature = "fluid2d")]
+        impl std::fmt::Debug for PyFluidWorld2D {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                let n = self.pipeline.borrow().liquid_world.fluids().len();
+                write!(f, "FluidWorld2D(<{} fluids>)", n)
+            }
+        }
+
+        #[cfg(feature = "fluid2d")]
+        #[derive(FromArgs)]
+        pub(crate) struct FluidWorld2DArgs {
+            /// 粒子半径（SPH 核半径 = radius × smoothing_factor × 2）
+            #[pyarg(any, optional)]
+            pub(crate) particle_radius: Option<f64>,
+            /// 平滑系数（默认 2.0）
+            #[pyarg(any, optional)]
+            pub(crate) smoothing_factor: Option<f64>,
+        }
+
+        #[cfg(feature = "fluid2d")]
+        impl Constructor for PyFluidWorld2D {
+            type Args = FluidWorld2DArgs;
+
+            fn py_new(
+                _cls: &Py<PyType>,
+                args: Self::Args,
+                _vm: &VirtualMachine,
+            ) -> PyResult<Self> {
+                let radius = args.particle_radius.unwrap_or(0.2) as f32;
+                let smoothing = args.smoothing_factor.unwrap_or(2.0) as f32;
+                Ok(PyFluidWorld2D {
+                    pipeline: RefCell::new(
+                        crate::rpy::pygame_physics::fluid::runtime_fluid2d::make_pipeline(
+                            radius, smoothing,
+                        ),
+                    ),
+                    particle_radius: Cell::new(radius as f64),
+                    gravity: RefCell::new([0.0, -9.81]),
+                    next_fluid: Cell::new(0),
+                    next_boundary: Cell::new(0),
+                })
+            }
+        }
+
+        #[cfg(feature = "fluid2d")]
+        #[pyclass(with(Constructor))]
+        impl PyFluidWorld2D {
+            /// set_gravity(x, y)：流体重力（默认 [0, -9.81]）。
+            #[pymethod]
+            fn set_gravity(&self, x: f64, y: f64) {
+                *self.gravity.borrow_mut() = [x as f32, y as f32];
+            }
+
+            /// add_fluid_cuboid(corner=(x,y), dims=(w,h), spacing=None)
+            /// -> int：矩形均匀网格采样流体（spacing 缺省 = 2×粒子半径）。
+            #[pymethod]
+            fn add_fluid_cuboid(
+                &self,
+                args: FluidCuboidArgs2D,
+                vm: &VirtualMachine,
+            ) -> PyResult<u32> {
+                let radius = self.particle_radius.get();
+                let sp = args.spacing.unwrap_or(radius as f64 * 2.0).max(1e-4) as f32;
+                let pts = crate::rpy::pygame_physics::fluid::runtime_fluid2d::sample_cuboid_grid(
+                    [args.corner.0, args.corner.1],
+                    [args.dims.0, args.dims.1],
+                    sp,
+                );
+                if pts.is_empty() {
+                    return Err(vm.new_value_error("dims too small - no sample points"));
+                }
+                let fluid = crate::rpy::pygame_physics::fluid::runtime_fluid2d::make_fluid(
+                    pts, radius as f32,
+                );
+                let mut pw = self.pipeline.borrow_mut();
+                pw.liquid_world.add_fluid(fluid);
+                let py_handle = self.next_fluid.get();
+                self.next_fluid.set(py_handle + 1);
+                Ok(py_handle)
+            }
+
+            /// add_boundary_cuboid(corner, dims, spacing=None) -> int：
+            /// 容器边界粒子（体填充）。⚠️ 边界定约（3D 侧 2026-11-18
+            /// 系统实测，2D 同源同语义）：冲击场景一律走 step(dt, solid)
+            /// 耦合边界（DC 投影硬拦截）——本口边界仅低速静水场景可用。
+            #[pymethod]
+            fn add_boundary_cuboid(
+                &self,
+                args: BoundaryCuboidArgs2D,
+                vm: &VirtualMachine,
+            ) -> PyResult<u32> {
+                let radius = self.particle_radius.get();
+                let sp = args.spacing.unwrap_or(radius as f64 * 2.0).max(1e-4) as f32;
+                let pts = crate::rpy::pygame_physics::fluid::runtime_fluid2d::sample_cuboid_grid(
+                    [args.corner.0, args.corner.1],
+                    [args.dims.0, args.dims.1],
+                    sp,
+                );
+                let bw = crate::rpy::pygame_physics::fluid::runtime_fluid2d::make_boundary(pts);
+                let mut pw = self.pipeline.borrow_mut();
+                pw.liquid_world.add_boundary(bw);
+                let py_handle = self.next_boundary.get();
+                self.next_boundary.set(py_handle + 1);
+                Ok(py_handle)
+            }
+
+            /// step(dt, solid=None)：DFSPH 压力求解步进（调度器 fluid
+            /// 关闭 = 直返）。solid 给定 = rapier 2D 耦合步进（solid 世界
+            /// 全部 collider 增量注册为 salva 边界——DynamicContactSampling
+            /// 硬投影；旋转 collider 每步按位姿重采样；非动态刚体力回传
+            /// 由 salva 自动关）。
+            #[cfg(feature = "physics2d")]
+            #[pymethod]
+            fn step(
+                &self,
+                dt: f64,
+                solid: rustpython_vm::function::OptionalArg<PyRef<PyPhysicsWorld>>,
+            ) -> PyResult<()> {
+                use crate::rpy::pygame_physics::fluid::runtime_fluid2d as rf;
+                if !crate::rpy::pygame_physics::scheduler::fluid_enabled() {
+                    return Ok(());
+                }
+                let g = *self.gravity.borrow();
+                let dt = dt.max(1e-6) as f32;
+                match solid {
+                    rustpython_vm::function::OptionalArg::Present(pw) => {
+                        let mut w = pw.inner.borrow_mut();
+                        let world = w.get();
+                        rf::coupling::sync_coupling(
+                            &mut self.pipeline.borrow_mut(),
+                            &world.colliders,
+                            self.particle_radius.get() as f32,
+                        );
+                        rf::coupling::step_coupled(
+                            &mut self.pipeline.borrow_mut(),
+                            g,
+                            dt,
+                            &world.colliders,
+                            &mut world.bodies,
+                        );
+                    }
+                    rustpython_vm::function::OptionalArg::Missing => {
+                        let gravity =
+                            rf::SVector::new(g[0] as f32, g[1] as f32);
+                        self.pipeline.borrow_mut().liquid_world.step(dt, &gravity);
+                    }
+                }
+                Ok(())
+            }
+
+            /// step(dt)：DFSPH 步进（fluid2d-only 形态——physics2d 未启
+            /// 用，无 solid 耦合；调度器 fluid 关闭 = 直返）。
+            #[cfg(all(feature = "fluid2d", not(feature = "physics2d")))]
+            #[pymethod]
+            fn step(&self, dt: f64) -> PyResult<()> {
+                if !crate::rpy::pygame_physics::scheduler::fluid_enabled() {
+                    return Ok(());
+                }
+                let g = *self.gravity.borrow();
+                let gravity = crate::rpy::pygame_physics::fluid::runtime_fluid2d::SVector::new(
+                    g[0] as f32, g[1] as f32,
+                );
+                self.pipeline
+                    .borrow_mut()
+                    .liquid_world
+                    .step(dt.max(1e-6) as f32, &gravity);
+                Ok(())
+            }
+
+            /// fluid_particles(handle) -> (positions, velocities)：粒子
+            /// 出口（平面化 [x,y,...] × 2 列表——instanced 渲染供数）。
+            #[pymethod]
+            fn fluid_particles(
+                &self,
+                handle: u32,
+                vm: &VirtualMachine,
+            ) -> PyResult<(PyObjectRef, PyObjectRef)> {
+                let pw = self.pipeline.borrow();
+                let fluid = pw
+                    .liquid_world
+                    .fluids()
+                    .iter()
+                    .nth(handle as usize)
+                    .map(|(_, f)| f)
+                    .ok_or_else(|| {
+                        vm.new_value_error(format!("fluid handle {} not found", handle))
+                    })?;
+                let mut pos_out: Vec<PyObjectRef> =
+                    Vec::with_capacity(fluid.positions.len() * 2);
+                let mut vel_out: Vec<PyObjectRef> =
+                    Vec::with_capacity(fluid.velocities.len() * 2);
+                for p in &fluid.positions {
+                    pos_out.push(vm.ctx.new_float(p.x as f64).into());
+                    pos_out.push(vm.ctx.new_float(p.y as f64).into());
+                }
+                for v in &fluid.velocities {
+                    vel_out.push(vm.ctx.new_float(v.x as f64).into());
+                    vel_out.push(vm.ctx.new_float(v.y as f64).into());
+                }
+                let lv = vm.ctx.new_list(pos_out).into();
+                let ln = vm.ctx.new_list(vel_out).into();
+                Ok((lv, ln))
+            }
+
+            /// fluid_particle_count(handle) -> int：粒子数（instanced
+            /// 渲染 instance 数基准）。
+            #[pymethod]
+            fn fluid_particle_count(&self, handle: u32, vm: &VirtualMachine) -> PyResult<u32> {
+                let pw = self.pipeline.borrow();
+                let n = pw
+                    .liquid_world
+                    .fluids()
+                    .iter()
+                    .nth(handle as usize)
+                    .map(|(_, f)| f.positions.len())
+                    .unwrap_or(0);
+                Ok(n as u32)
+            }
+
+            /// particle_radius() -> float：粒子半径（渲染圆尺寸基准）。
+            #[pymethod]
+            fn particle_radius(&self) -> f64 {
+                self.particle_radius.get() as f64
+            }
+
+            /// boundary_count() -> int：边界对象数（诊断）。
+            #[pymethod]
+            fn boundary_count(&self) -> usize {
+                self.pipeline.borrow().liquid_world.boundaries().len()
+            }
+        }
+
+        /// add_fluid_cuboid 收参（2D——corner/dims 二元）
+        #[cfg(feature = "fluid2d")]
+        #[derive(FromArgs)]
+        pub(crate) struct FluidCuboidArgs2D {
+            #[pyarg(any)]
+            pub(crate) corner: SfFPoint,
+            #[pyarg(any)]
+            pub(crate) dims: SfFPoint,
+            #[pyarg(named, optional)]
+            pub(crate) spacing: Option<f64>,
+        }
+
+        /// add_boundary_cuboid 收参（2D）
+        #[cfg(feature = "fluid2d")]
+        #[derive(FromArgs)]
+        pub(crate) struct BoundaryCuboidArgs2D {
+            #[pyarg(any)]
+            pub(crate) corner: SfFPoint,
+            #[pyarg(any)]
+            pub(crate) dims: SfFPoint,
             #[pyarg(named, optional)]
             pub(crate) spacing: Option<f64>,
         }
