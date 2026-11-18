@@ -73,10 +73,15 @@ Python 界**——一切经本模块句柄类安全收参。
 
 #### <span class="c-func">present_fit() -> Mat4</span>
 
-呈现拟合矩阵（NDC 域 clip 空间仿射）——**自管相机的 letterbox
-对齐口**：自绘管线经 write_buffer 直写的矩阵对引擎不透明，脚本自行
-左乘本矩阵即与主绘制同一映射（`present_fit().mul_mat4(cam.mvp())`）。
-桌面/全屏恒等，Android 窗口化把自绘内容收进居中画布。
+呈现拟合矩阵（NDC 域 clip 空间仿射，**画布 → 物理视口 letterbox**，
+两段式定约第二段——2026-11-18 统一）：**独立按（物理视口, 逻辑画布）
+现算，与屏上是否安装 GameCamera 解耦**。消费侧两段组合：
+`present_fit().mul_mat4(cam.mvp())`——cam.mvp() = world→画布（相机
+全权），本矩阵 = 画布→物理（引擎 letterbox）。桌面/全屏恒等，
+Android 窗口化把自绘内容收进居中画布。**显式 GameCamera（
+set_game_camera）安装后本矩阵 = 物理面与构造 pw/ph 的比值**（构造
+入参的 pw/ph = 画布语义，物理面对账由引擎承担——不再取自 installed
+相机的世界拟合，双拟合/拉伸修复）。
 
 - :rtype: Mat4
 
@@ -123,9 +128,11 @@ MSAA 样本数。
 
 #### <span class="c-func">write_camera_mvp(buf, cam_mvp=None)</span>
 
-矩阵（列主 16 float）写入 Buffer（`group0/b0 = 64B mat4` 定约）。单参
-= 全局相机 MVP（帧内快照）；双参 = 自管相机矩阵——引擎自动左乘呈现
-拟合收进画布（脚本零矩阵知识）。
+矩阵（列主 16 float）写入 Buffer（`group0/b0 = 64B mat4` 定约）。**两
+段式组合定约（2026-11-18 统一）**：单参 = 全局相机 MVP（present_fit ×
+屏上相机——屏上相机恒 world→画布 基底）；双参 = 自管相机矩阵——引擎
+自动左乘呈现拟合（present_fit，画布→物理 letterbox）收进画布（脚本
+零矩阵知识）。单参/双参/段级 batch/debug/egui 全消费点同一两段组合。
 
 #### <span class="c-func">screen_frame_state() -> str</span>
 

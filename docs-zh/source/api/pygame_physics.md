@@ -294,11 +294,16 @@ Manual 相机。
 
 叠加绘制——t = `with screen.render()`（或 `surf.render()`）的会话
 对象；排入游戏 batch 之后的叠加通道（Screen = present 收口，
-Surface = flush 收口 / 画中画物理动画）。每帧一次。
+Surface = flush 收口 / 画中画物理动画）。每帧一次。**相机域两段式
+（2026-11-18 统一）**：显式 `set_mvp` 的矩阵 = world→画布（脚本侧
+`cam.mvp()` 域），叠加通道自动左乘 `present_fit`（画布→物理）——
+与主管线 write_camera_mvp / batch 段级同一两段组合，set_camera /
+旋转 / resize 全域一致不掉队。
 
 ## <span class="c-class">3D 类面</span>
 
-与 2D 同款语义，差异四条：相机 = look-at 透视；调试线通道**必须带
+与 2D 同款语义（**含 present_fit 两段组合**——显式 mvp 与 follow
+分支同款左乘），差异四条：相机 = look-at 透视；调试线通道**必须带
 深度附件**；rotation 收**欧拉角向量** `(rx, ry, rz)` 弧度、查询返回
 **四元数** `(x, y, z, w)`；坐标同为米制 y 向上原点居中。
 
