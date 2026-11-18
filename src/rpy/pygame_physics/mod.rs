@@ -720,6 +720,11 @@ pub(crate) mod scheduler;
             /// 全局相机跟随（渲染架构批次 B；默认 false——ppm 显式相机
             /// 优先；follow_global_camera() 开启后 draw 前同步全局 MVP）
             pub(crate) follow_global: Cell<bool>,
+            /// 显式 MVP 直写（2D 线框对齐原语，2026-11-18——米世界系任意
+            /// 相机矩阵（如 game_camera_ortho 的 mvp()）与主管线同矩阵
+            /// 绝对对齐；优先级最高，覆盖 ppm/follow_global）
+            pub(crate) explicit_mvp:
+                RefCell<Option<crate::rpy::pygame::math::math::PyMat4>>,
             /// 按 (样本数, 目标系) 分槽（Screen MSAA 交换链格式 / 离屏 1x
             /// Rgba8Unorm 各持管线——批次 48 画中画 + 附件格式分套定约：
             /// 同一渲染器可同时服务两类目标）

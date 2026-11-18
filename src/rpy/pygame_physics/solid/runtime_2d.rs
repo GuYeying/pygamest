@@ -496,6 +496,7 @@ impl Constructor for PyDebugLinesRenderer {
         Ok(Self {
             ppm: Cell::new(args.ppm.map(|p| p.into_float() as f32).unwrap_or(50.0)),
             follow_global: Cell::new(false),
+            explicit_mvp: RefCell::new(None),
             states: RefCell::new(Vec::new()),
         })
     }
@@ -938,6 +939,18 @@ impl PyDebugLinesRenderer {
         }
     }
 
+    /// set_mvp(mat4)：**显式 MVP 直写**（2D 线框对齐原语，2026-11-18
+    /// ——米世界系任意相机矩阵（如 game_camera_ortho 的 mvp()），与主
+    /// 管线同矩阵绝对对齐；优先级最高覆盖 ppm/follow_global——每帧
+    /// set_mvp = 每帧跟随）。
+    #[pymethod]
+    fn set_mvp(&self, m: PyRef<crate::rpy::pygame::math::math::PyMat4>) {
+        *self.explicit_mvp.borrow_mut() = Some((*m).clone());
+        for (_, st) in self.states.borrow_mut().iter_mut() {
+            st.viewport = (0, 0); // 置脏 → 下次 draw_debug 重设相机
+        }
+    }
+
     /// follow_global_camera(enable=True)：切全局相机跟随（渲染架构
     /// 批次 B）——draw 前同步引擎全局 MVP（`pygame.render.set_camera`
     /// 一处设置、全体生效）。注意 2D 调试线世界坐标为米：Auto2d 全局
@@ -1068,7 +1081,13 @@ fn draw_debug_generic(
             }
         };
         let st = &mut slot.1;
-        if renderer.follow_global.get() {
+        if let Some(m) = renderer.explicit_mvp.borrow().as_ref() {
+            // 显式 MVP 直写（最高优先——米世界系相机矩阵与主管线同源
+            // 绝对对齐）
+            st.renderer
+                .set_camera_mvp(&st.access, m.0.get().to_cols_array_2d());
+            st.viewport = size;
+        } else if renderer.follow_global.get() {
             // 全局相机跟随（批次 B）：每帧同步引擎全局 MVP（调用方按
             // 目标传入——Screen = present_mvp，与主绘制同一映射）
             st.renderer.set_camera_mvp(&st.access, follow_mvp);
