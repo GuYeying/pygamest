@@ -151,16 +151,19 @@ pub(crate) fn init(vm: &VirtualMachine) -> PyResult<()> {
         cjk = egui_starfish_we::load_system_cjk_fonts(&ctx);
     }
     // egui 逻辑面恒 = set_mode 逻辑尺寸定约（2026-11-14 全平台"进入时
-    // 缩放调整→UI 变大"修复）：init 时显式 set_pixels_per_point(物理宽/
-    // 逻辑宽)。桌面 = 系统缩放同值零变；web/手机 = 掐掉 egui 每帧自动
-    // 应用 native（=devicePixelRatio）的缩放跳变——首帧即恒定不漂
+    // 缩放调整→UI 变大"修复）：init 时显式 set_pixels_per_point。**基底
+    // = 屏上相机 fit.scale**（逻辑画布→物理画布的等比缩放，2026-11-18
+    // Android 窗口化修正：旧"窗口物理宽/逻辑宽"在 letterbox 下把黑边
+    // 计入（2400/800=3.0，实际画布 = min 比 1.8）→ ppp 虚高 = UI 巨大
+    // + 合成溢出裁剪）。桌面 fit 恒等 = 1.0 零变；web/手机 = 掐掉 egui
+    // 每帧自动应用 native（=devicePixelRatio）的缩放跳变——首帧即恒定
     {
-        let (lw, _) = starfish_pygame::display::get_screen().logical_size();
-        let phys = starfish_pygame::display::with_window(|w| w.size());
-        if let (true, Some((pw, _))) = (lw > 0, phys) {
-            if pw > 0 {
-                ctx.set_pixels_per_point(pw as f32 / lw as f32);
-            }
+        let screen = starfish_pygame::display::get_screen();
+        let (pw, ph) = starfish_pygame::render::DrawTarget::size(screen);
+        let (lw, lh) = screen.logical_size();
+        let scale = (pw as f32 / lw.max(1) as f32).min(ph as f32 / lh.max(1) as f32);
+        if scale.is_finite() && scale > 0.0 {
+            ctx.set_pixels_per_point(scale.max(0.25));
         }
     }
     let mut state = starfish_pygame::display::with_window(|w| {
@@ -448,6 +451,22 @@ pub(crate) fn draw_ui(vm: &VirtualMachine, panel: PyObjectRef) -> PyResult<()> {
         vm.new_type_error("draw_ui 须在 `with screen.render():` 会话块内调用（t = 会话对象）")
     })?;
     let screen = starfish_pygame::display::get_screen();
+    // ppp 帧级同步（**画布 letterbox scale** = min(物理/逻辑)——两段式
+    // 定约下相机基底恒等，缩放基准独立现算。2026-11-18 Android"首帧
+    // 对、旋转/迟到 resize 后错位"根因：ppp 仅 init 设一次，迟到
+    // Resized 后陈旧 = 布局/合成域分裂。每帧对账 = 旋转/缩放自适应；
+    // 桌面逻辑==物理 = 1.0 恒零变）
+    {
+        let (pw, ph) = starfish_pygame::render::DrawTarget::size(screen);
+        let (lw, lh) = screen.logical_size();
+        let scale = (pw as f32 / lw.max(1) as f32).min(ph as f32 / lh.max(1) as f32);
+        if scale.is_finite() && scale > 0.0 {
+            let want = scale.max(0.25);
+            if (rc.borrow().ctx.pixels_per_point() - want).abs() > 1e-3 {
+                rc.borrow().ctx.set_pixels_per_point(want);
+            }
+        }
+    }
     // screen_rect = 逻辑画布（set_mode 语义尺寸）——egui 与游戏内容同一
     // 坐标系（Android 嵌入下物理恒原生窗口，取窗口会让布局与命中分家）
     let (w, h) = screen.logical_size();
@@ -461,7 +480,21 @@ pub(crate) fn draw_ui(vm: &VirtualMachine, panel: PyObjectRef) -> PyResult<()> {
         rc2.borrow_mut().state.set_logical_size(w as f32, h as f32);
     }
     let key: RendererKey = (screen.color_format(), screen.sample_count());
-    let compose_mvp = screen.present_mvp().to_cols_array_2d();
+    // 合成 MVP（**mid 像素域 → 逻辑域 → NDC**）：present_mvp 定义域 =
+    // 逻辑像素，而 mid 面 = 逻辑点 × ppp 物理像素——预乘 1/ppp 缩放
+    // 把 mid 像素折回逻辑域（ppp=1 桌面恒等零变；Android letterbox
+    // ppp=fit.scale 时 mid 与画布物理 1:1，2026-11-18 巨大/裁剪根因）
+    let ppp = EGUI
+        .with(|c| c.borrow().as_ref().cloned())
+        .map_or(1.0, |rc| rc.borrow().ctx.pixels_per_point())
+        .max(0.25);
+    // 合成 MVP（两段式）：present_fit（画布→表面）× 画布像素正交
+    // （egui 恒像素域——与游戏相机种类解耦）× S(1/ppp)（mid 像素 =
+    // 逻辑点×ppp 折回逻辑域）
+    let compose_mvp = (screen.present_fit()
+        * starfish_pygame::render::camera_mvp_for(screen.logical_size())
+        * glam::Mat4::from_scale(glam::Vec3::new(1.0 / ppp, 1.0 / ppp, 1.0)))
+    .to_cols_array_2d();
     draw_ui_generic(vm, rc, panel, raw, key, compose_mvp, |boxed| {
         starfish_pygame::render::session::with_screen(|pass| {
             pass.defer_overlay(boxed);
@@ -539,9 +572,13 @@ fn draw_ui_generic(
         rc,
         key,
         desc: egui_wgpu::ScreenDescriptor {
-            // 渲染目标像素尺寸 = 变体按目标设置的 screen_rect（Screen =
-            // 窗口 / Surface = 表面——尺寸不一致 = egui 剪裁越界 panic）
-            size_in_pixels: [w, h],
+            // 渲染目标像素尺寸 = screen_rect × ppp（egui_wgpu 契约：目标
+            // 物理像素 = 逻辑点 × ppp——ppp≠1 时按点数直设 = 几何溢出
+            // 裁剪；mid 面随 desc 同尺寸 = 画布物理 1:1 清晰，2026-11-18）
+            size_in_pixels: [
+                (w as f32 * output.pixels_per_point) as u32,
+                (h as f32 * output.pixels_per_point) as u32,
+            ],
             pixels_per_point: output.pixels_per_point,
         },
         // 排程时点快照全局相机（同帧多次 set_camera 的时序正确性）

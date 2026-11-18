@@ -1220,9 +1220,11 @@ fn draw_debug_3d_generic(
             st.viewport = size;
             st.camera_epoch = renderer.camera_epoch.get();
         } else if renderer.follow_global.get() {
-            // 全局相机跟随（批次 B）：每帧同步引擎全局 MVP（调用方按
-            // 目标传入——Screen = present_mvp，与主绘制同一映射）
-            st.renderer.set_camera_mvp(&st.access, follow_mvp);
+            // 全局相机跟随（批次 B）：每帧同步引擎全局 MVP（两段式：
+            // present_fit × 屏上相机——与主绘制 pack 段同一组合）
+            let composed = glam::Mat4::from_cols_array_2d(&present_fit)
+                * glam::Mat4::from_cols_array_2d(&follow_mvp);
+            st.renderer.set_camera_mvp(&st.access, composed.to_cols_array_2d());
             st.viewport = size;
             st.camera_epoch = renderer.camera_epoch.get();
         } else if st.viewport != size || st.camera_epoch != renderer.camera_epoch.get() {

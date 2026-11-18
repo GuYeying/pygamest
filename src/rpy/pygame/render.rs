@@ -136,7 +136,9 @@ pub(crate) mod render {
     #[derive(Clone, Debug, PyPayload)]
     #[pyattr]
     #[pyclass(module = "pygame.render", name = "GameCamera", unhashable = true)]
-    pub(crate) struct PyGameCamera(pub(crate) starfish_pygame::camera::Camera);
+    pub(crate) struct PyGameCamera(
+        pub(crate) std::cell::Cell<starfish_pygame::camera::Camera>,
+    );
 
     #[pyclass]
     impl PyGameCamera {
@@ -147,20 +149,25 @@ pub(crate) mod render {
             view: PyRef<PyMat4>,
             vm: &VirtualMachine,
         ) -> PyRef<Self> {
-            Self(zelf.0.clone().with_view(view.0.get())).into_ref(&vm.ctx)
+            Self(std::cell::Cell::new(
+                zelf.0.get().clone().with_view(view.0.get()),
+            ))
+            .into_ref(&vm.ctx)
         }
 
-        /// letterbox 内聚 MVP（唯一上传量）。
+        /// letterbox 内聚 MVP（唯一上传量）。**set_camera 后 = 引擎
+        /// 物理面对账版**（set_game_camera resize 回写——脚本侧所有
+        /// mvp() 消费自动同域：write_camera_mvp/set_mvp/手绘系数）。
         #[pymethod]
         fn mvp(&self, vm: &VirtualMachine) -> PyRef<PyMat4> {
-            PyMat4(std::cell::Cell::new(self.0.mvp())).into_ref(&vm.ctx)
+            PyMat4(std::cell::Cell::new(self.0.get().mvp())).into_ref(&vm.ctx)
         }
 
 
         /// raw_mvp() -> Mat4：**无 letterbox 的原始投影×视图**（自建管线配自管相机的原始量——2026-11-16 类型补齐；区别于 mvp() 的 fit 组合形态）。
         #[pymethod]
         fn raw_mvp(&self, vm: &VirtualMachine) -> PyRef<PyMat4> {
-            PyMat4(std::cell::Cell::new(self.0.raw_mvp())).into_ref(&vm.ctx)
+            PyMat4(std::cell::Cell::new(self.0.get().raw_mvp())).into_ref(&vm.ctx)
         }
 
         /// 物理点 → 逻辑点。
@@ -171,7 +178,7 @@ pub(crate) mod render {
             y: f64,
             vm: &VirtualMachine,
         ) -> PyResult<PyObjectRef> {
-            let (lx, ly) = self.0.physical_to_logical(x, y);
+            let (lx, ly) = self.0.get().physical_to_logical(x, y);
             Ok(vm.ctx.new_tuple(vec![
                 vm.ctx.new_float(lx).into(),
                 vm.ctx.new_float(ly).into(),
@@ -181,9 +188,9 @@ pub(crate) mod render {
         /// resize 物理视口（返回新 GameCamera——Camera 是 Copy）。
         #[pymethod]
         fn resized(&self, pw: u32, ph: u32, vm: &VirtualMachine) -> PyRef<Self> {
-            let mut cam = self.0;
+            let mut cam = self.0.get();
             cam.resize((pw, ph));
-            Self(cam).into_ref(&vm.ctx)
+            Self(std::cell::Cell::new(cam)).into_ref(&vm.ctx)
         }
     }
 
@@ -198,8 +205,10 @@ pub(crate) mod render {
         ph: u32,
         vm: &VirtualMachine,
     ) -> PyRef<PyGameCamera> {
-        PyGameCamera(starfish_pygame::camera::Camera::ortho((lw, lh), (pw, ph)))
-            .into_ref(&vm.ctx)
+        PyGameCamera(std::cell::Cell::new(
+            starfish_pygame::camera::Camera::ortho((lw, lh), (pw, ph)),
+        ))
+        .into_ref(&vm.ctx)
     }
 
     /// 3D 透视 GameCamera（letterbox 内聚）。
@@ -214,12 +223,8 @@ pub(crate) mod render {
         far: f32,
         vm: &VirtualMachine,
     ) -> PyRef<PyGameCamera> {
-        PyGameCamera(starfish_pygame::camera::Camera::perspective(
-            fov_deg,
-            (lw, lh),
-            (pw, ph),
-            near,
-            far,
+        PyGameCamera(std::cell::Cell::new(
+            starfish_pygame::camera::Camera::perspective(fov_deg, (lw, lh), (pw, ph), near, far),
         ))
         .into_ref(&vm.ctx)
     }
