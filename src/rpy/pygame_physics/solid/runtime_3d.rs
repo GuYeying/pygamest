@@ -1116,6 +1116,9 @@ pub(crate) fn draw_debug_3d(
         // 全局跟随 MVP 与主绘制同一映射（present_mvp：逻辑画布域相机 +
         // letterbox 拟合统一组合——Auto 恒等、Manual 不再物理域双映射）
         screen.present_mvp().to_cols_array_2d(),
+        // 显式 MVP 的组合因子（2D bd295f1 镜像——主管线 write_camera_mvp
+        // 同款：present_fit × 相机；屏 letterbox 漂移两链同步跟随）
+        screen.present_fit().to_cols_array_2d(),
         false,
         &gpu,
         |boxed| {
@@ -1149,6 +1152,13 @@ pub(crate) fn draw_debug_3d_on_surface(
             starfish_pygame::render::DrawTarget::size(surface),
         )
         .to_cols_array_2d(),
+        // 离屏面无 present 拟合（逻辑==物理）——恒等
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
         true, // 离屏目标：管线按 Rgba8Unorm 离屏 access 建
         &gpu,
         |boxed| surface.defer_overlay(boxed),
@@ -1167,6 +1177,7 @@ fn draw_debug_3d_generic(
     samples: u32,
     size: (u32, u32),
     follow_mvp: [[f32; 4]; 4],
+    present_fit: [[f32; 4]; 4],
     offscreen: bool,
     gpu: &starfish_pygame::render::GpuInfo,
     schedule: impl FnOnce(Box<dyn FnOnce(&mut starfish_pygame::render::OverlayCtx) + 'static>),
@@ -1198,13 +1209,16 @@ fn draw_debug_3d_generic(
         let st = &mut slot.1;
         let camera = renderer.camera.borrow();
         if let Some(m) = renderer.explicit_mvp.borrow().as_ref() {
-            // 显式 MVP 直写（最高优先——主管线同矩阵绝对对齐；epoch 变
-            // 即重写，每帧 set_mvp = 每帧跟随）
-            if st.camera_epoch != renderer.camera_epoch.get() {
-                st.renderer.set_camera_mvp(&st.access, m.0.get().to_cols_array_2d());
-                st.viewport = size;
-                st.camera_epoch = renderer.camera_epoch.get();
-            }
+            // 显式 MVP 直写（最高优先——主管线同矩阵绝对对齐）。每帧
+            // 直写 + 组合 present_fit（2D 同款——屏 letterbox 与
+            // write_camera_mvp 同域：逻辑==物理恒等，Android 窗口化
+            // letterbox 统一收进；fit 漂移两链同步跟随不掉队）
+            let composed = (glam::Mat4::from_cols_array_2d(&present_fit)
+                * m.0.get())
+            .to_cols_array_2d();
+            st.renderer.set_camera_mvp(&st.access, composed);
+            st.viewport = size;
+            st.camera_epoch = renderer.camera_epoch.get();
         } else if renderer.follow_global.get() {
             // 全局相机跟随（批次 B）：每帧同步引擎全局 MVP（调用方按
             // 目标传入——Screen = present_mvp，与主绘制同一映射）

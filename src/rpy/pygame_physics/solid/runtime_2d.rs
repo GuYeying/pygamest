@@ -1099,11 +1099,8 @@ fn draw_debug_generic(
             }
         };
         let st = &mut slot.1;
-        if let Some(_arr) = explicit_camera {
-            // 终局二分：set_camera_ortho(5px/米) absurd 值——与 ppm 分支
-            // 同一写入函数。线框巨变 = 分支执行 + mvp 直写语义问题；
-            // 不变 = 本分支写入路径有问题
-            st.renderer.set_camera_ortho(&st.access, size, 5.0);
+        if let Some(arr) = explicit_camera {
+            st.renderer.set_camera_mvp(&st.access, arr);
             st.viewport = size;
         } else if renderer.follow_global.get() {
             // 全局相机跟随（批次 B）：每帧同步引擎全局 MVP（调用方按
@@ -1125,9 +1122,21 @@ fn draw_debug_generic(
             // 显式 MVP 收口复写（present 前最后一刻——防中间任何覆盖；
             // composed 已在帧内预计算 move 进本闭包）
             if let Some(arr) = explicit_camera {
+                // 内联相机交付（每帧一次性 buffer + 新建 bind group——数据
+                // 创建即定，绕开共享相机缓冲的写入时序问题；blit 路径同款
+                // 模式）。内容 = composed（present_fit × 相机，与主管线
+                // write_camera_mvp 同域）。
+                let bg = octx.inline_camera_bind(arr);
                 slot.1
                     .renderer
                     .set_camera_mvp(&slot.1.access, arr);
+                let sink_ref = sink.inner.borrow();
+                octx.with_pass("rapier_debug", false, |pass| {
+                    slot.1
+                        .renderer
+                        .draw_with(&slot.1.access, pass, &sink_ref, &bg);
+                });
+                return;
             }
             let sink_ref = sink.inner.borrow();
             octx.with_pass("rapier_debug", false, |pass| {

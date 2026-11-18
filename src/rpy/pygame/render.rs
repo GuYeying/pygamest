@@ -1736,13 +1736,7 @@ pub(crate) mod render {
         let m = match cam_mvp {
             Some(cm) => {
                 let fit = screen.present_fit();
-                let composed = fit * cm.0.get();
-                // 一次性诊断（Android letterbox 判定）：拟合四要素 +
-                // 脚本相机平移列 + 合成结果——"组合是否落进 buffer"
-                // 一眼可判（sx/sy 应 = 画布占屏比，恒等应 = 1/1）
-                static DIAG: std::sync::atomic::AtomicBool =
-                    std::sync::atomic::AtomicBool::new(false);
-                composed
+                fit * cm.0.get()
             }
             None => screen.present_mvp(),
         };
