@@ -500,13 +500,6 @@ pub(crate) mod scheduler;
                             &world.colliders,
                             &mut world.bodies,
                         );
-                        // 表面偏移后处理——贴面粒子中心抬到距面 = 粒子
-                        // 半径（渲染圆恰好搁在刚体表面，消穿模观感）
-                        rf::coupling::surface_offset(
-                            &mut self.pipeline.borrow_mut(),
-                            &world.colliders,
-                            self.particle_radius.get() as f32,
-                        );
                     }
                     rustpython_vm::function::OptionalArg::Missing => {
                         let gravity =
