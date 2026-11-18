@@ -1004,6 +1004,9 @@ pub(crate) fn draw_debug(
         // 全局跟随 MVP 与主绘制同一映射（present_mvp：逻辑画布域相机 +
         // letterbox 拟合统一组合——Auto 恒等、Manual 不再物理域双映射）
         screen.present_mvp().to_cols_array_2d(),
+        // 显式 MVP 的组合因子（主管线 write_camera_mvp 同款——present
+        // 拟合 × 脚本相机；显式矩阵须与 cam_buf 同组合才同域）
+        screen.present_fit().to_cols_array_2d(),
         false,
         &gpu,
         |boxed| {
@@ -1037,6 +1040,13 @@ pub(crate) fn draw_debug_on_surface(
             starfish_pygame::render::DrawTarget::size(surface),
         )
         .to_cols_array_2d(),
+        // 离屏面无 present 拟合（逻辑==物理）——恒等
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
         true, // 离屏目标：管线按 Rgba8Unorm 离屏 access 建
         &gpu,
         |boxed| surface.defer_overlay(boxed),
@@ -1054,6 +1064,7 @@ fn draw_debug_generic(
     samples: u32,
     size: (u32, u32),
     follow_mvp: [[f32; 4]; 4],
+    present_fit: [[f32; 4]; 4],
     offscreen: bool,
     gpu: &starfish_pygame::render::GpuInfo,
     schedule: impl FnOnce(Box<dyn FnOnce(&mut starfish_pygame::render::OverlayCtx) + 'static>),
@@ -1084,8 +1095,13 @@ fn draw_debug_generic(
         if let Some(m) = renderer.explicit_mvp.borrow().as_ref() {
             // 显式 MVP 直写（最高优先——米世界系相机矩阵与主管线同源
             // 绝对对齐）
+            // 与主管线 write_camera_mvp 同组合（present_fit × 相机）——
+            // 显式矩阵与 cam_buf 同域（裸 mvp 差一个 present 拟合 =
+            // 缩放/偏移随距离发散，2026-11-18 用户实测）
+            let composed =
+                glam::Mat4::from_cols_array_2d(&present_fit) * m.0.get();
             st.renderer
-                .set_camera_mvp(&st.access, m.0.get().to_cols_array_2d());
+                .set_camera_mvp(&st.access, composed.to_cols_array_2d());
             st.viewport = size;
         } else if renderer.follow_global.get() {
             // 全局相机跟随（批次 B）：每帧同步引擎全局 MVP（调用方按
