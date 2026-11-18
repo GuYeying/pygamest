@@ -945,6 +945,7 @@ impl PyDebugLinesRenderer {
     /// set_mvp = 每帧跟随）。
     #[pymethod]
     fn set_mvp(&self, m: PyRef<crate::rpy::pygame::math::math::PyMat4>) {
+        eprintln!("[set-mvp] called");
         *self.explicit_mvp.borrow_mut() = Some((*m).clone());
         for (_, st) in self.states.borrow_mut().iter_mut() {
             st.viewport = (0, 0); // 置脏 → 下次 draw_debug 重设相机
@@ -1075,6 +1076,13 @@ fn draw_debug_generic(
     } else {
         gpu.access.clone()
     };
+    // 显式 MVP 帧内预计算（present_fit × 相机——与主管线
+    // write_camera_mvp 同组合同域；裸 mvp 差一个 present 拟合 =
+    // 缩放/偏移随距离发散，2026-11-18 用户实测）
+    let explicit_camera = renderer.explicit_mvp.borrow().as_ref().map(|m| {
+        (glam::Mat4::from_cols_array_2d(&present_fit) * m.0.get())
+            .to_cols_array_2d()
+    });
     {
         let mut slots = renderer.states.borrow_mut();
         let slot = match slots.iter_mut().find(|(k, _)| (k.0, k.1) == (samples, offscreen)) {
@@ -1092,16 +1100,11 @@ fn draw_debug_generic(
             }
         };
         let st = &mut slot.1;
-        if let Some(m) = renderer.explicit_mvp.borrow().as_ref() {
-            // 显式 MVP 直写（最高优先——米世界系相机矩阵与主管线同源
-            // 绝对对齐）
-            // 与主管线 write_camera_mvp 同组合（present_fit × 相机）——
-            // 显式矩阵与 cam_buf 同域（裸 mvp 差一个 present 拟合 =
-            // 缩放/偏移随距离发散，2026-11-18 用户实测）
-            let composed =
-                glam::Mat4::from_cols_array_2d(&present_fit) * m.0.get();
-            st.renderer
-                .set_camera_mvp(&st.access, composed.to_cols_array_2d());
+        if let Some(arr) = explicit_camera {
+            // 显式 MVP 直写（红鲱鱼/y 偏移二分均无视觉效果 = 本链写入
+            // 不被 overlay 渲染消费——viewport 语义挂账 v2；2D 线框实测
+            // 走 py 手绘（fluid2d_test blit 链）——本分支保留挂账语义）
+            st.renderer.set_camera_mvp(&st.access, arr);
             st.viewport = size;
         } else if renderer.follow_global.get() {
             // 全局相机跟随（批次 B）：每帧同步引擎全局 MVP（调用方按
@@ -1120,6 +1123,13 @@ fn draw_debug_generic(
     schedule(Box::new(move |octx| {
         let mut slots = renderer.states.borrow_mut();
         if let Some(slot) = slots.iter_mut().find(|(k, _)| *k == key) {
+            // 显式 MVP 收口复写（present 前最后一刻——防中间任何覆盖；
+            // composed 已在帧内预计算 move 进本闭包）
+            if let Some(arr) = explicit_camera {
+                slot.1
+                    .renderer
+                    .set_camera_mvp(&slot.1.access, arr);
+            }
             let sink_ref = sink.inner.borrow();
             octx.with_pass("rapier_debug", false, |pass| {
                 slot.1.renderer.draw(&slot.1.access, pass, &sink_ref);
