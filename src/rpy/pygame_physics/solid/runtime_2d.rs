@@ -945,7 +945,6 @@ impl PyDebugLinesRenderer {
     /// set_mvp = 每帧跟随）。
     #[pymethod]
     fn set_mvp(&self, m: PyRef<crate::rpy::pygame::math::math::PyMat4>) {
-        eprintln!("[set-mvp] called");
         *self.explicit_mvp.borrow_mut() = Some((*m).clone());
         for (_, st) in self.states.borrow_mut().iter_mut() {
             st.viewport = (0, 0); // 置脏 → 下次 draw_debug 重设相机
@@ -1100,11 +1099,11 @@ fn draw_debug_generic(
             }
         };
         let st = &mut slot.1;
-        if let Some(arr) = explicit_camera {
-            // 显式 MVP 直写（红鲱鱼/y 偏移二分均无视觉效果 = 本链写入
-            // 不被 overlay 渲染消费——viewport 语义挂账 v2；2D 线框实测
-            // 走 py 手绘（fluid2d_test blit 链）——本分支保留挂账语义）
-            st.renderer.set_camera_mvp(&st.access, arr);
+        if let Some(_arr) = explicit_camera {
+            // 终局二分：set_camera_ortho(5px/米) absurd 值——与 ppm 分支
+            // 同一写入函数。线框巨变 = 分支执行 + mvp 直写语义问题；
+            // 不变 = 本分支写入路径有问题
+            st.renderer.set_camera_ortho(&st.access, size, 5.0);
             st.viewport = size;
         } else if renderer.follow_global.get() {
             // 全局相机跟随（批次 B）：每帧同步引擎全局 MVP（调用方按
