@@ -146,10 +146,22 @@ pub(crate) mod coupling {
     pub(crate) fn sync_coupling(
         pipeline: &mut FluidsPipeline,
         colliders: &ColliderSet,
+        bodies: &RigidBodySet,
         _particle_radius: SReal,
     ) {
-        for (handle, _collider) in colliders.iter() {
+        for (handle, collider) in colliders.iter() {
             if pipeline.coupling.entries.contains_key(&handle) {
+                continue;
+            }
+            // Coupling contract: static (fixed) bodies only - DC force
+            // feedback numerics explode for dynamic parents (2D sibling
+            // fly-off observation 2026-11-18). Dynamic coupling = v2.
+            let dynamic = collider
+                .parent()
+                .and_then(|p| bodies.get(p))
+                .map(|b| b.is_dynamic())
+                .unwrap_or(false);
+            if dynamic {
                 continue;
             }
             let bh = pipeline.liquid_world.add_boundary(make_boundary(Vec::new()));

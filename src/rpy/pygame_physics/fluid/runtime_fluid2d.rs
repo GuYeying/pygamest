@@ -122,10 +122,25 @@ pub(crate) mod coupling {
     pub(crate) fn sync_coupling(
         pipeline: &mut FluidsPipeline,
         colliders: &ColliderSet,
+        bodies: &RigidBodySet,
         _particle_radius: SReal,
     ) {
-        for (handle, _collider) in colliders.iter() {
+        for (handle, collider) in colliders.iter() {
             if pipeline.coupling.entries.contains_key(&handle) {
+                continue;
+            }
+            // Coupling contract: static (fixed) bodies only. salva's DC
+            // boundary force feedback auto-arms for dynamic parents and
+            // its numerics are unstable (a falling cube through the fluid
+            // collects the full projected-particle pressure as impulses ->
+            // energy explosion, fly-off observed 2026-11-18) - dynamic
+            // coupling is v2 work, skip registration here.
+            let dynamic = collider
+                .parent()
+                .and_then(|p| bodies.get(p))
+                .map(|b| b.is_dynamic())
+                .unwrap_or(false);
+            if dynamic {
                 continue;
             }
             let bh = pipeline.liquid_world.add_boundary(make_boundary(Vec::new()));

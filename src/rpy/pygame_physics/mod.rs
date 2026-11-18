@@ -213,6 +213,7 @@ pub(crate) mod scheduler;
                         rf::coupling::sync_coupling(
                             &mut self.pipeline.borrow_mut(),
                             &world.colliders,
+                            &world.bodies,
                             self.particle_radius.get() as f32,
                         );
                         rf::coupling::step_coupled(
@@ -491,6 +492,7 @@ pub(crate) mod scheduler;
                         rf::coupling::sync_coupling(
                             &mut self.pipeline.borrow_mut(),
                             &world.colliders,
+                            &world.bodies,
                             self.particle_radius.get() as f32,
                         );
                         rf::coupling::step_coupled(
