@@ -75,15 +75,40 @@ pub(crate) fn sample_shell(corner: [SReal; 3], dims: [SReal; 3], spacing: SReal)
 }
 
 /// Build the pipeline (DFSPH pressure solver - salva's volume-conserving
-/// flagship; gravity is applied at step time).
+/// flagship; gravity is applied at step time). Stable with the DC-coupling
+/// boundary (rapier contact projection - the only reliable boundary for
+/// impact/sloshing scenes in salva 0.11, see sync_coupling notes).
 pub(crate) fn make_pipeline(particle_radius: SReal, smoothing_factor: SReal) -> FluidsPipeline {
     FluidsPipeline::new(particle_radius, smoothing_factor)
 }
 
+/// DFSPH pipeline (volume-conserving flagship - kept for comparison / v2
+/// parameter tuning; unstable on boundary contact at this writing).
+pub(crate) fn make_iisph_pipeline(
+    particle_radius: SReal,
+    smoothing_factor: SReal,
+) -> FluidsPipeline {
+    FluidsPipeline::new_with_solver(
+        salva3d::solver::IISPHSolver::<salva3d::kernel::CubicSplineKernel, salva3d::kernel::CubicSplineKernel>::new(),
+        particle_radius,
+        smoothing_factor,
+    )
+}
+
 /// Fluid constructor shim (positions in, velocities zeroed - salva
-/// Fluid::new fills them).
+/// Fluid::new fills them). XSPH viscosity attached by default: fluid
+/// particle velocities converge toward the neighbor average each step,
+/// which reads as thick honey-like clumping flow (plain SPH reads as
+/// ballistic droplets - user feedback 2026-11-18). Coefficients: fluid
+/// 2.0 (strong smoothing = viscous look), boundary 1.0 (damped wall
+/// shear). Above ~3 the velocity smoothing starts fighting the DFSPH
+/// pressure solve - keep under that.
 pub(crate) fn make_fluid(positions: Vec<SVector>, particle_radius: SReal) -> Fluid {
-    Fluid::new(positions, particle_radius, 1000.0, InteractionGroups::all())
+    let mut fluid = Fluid::new(positions, particle_radius, 1000.0, InteractionGroups::all());
+    fluid
+        .nonpressure_forces
+        .push(Box::new(salva3d::solver::XSPHViscosity::new(2.0, 1.0)));
+    fluid
 }
 
 /// Boundary constructor shim (static zero-velocity wall particles).
@@ -93,4 +118,61 @@ pub(crate) fn make_boundary(positions: Vec<SVector>) -> Boundary {
 
 pub(crate) fn make_solver() -> DFSPHSolver {
     DFSPHSolver::new()
+}
+
+// ── rapier coupling (batch 3: static/dynamic rigid body <-> fluid) ──
+// Requires physics3d (same rapier3d 0.36.1 as salva's own dependency -
+// single lock version, so ColliderSet/RigidBodySet types are identical).
+
+#[cfg(feature = "physics3d")]
+pub(crate) mod coupling {
+    use super::{make_boundary, sample_shell, FluidsPipeline, SReal};
+    use rapier_starfish_debug::dim3::prelude::{
+        ColliderSet, RigidBodySet, Vector as RapierVector,
+    };
+
+    /// Register every not-yet-coupled collider as a salva boundary
+    /// (incremental - existing coupling entries are kept as-is). Sampling =
+    /// DynamicContactSampling: salva projects penetrating particles out of
+    /// the collider shape and kills their inward normal velocity each step
+    /// (hard contact response - no sample density needed). StaticSampling
+    /// (shell point clouds) was tried first and abandoned: overlapping
+    /// boundary clouds where two colliders meet (ramp foot on floor) double
+    /// the density contribution and blow the DFSPH pressure solve apart.
+    /// Works for any collider shape, rotated colliders included (position
+    /// transform happens inside salva's update_boundaries). Force feedback
+    /// is auto-disabled for non-dynamic bodies by salva itself
+    /// (boundary.forces = None when the parent body is not dynamic).
+    pub(crate) fn sync_coupling(
+        pipeline: &mut FluidsPipeline,
+        colliders: &ColliderSet,
+        _particle_radius: SReal,
+    ) {
+        for (handle, _collider) in colliders.iter() {
+            if pipeline.coupling.entries.contains_key(&handle) {
+                continue;
+            }
+            let bh = pipeline.liquid_world.add_boundary(make_boundary(Vec::new()));
+            pipeline.coupling.register_coupling(
+                bh,
+                handle,
+                salva3d::integrations::rapier::ColliderSampling::DynamicContactSampling,
+            );
+        }
+    }
+
+    /// Coupled step shim: FluidsPipeline::step(gravity, dt, colliders,
+    /// bodies) - the rapier-integration entry that runs step_with_coupling
+    /// underneath (registered boundaries get their positions re-sampled
+    /// from collider transforms every step).
+    pub(crate) fn step_coupled(
+        pipeline: &mut FluidsPipeline,
+        gravity: [SReal; 3],
+        dt: SReal,
+        colliders: &ColliderSet,
+        bodies: &mut RigidBodySet,
+    ) {
+        let g = RapierVector::new(gravity[0], gravity[1], gravity[2]);
+        pipeline.step(&g, dt, colliders, bodies);
+    }
 }

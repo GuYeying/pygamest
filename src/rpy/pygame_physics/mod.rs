@@ -78,6 +78,7 @@ pub(crate) mod scheduler;
             pub(crate) next_boundary: Cell<u32>,
         }
 
+        #[cfg(feature = "fluid")]
         impl std::fmt::Debug for PyFluidWorld {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 let n = self.pipeline.borrow().liquid_world.fluids().len();
@@ -160,7 +161,10 @@ pub(crate) mod scheduler;
             }
 
             /// add_boundary_cuboid(corner, dims, spacing=None) -> int：
-            /// 容器壁壳边界粒子（六面——静态零速；流体被约束在壳内）。
+            /// 容器壁边界粒子（**体填充**——静态零速；流体被约束在内）。
+            /// 体填充而非单层壳：单层壳 = "纸墙"（薄点云邻居少、排斥薄
+            /// ——高速摊开流撞壁直接穿透，2026-11-18 实测）；多层实心
+            /// 墙 = SPH 边界惯例（kernel 半径内始终有边界粒子撑排斥）。
             #[pymethod]
             fn add_boundary_cuboid(
                 &self,
@@ -169,7 +173,7 @@ pub(crate) mod scheduler;
             ) -> PyResult<u32> {
                 let radius = self.particle_radius.get();
                 let sp = args.spacing.unwrap_or(radius as f64 * 2.0).max(1e-4) as f32;
-                let pts = crate::rpy::pygame_physics::fluid::runtime_fluid::sample_shell(
+                let pts = crate::rpy::pygame_physics::fluid::runtime_fluid::sample_cuboid_grid(
                     [args.corner.0, args.corner.1, args.corner.2],
                     [args.dims.0, args.dims.1, args.dims.2],
                     sp,
@@ -182,9 +186,55 @@ pub(crate) mod scheduler;
                 Ok(py_handle)
             }
 
-            /// step(dt)：DFSPH 压力求解步进（调度器 fluid 关闭 = 直返）。
+            /// step(dt, solid=None)：DFSPH 压力求解步进（调度器 fluid
+            /// 关闭 = 直返）。solid 给定 = rapier 耦合步进（solid 世界
+            /// 全部 cuboid collider 增量注册为 salva 边界——流体粒子被
+            /// 刚体推开；非动态刚体力回传由 salva 自动关。旋转 collider
+            /// 每步按位姿重采样——斜面等旋转静态刚体开箱即用）。
+            #[cfg(feature = "physics3d")]
             #[pymethod]
-            fn step(&self, dt: f64, vm: &VirtualMachine) -> PyResult<()> {
+            fn step(
+                &self,
+                dt: f64,
+                solid: rustpython_vm::function::OptionalArg<PyRef<PyPhysicsWorld3D>>,
+            ) -> PyResult<()> {
+                use crate::rpy::pygame_physics::fluid::runtime_fluid as rf;
+                if !crate::rpy::pygame_physics::scheduler::fluid_enabled() {
+                    return Ok(());
+                }
+                let g = *self.gravity.borrow();
+                let dt = dt.max(1e-6) as f32;
+                match solid {
+                    rustpython_vm::function::OptionalArg::Present(pw) => {
+                        let mut w = pw.inner.borrow_mut();
+                        let world = w.get();
+                        rf::coupling::sync_coupling(
+                            &mut self.pipeline.borrow_mut(),
+                            &world.colliders,
+                            self.particle_radius.get() as f32,
+                        );
+                        rf::coupling::step_coupled(
+                            &mut self.pipeline.borrow_mut(),
+                            g,
+                            dt,
+                            &world.colliders,
+                            &mut world.bodies,
+                        );
+                    }
+                    rustpython_vm::function::OptionalArg::Missing => {
+                        let gravity =
+                            rf::SVector::new(g[0] as f32, g[1] as f32, g[2] as f32);
+                        self.pipeline.borrow_mut().liquid_world.step(dt, &gravity);
+                    }
+                }
+                Ok(())
+            }
+
+            /// step(dt)：DFSPH 压力求解步进（fluid-only 形态——physics3d
+            /// 未启用，无 solid 耦合；调度器 fluid 关闭 = 直返）。
+            #[cfg(all(feature = "fluid", not(feature = "physics3d")))]
+            #[pymethod]
+            fn step(&self, dt: f64) -> PyResult<()> {
                 if !crate::rpy::pygame_physics::scheduler::fluid_enabled() {
                     return Ok(());
                 }

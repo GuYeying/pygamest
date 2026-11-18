@@ -359,11 +359,14 @@ look-at 透视相机（`fov` = 垂直视场角**弧度**，1.0 ≈ 57°）。
 
 ```{warning}
 ⚠️ feature `fluid` 门控（`--features fluid`——依赖 salva3d 0.11 +
-rapier3d 0.36.1 版本精确匹配）。solid/fluid 分层重构第二批——
-rapier 刚体耦合（ColliderCouplingSet 边界化 + 力回传）为第三批。
+rapier3d 0.36.1 版本精确匹配）。rapier 刚体耦合已落地（第三批，
+2026-11-18：`step(dt, solid)` ColliderCouplingSet 边界化——力回传对
+非动态刚体由 salva 自动关闭）。
 ```
 
-粒子流体世界（salva DFSPH 压力求解器——体积守恒旗舰求解器）。
+粒子流体世界（salva DFSPH 压力求解器——体积守恒旗舰求解器；
+流体默认挂 XSPH 粘性——粒子速度向邻居均值收敛，蜂蜜状成团流动观感，
+系数 fluid 2.0 / boundary 1.0，>3 会与压力求解冲突勿超）。
 `pygame_physics.scheduler_status()` / `scheduler_enable(name, on)` 为
 总调度器运行时开关（关闭 = step 直返暂停推进，世界对象生命周期不变）。
 
@@ -377,11 +380,20 @@ cuboid 均匀网格采样流体（spacing 缺省 = 2×粒子半径）。返回 p
 
 #### <span class="c-func">add_boundary_cuboid(corner, dims, spacing=None) -> int</span>
 
-容器**壁壳**边界粒子（六面静态零速——流体被约束在壳内）。
+容器边界粒子（**体填充**——静态零速；多层实心墙优于单层壳，但仍是
+压力求解式拦截）。⚠️ **边界定约（2026-11-18 系统实测）**：salva 0.11
+无独立边界斥力（拦截全靠压力求解），本口边界在落体 + 摊开流场景
+**全部穿透**（壳/体/加密采样、DFSPH/IISPH、粒子规模/尺度均无关）——
+冲击场景一律走 `step(dt, solid)` 耦合边界（DC 投影硬拦截）。
 
-#### <span class="c-func">step(dt)</span>
+#### <span class="c-func">step(dt, solid=None)</span>
 
-DFSPH 步进（调度器 fluid 关闭 = 直返）。
+DFSPH 步进（调度器 fluid 关闭 = 直返）。**solid 给定 = rapier 耦合
+步进**：solid 世界全部 collider 增量注册为 salva 边界（ColliderSampling
+::DynamicContactSampling 硬投影——侵入粒子每步推出表面 + 法向速度
+消除；旋转 collider 每步按位姿重采样，斜面等旋转静态刚体开箱即用；
+非动态刚体力回传由 salva 自动关闭；任意 collider 形状支持）。
+**这是冲击场景的唯一稳定边界**（见 add_boundary_cuboid 定约）。
 
 #### <span class="c-func">fluid_particles(handle) -> (positions, velocities)</span>
 
@@ -399,5 +411,7 @@ DFSPH 步进（调度器 fluid 关闭 = 直返）。
 `scheduler_enable(name, on)` 运行时开关（"solid"/"fluid"——关闭 =
 step 直返暂停推进，世界对象生命周期不变；未编译子系统报错）。
 
-样张：`fluid_test.py`（容器水柱 + instanced 球渲染 + F1/F2 debug 切
-换 + 空格注水 + G 调度器切换）。
+样张：`fluid_test.py`（**静态刚体×流体碰撞**——rapier 斜面+大地面
+DC 耦合、水柱滑落摊开 + instanced icosphere 球渲染（渲染半径
+1.4×粒子半径——视觉重叠连贯表面）+ T solid 线框对齐检查 + 空格注水
++ G 调度器切换；9 项断言含未穿地/滑落交互/静置衰减）。
