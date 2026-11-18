@@ -1743,7 +1743,10 @@ pub(crate) mod render {
                 let fit = screen.present_fit();
                 fit * cm.0.get()
             }
-            None => screen.present_mvp(),
+            // 单参形态（两段式统一 2026-11-18）：全局相机 MVP = 屏上相机
+            // （world→画布基底）× present_fit（画布→表面 letterbox）——
+            // 与双参/段级/调试同一两段组合，letterbox 平台不缺第二段
+            None => screen.present_fit() * screen.present_mvp(),
         };
         let bytes: Vec<u8> = m
             .to_cols_array()
