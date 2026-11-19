@@ -532,7 +532,7 @@ impl Constructor for PyDebugLinesRenderer3D {
             }),
             camera_epoch: Cell::new(1),
             explicit_mvp: RefCell::new(None),
-            follow_global: Cell::new(false),
+            follow_global: Cell::new(true),
             states: RefCell::new(Vec::new()),
         })
     }

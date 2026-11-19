@@ -716,13 +716,13 @@ pub(crate) mod scheduler;
         #[pyattr]
         #[pyclass(module = "pygame_physics", name = "DebugLinesRenderer", unhashable = true)]
         pub(crate) struct PyDebugLinesRenderer {
-            pub(crate) ppm: Cell<f32>,
-            /// 全局相机跟随（渲染架构批次 B；默认 false——ppm 显式相机
-            /// 优先；follow_global_camera() 开启后 draw 前同步全局 MVP）
+            /// 全局相机跟随（v3.1 默认 **true**——未显式 set_mvp 时恒跟随
+            /// Screen.camera：present_fit × present_mvp，None 相机 = NDC；
+            /// follow_global_camera(false) 可显式关闭保持上次相机）
             pub(crate) follow_global: Cell<bool>,
             /// 显式 MVP 直写（2D 线框对齐原语，2026-11-18——米世界系任意
             /// 相机矩阵（如 game_camera_ortho 的 mvp()）与主管线同矩阵
-            /// 绝对对齐；优先级最高，覆盖 ppm/follow_global）
+            /// 绝对对齐；优先级最高，覆盖 follow_global）
             pub(crate) explicit_mvp:
                 RefCell<Option<crate::rpy::pygame::math::math::PyMat4>>,
             /// 按 (样本数, 目标系) 分槽（Screen MSAA 交换链格式 / 离屏 1x
@@ -736,7 +736,7 @@ pub(crate) mod scheduler;
         #[cfg(feature = "physics2d")]
         impl std::fmt::Debug for PyDebugLinesRenderer {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str(&format!("DebugLinesRenderer(<ppm={}>)", self.ppm.get()))
+                f.write_str("DebugLinesRenderer(<follow Screen.camera>)")
             }
         }
 
@@ -903,8 +903,9 @@ pub(crate) mod scheduler;
             pub(crate) explicit_mvp:
                 RefCell<Option<crate::rpy::pygame::math::math::PyMat4>>,
             /// 全局相机跟随（渲染架构批次 B）：true = draw 前同步引擎
-            /// 全局 MVP（camera_mvp_for——set_camera 一处设置全体生效）；
-            /// 默认 false（构造的 look-at 相机 = 显式，优先于全局）
+            /// 全局 MVP（present_mvp——set_camera 一处设置全体生效）；
+            /// **v3.1 默认 true**（未显式 = 跟随 Screen.camera，None 相机
+            /// = NDC）；set_camera_lookat/set_mvp 显式调用自动解除
             pub(crate) follow_global: Cell<bool>,
             /// 按 (样本数, 目标系) 分槽（同 2D——批次 48 画中画 + 附件
             /// 格式分套定约）

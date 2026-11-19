@@ -476,26 +476,22 @@ impl Constructor for PyDebugDraw {
     }
 }
 
-/// DebugLinesRenderer(ppm=50.0)——调试线绘制器（GPU 惰性装配：首次
-/// draw() 时须已 set_mode；表面尺寸变化自动重设相机）
+/// DebugLinesRenderer()——调试线绘制器（GPU 惰性装配：首次 draw() 时
+/// 须已 set_mode；v3.1：ppm 参数退役——相机 = 显式 set_mvp 或跟随
+/// Screen.camera，无像素/米正交兜底态）
 #[derive(FromArgs)]
-pub(crate) struct DebugLinesRendererArgs {
-    /// 像素/米（ortho 相机缩放）
-    #[pyarg(any, optional)]
-    pub(crate) ppm: Option<ArgIntoFloat>,
-}
+pub(crate) struct DebugLinesRendererArgs {}
 
 impl Constructor for PyDebugLinesRenderer {
     type Args = DebugLinesRendererArgs;
 
     fn py_new(
         _cls: &Py<PyType>,
-        args: Self::Args,
+        _args: Self::Args,
         _vm: &VirtualMachine,
     ) -> PyResult<Self> {
         Ok(Self {
-            ppm: Cell::new(args.ppm.map(|p| p.into_float() as f32).unwrap_or(50.0)),
-            follow_global: Cell::new(false),
+            follow_global: Cell::new(true),
             explicit_mvp: RefCell::new(None),
             states: RefCell::new(Vec::new()),
         })
@@ -928,21 +924,12 @@ impl Constructor for PyLineSink {
 
 #[pyclass(with(Constructor))]
 impl PyDebugLinesRenderer {
-    /// set_camera(ppm)：ortho 缩放（像素/米；下次 draw_debug 生效——
-    /// 全部样本数槽置脏）
-    #[pymethod]
-    fn set_camera(&self, ppm: ArgIntoFloat) {
-        self.ppm.set(ppm.into_float() as f32);
-        self.follow_global.set(false); // 显式相机优先（全局跟随解除）
-        for (_, st) in self.states.borrow_mut().iter_mut() {
-            st.viewport = (0, 0); // 置脏 → 下次 draw_debug 重设相机
-        }
-    }
-
     /// set_mvp(mat4)：**显式 MVP 直写**（2D 线框对齐原语，2026-11-18
     /// ——米世界系任意相机矩阵（如 game_camera_ortho 的 mvp()），与主
-    /// 管线同矩阵绝对对齐；优先级最高覆盖 ppm/follow_global——每帧
-    /// set_mvp = 每帧跟随）。
+    /// 管线同矩阵绝对对齐；优先级最高覆盖 follow_global——每帧
+    /// set_mvp = 每帧跟随）。v3.1：ppm 正交兜底退役（旧第三态 = 米域
+    /// 隐式兜底，与"无相机 = NDC"定约矛盾——未 set_mvp 时 =
+    /// follow_global 读 Screen.camera，None 相机 = NDC）。
     #[pymethod]
     fn set_mvp(&self, m: PyRef<crate::rpy::pygame::math::math::PyMat4>) {
         *self.explicit_mvp.borrow_mut() = Some((*m).clone());
@@ -1099,21 +1086,16 @@ fn draw_debug_generic(
             }
         };
         let st = &mut slot.1;
-        if let Some(arr) = explicit_camera {
-            st.renderer.set_camera_mvp(&st.access, arr);
-            st.viewport = size;
-        } else if renderer.follow_global.get() {
-            // 全局相机跟随（批次 B）：每帧同步引擎全局 MVP（两段式：
-            // present_fit × 屏上相机——与主绘制 pack 段同一组合）
-            let composed = glam::Mat4::from_cols_array_2d(&present_fit)
-                * glam::Mat4::from_cols_array_2d(&follow_mvp);
-            st.renderer.set_camera_mvp(&st.access, composed.to_cols_array_2d());
-            st.viewport = size;
-        } else if st.viewport != size {
-            st.renderer
-                .set_camera_ortho(&st.access, size, renderer.ppm.get());
-            st.viewport = size;
-        }
+        // 相机单路径（v3.1 全显式收敛）：explicit set_mvp 优先，否则
+        // 恒跟随 present_fit × present_mvp（读 Screen.camera——None 相
+        // 机 = NDC 恒等；ppm 正交兜底/follow_global 标志均退役——无
+        // 例外面，每帧现算天然跟随相机变化）
+        let composed = match explicit_camera {
+            Some(arr) => glam::Mat4::from_cols_array_2d(&arr),
+            None => glam::Mat4::from_cols_array_2d(&present_fit)
+                * glam::Mat4::from_cols_array_2d(&follow_mvp),
+        };
+        st.renderer.set_camera_mvp(&st.access, composed.to_cols_array_2d());
     }
     // 排程（PyRef 'static——闭包持引用计数，present/flush 时段解引用载荷；
     // 主线程单线程契约下无并发借用）
