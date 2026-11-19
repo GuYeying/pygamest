@@ -524,6 +524,13 @@ impl Constructor for PyDebugLinesRenderer3D {
             .eye
             .unwrap_or(SfFPoint3(0.0, 6.0, 14.0));
         let target = args.target.unwrap_or(SfFPoint3(0.0, 0.0, 0.0));
+        // 构造带 lookat 参数（eye/target/fov 任一）= **显式相机意图**
+        // （与 set_camera_lookat py 口同语义）——follow 自动解除，构造
+        // 相机生效（v3.1 默认跟随 Screen.camera 不得覆盖显式 lookat
+        // ——米制世界 × 像素正交 = 内容缩成中心极小一团，rapier3d_test
+        // 实测 2026-11-19）；无参构造 = 无显式相机，跟随 Screen.camera
+        let explicit_lookat =
+            args.eye.is_some() || args.target.is_some() || args.fov.is_some();
         Ok(Self {
             camera: RefCell::new(Camera3 {
                 eye: [eye.0, eye.1, eye.2],
@@ -532,7 +539,7 @@ impl Constructor for PyDebugLinesRenderer3D {
             }),
             camera_epoch: Cell::new(1),
             explicit_mvp: RefCell::new(None),
-            follow_global: Cell::new(true),
+            follow_global: Cell::new(!explicit_lookat),
             states: RefCell::new(Vec::new()),
         })
     }
