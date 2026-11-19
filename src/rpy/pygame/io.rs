@@ -160,11 +160,10 @@ use std::cell::Cell;
         #[pyfunction]
         fn exists(path: PyStrRef, vm: &VirtualMachine) -> PyResult<bool> {
             #[cfg(target_arch = "wasm32")]
-            return Err(vm.new_value_error(
-                "pygame.io: Web 端 v1 不提供同步 io（宿主预加载/异步资源装载承载）",
-            ));
+            return starfish_io::exists_sync(path_str(&path, vm)?)
+                .map_err(|e| vm.new_value_error(format!("io exists 失败: {e}")));
             #[cfg(not(target_arch = "wasm32"))]
-            pollster::block_on(starfish_io::exists(path_str(&path, vm)?))
+            starfish_io::exists_sync(path_str(&path, vm)?)
                 .map_err(|e| vm.new_value_error(format!("io exists 失败: {e}")))
         }
 

@@ -1,12 +1,27 @@
 # pygame.io
 
-资源与存档读写——桌面同步直读直写；Web v1 不提供同步面（资源装载由
-宿主预加载 / `image.load` 等三线接口承载）。
+资源与存档读写——**跨平台统一走向**（v3.1，2026-11-20）：native 同步
+面全量可用；**Web 端同步口退化为同步 XHR 全量**（`read`/`read_text`/
+`exists` 不再 Err——阻塞语义与 native 对称，2026-11-19 用户定约）；
+**大文件流式加载**走 `fetch`（native = 分块循环每帧一块交出控制权，
+wasm = 浏览器异步全量）。
 
 ```{note}
 [基准目录] Python 面恒以 **main 所在目录**为基准写相对路径——打包形态
 不改写调用写法（Android 基准目录由引擎 run 自动注入，`set_base_dir`
 不暴露）。
+
+[走向矩阵] `read`/`read_text`/`exists`/`write`/`write_text`：native
+block_on fs；wasm 同步 XHR 退化全量。`io_read_chunk(path, off, n)`：
+**native 帧级区间口**（分块流式的底层协议——每帧一块交出控制权）；
+Web 端 Err（fetch 全量承载）。`io_size`：native fs metadata；wasm 返
+None（分块判定退化信号）。加密资产（SFXE1）：只走 `read` 全量解密面
+——`io_read_chunk` 明文读不支持分块解密。
+
+[io 走向矩阵] `image.load`/`font.load`/`mixer.Sound`/`music.load`/
+`music.queue`：**全走 starfish_io 门面**（BASE_DIR+加密语义统一，
+2026-11-20 audio 统一批次）；`video.open`：路径直传平台解码器
+（MF/MediaPlayer/HTML5 video 自治流式——加密 video 挂账）。
 ```
 
 ## <span class="c-func">函数</span>
@@ -14,7 +29,8 @@
 #### <span class="c-func">read(path) -> bytes</span>
 
 读资源全部字节（`.sfx` 密文自动解密，明文资源原样透传）。
-**[差异]** Web 端调用报错——v1 不提供同步 io。
+**[差异]** Web 端 = 同步 XHR 退化全量（**裸读**——不走加密面，加密资产
+Web 端走 `io.fetch` 异步面）。
 
 - :param path: 资源路径
 - :type path: str
