@@ -42,7 +42,8 @@ class _AsyncTask:
         self.done = False
         self.cancelled = False
         self.result = None
-        self.exception = None   # 任务异常存档（不炸帧循环——failed()/exception() 查询）
+        self.exc = None         # 任务异常存档（**exc 属性**——exception() 方法读此；
+        # 属性名 exception 会遮蔽同名方法 = t.exception() 调实例炸，2026-11-19）
         self.wake_frame = 0
         self.wait_io = False
         self.io_path = None
@@ -73,7 +74,7 @@ class _AsyncTask:
         except BaseException as e:
             # 任务异常捕获存档（asyncio 同款语义——一个任务失败不炸帧循环）
             self.done = True
-            self.exception = e
+            self.exc = e
 
     def cancel(self):
         # 协作式取消：标记终止 + 协程对象弃置（GC 回收——RP 的
@@ -85,10 +86,10 @@ class _AsyncTask:
 
     def failed(self):
         # 任务异常存档判定（哪个任务失败 = self.name；异常体 = exception()）
-        return self.exception is not None
+        return self.exc is not None
 
     def exception(self):
-        return self.exception
+        return self.exc
 
 
 
@@ -211,28 +212,11 @@ class _IoFetch:
     def __init__(self, path):
         self._p = path
     def __await__(self):
-        # **分块流式加载**（v3.1，2026-11-19）：_io_size 探大小——
-        # 大文件（>8MB）走分块循环（每帧一块 + yield 交出控制权 = 加载
-        # 不卡帧）；小文件单帧全量（省帧）；wasm（_io_size None/Err）
-        # = 退化全量（fetch 浏览器异步承载）。恢复值恒 None——数据走
-        # 完成表（_io_take 按 "path#off" 键），避 RP 委派链病态
-        total = None
-        try:
-            total = _io_size(self._p)
-        except Exception:
-            total = None
-        if total is None or total <= _CHUNK_LIMIT:
-            yield ("io_read", self._p)
-            return _io_take(self._p)
-        parts = []
-        off = 0
-        while off < total:
-            n = min(_CHUNK_LIMIT, total - off)
-            yield ("io_read_chunk", self._p, off, n)
-            part = _io_take_chunk(self._p + "#" + str(off))
-            parts.append(part)
-            off += len(part)
-        return b"".join(parts)
+        # **纯触发器**（v3.1 修订：fetch gen 的 return 经 RP 委派链
+        # 传播丢 None——spawn 任务协程内实测，2026-11-19——数据走
+        # 完成表，调用方 io_take/io_take_chunk 直取）
+        yield ("io_read", self._p)
+        # 无 return——调用方 await 后 io_take(path)/io_take_chunk(key) 直取
 
 def fetch(path):
     # 底层通用口：await 挂起（Rust fetch+解密+按路径入表）→ 恢复取走
