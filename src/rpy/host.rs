@@ -26,7 +26,9 @@ use std::io::Write;
 const FRAME_BRIDGE: &str = r#"
 class _FrameAwait:
     def __await__(self):
-        _async_pump()      # 每帧挂起点先推进 spawn 的任务（协作式调度）
+        # 任务推进在 Rust 帧边界统一 pump（**不在挂起点同步推进**——
+        # 任务 tick → send → 任务内再 await → pump → 嵌套 send = RP
+        # "coroutine already executing" 重入，2026-11-19 实测）
         yield "frame"
 _next_frame_state = _FrameAwait()
 def next_frame():
@@ -37,6 +39,7 @@ class _AsyncTask:
     def __init__(self, coro):
         self.coro = coro
         self.done = False
+        self.cancelled = False
         self.result = None
         self.wake_frame = 0
         self.wait_io = False
@@ -66,6 +69,14 @@ class _AsyncTask:
             self.done = True
             self.result = e.value
 
+    def cancel(self):
+        # 协作式取消：标记终止 + 协程对象弃置（GC 回收——RP 的
+        # coro.close 委派链有病态风险，v1 不做强制弹出）
+        if not self.done:
+            self.done = True
+            self.cancelled = True
+            self.result = None
+
 _async_tasks = []
 _async_frame = 0
 
@@ -87,8 +98,9 @@ class _Gather:
     def __init__(self, tasks):
         self.tasks = tasks
     def __await__(self):
+        # 任务推进在 Rust 帧边界统一 pump（同 _FrameAwait——挂起点
+        # 同步推进 = send 嵌套重入，2026-11-19 实测）
         while any(not t.done for t in self.tasks):
-            _async_pump()
             yield "frame"
         return [t.result for t in self.tasks]
 
@@ -106,6 +118,51 @@ def _async_gather(*coros):
 def _async_sleep_frames(frames):
     return _SleepFrames(max(1, int(frames)))
 
+class _WaitFor:
+    # wait_for：spawn + 截止帧——超时 cancel 任务并抛 TimeoutError
+    #（asyncio 同名对齐；防"以为有界实际无限"的任务泄漏）
+    def __init__(self, coro, frames):
+        self.task = _async_spawn(coro)
+        self.deadline = _async_frame + max(1, frames)
+    def __await__(self):
+        while not self.task.done:
+            if _async_frame >= self.deadline:
+                self.task.cancel()
+                raise TimeoutError("tasks.wait_for 超时")
+            yield "frame"
+        if self.task.cancelled:
+            return None
+        return self.task.result
+
+class _QueueGet:
+    def __init__(self, q):
+        self.q = q
+    def __await__(self):
+        # 协作式轮询：getter 每帧查队（无需唤醒机制——单线程无竞态）
+        while not self.q.items:
+            yield "frame"
+        return self.q.items.pop(0)
+
+class _Queue:
+    def __init__(self):
+        self.items = []
+    def put(self, v):
+        # 即时入队（协作式：getter 下一 tick 取到）
+        self.items.append(v)
+    def get(self):
+        return _QueueGet(self)   # awaitable
+    def get_nowait(self):
+        return self.q_pop()
+    def q_pop(self):
+        return self.items.pop(0) if self.items else None
+
+def _async_sleep(seconds):
+    # 秒版 sleep（引擎固定步长 1/60——帧数 = 秒 × 60 向上取整）
+    return _SleepFrames(max(1, int(seconds * 60.0 + 0.999)))
+
+def _async_wait_for(coro, seconds):
+    return _WaitFor(coro, max(1, int(seconds * 60.0 + 0.999)))
+
 class _AsyncNs:
     pass
 
@@ -113,6 +170,9 @@ _async_ns = _AsyncNs()
 _async_ns.spawn = _async_spawn
 _async_ns.gather = _async_gather
 _async_ns.sleep_frames = _async_sleep_frames
+_async_ns.sleep = _async_sleep
+_async_ns.wait_for = _async_wait_for
+_async_ns.Queue = _Queue
 _async_ns.frame = lambda: _async_frame
 
 # ── 异步 IO 桥（两拍模式，**单层委派构型**——与 next_frame 同构）──
@@ -388,6 +448,7 @@ fn step_coro(
     entry_obj: &rustpython_vm::PyObjectRef,
     vm: &rustpython_vm::VirtualMachine,
     io_wait: &mut bool,
+    sleep_wait: &mut u32,
     errored: &std::cell::Cell<bool>,
 ) -> StepOutcome {
     use rustpython_vm::convert::TryFromObject;
@@ -424,6 +485,14 @@ fn step_coro(
         return StepOutcome::WaitIo;
     }
 
+    // ②' sleep_frames 帧计数（tasks.sleep 的主协程语义——**与任务表
+    //    同款 N 帧挂起**：曾无判定 = 主协程 sleep 只过一帧，与任务表
+    //    sleep 语义分裂，2026-11-19 实测）——计数递减到 0 放行 send
+    if *sleep_wait > 0 {
+        *sleep_wait -= 1;
+        return StepOutcome::WaitIo;
+    }
+
     // ③ 恒 None 恢复（next_frame 同款安全路径）
     match vm.call_method(entry_obj, "send", (vm.ctx.none.clone(),)) {
         Ok(req) => {
@@ -438,6 +507,25 @@ fn step_coro(
                     tag,
                     &format!("③异形挂起 cls={}", req.class().name()),
                 );
+            }
+            // ("sleep_frames", n) 协议识别——tasks.sleep 主协程 N 帧挂起
+            //（与任务表 sleep 同款帧语义；曾无判定 = 主协程 sleep 只过
+            // 一帧，与任务表语义分裂，2026-11-19 实测）
+            let mut is_sleep = false;
+            if let Ok(t) = PyTupleRef::try_from_object(vm, req.clone()) {
+                if t.len() == 2 {
+                    let head_sleep = PyStrRef::try_from_object(vm, t[0].clone())
+                        .map(|s| s.to_str() == Some("sleep_frames"))
+                        .unwrap_or(false);
+                    if head_sleep {
+                        let n: i64 = t[1].clone().try_into_value(vm).unwrap_or(1);
+                        *sleep_wait = n.max(1) as u32;
+                        is_sleep = true;
+                    }
+                }
+            }
+            if is_sleep {
+                return StepOutcome::WaitIo; // 记帧数后挂起——递减到 0 放行
             }
             // ("io_read", path) 协议识别（其余 yield = 帧桥常规挂起）
             let io_path: Option<String> = PyTupleRef::try_from_object(vm, req.clone())
@@ -630,6 +718,9 @@ pub async fn run(script: &str, tag: &str, transparent: bool) -> Result<(), Box<d
 
     // 装配：原生 pygame 模块注入 → 用户脚本 → 生成器（enter 内、
     // essential init 完成后——init_hook 时点会爆栈）
+    // 帧桥任务泵（**带出装配作用域**——帧边界统一推进任务表：挂起点
+    // 同步推进 = send 嵌套重入，2026-11-19 实测）
+    let pump_cell: RefCell<Option<rustpython_vm::PyObjectRef>> = RefCell::new(None);
     let install_err: RefCell<Option<String>> = RefCell::new(None);
     interp.enter(|vm| {
         let run = || -> Result<(), String> {
@@ -670,6 +761,11 @@ pub async fn run(script: &str, tag: &str, transparent: bool) -> Result<(), Box<d
             if let Err(e) = vm.run_code_obj(bridge_code, scope.clone()) {
                 return Err(format!("帧桥注入失败:
 {}", format_traceback(vm, &e)));
+            }
+            // 帧桥任务泵存出（**帧边界统一推进任务表**——挂起点同步推进
+            // 曾致 send 嵌套重入，2026-11-19 实测）
+            if let Ok(pump) = scope.globals.get_item("_async_pump", vm) {
+                *pump_cell.borrow_mut() = Some(pump);
             }
             // pygame.next_frame / pygame.tasks 挂载（帧桥 → pygame 模块属性）。
             // modload **可选**（_sf_loader 存在才挂——web 形态 module_root/
@@ -740,6 +836,7 @@ pub async fn run(script: &str, tag: &str, transparent: bool) -> Result<(), Box<d
     // io 等待旗标**帧间持久**（循环内声明 = 每帧重置 → fetch 未完成即
     // 二次 send → RP 病态挂死，2026-11-03 实测根因）
     let mut io_wait = false;
+    let mut sleep_wait: u32 = 0; // tasks.sleep 主协程帧计数（帧间持久）
     loop {
         if starfish_pygame::event::pump() || starfish_std::run_control::stop_requested() {
             starfish_debug::log_warn!("[host] 嵌入式停止信号命中——帧循环收口");
@@ -751,13 +848,26 @@ pub async fn run(script: &str, tag: &str, transparent: bool) -> Result<(), Box<d
         let mut errored = std::cell::Cell::new(false);
         interp.enter(|vm| {
             let borrowed = gen_cell.borrow();
+            let pump = pump_cell.borrow().clone();
             let Some(entry_obj) = borrowed.as_ref() else {
                 done = true;
                 return;
             };
+            // 任务表推进（**帧边界单层**——v3 帧桥任务调度：先 pump 一轮
+            // 任务 tick（各任务 send 到各自 yield = 无嵌套），再 send 主
+            // 协程；挂起点同步推进曾致 send 嵌套重入，2026-11-19 实测）
+            if let Some(pump) = pump.as_ref() {
+                let _ = pump.call((), vm);
+            }
+            // tasks.sleep 帧计数递减门（主协程 N 帧挂起——任务 pump 照常
+            // 推进；曾无判定 = 主协程 sleep 只过一帧与任务表语义分裂）
+            if sleep_wait > 0 {
+                sleep_wait -= 1;
+                return; // 本帧不 send（任务表已推进）
+            }
             // 协程步进（共享步进器）：send 恢复——await 帧桥挂起 = 本帧完成；
             // await io fetch = 两拍桥（native 即取 / web spawn 后续帧恢复）
-            match step_coro(tag, entry_obj, vm, &mut io_wait, &mut errored) {
+            match step_coro(tag, entry_obj, vm, &mut io_wait, &mut sleep_wait, &mut errored) {
                 StepOutcome::Continue | StepOutcome::WaitIo => {}
                 StepOutcome::Done => done = true,
             }
@@ -804,6 +914,8 @@ pub async fn run_script_in(
     let t0 = starfish_std::debug::Stopwatch::now();
     let err: RefCell<Option<String>> = RefCell::new(None);
     let gen_cell: RefCell<Option<rustpython_vm::PyObjectRef>> = RefCell::new(None);
+    // 帧桥任务泵（带出装配作用域——2D 同款帧边界单层推进）
+    let pump_cell: RefCell<Option<rustpython_vm::PyObjectRef>> = RefCell::new(None);
     let errored = Cell::new(false);
     interp.enter(|vm| {
         let run = || -> Result<(), String> {
@@ -821,6 +933,10 @@ pub async fn run_script_in(
             if let Err(e) = vm.run_code_obj(bridge_code, scope.clone()) {
                 return Err(format!("帧桥注入失败:
 {}", format_traceback(vm, &e)));
+            }
+            // 帧桥任务泵存出（帧边界统一推进任务表）
+            if let Ok(pump) = scope.globals.get_item("_async_pump", vm) {
+                *pump_cell.borrow_mut() = Some(pump);
             }
             // payload 清单注入（pygame.io.payload_list 的数据源——按需
             // fetch 的文件名列表；.py 已由 io.fetch 自动注册 import）
@@ -929,6 +1045,7 @@ pub async fn run_script_in(
     let mut frame_n: u64 = 0;
     // io 等待旗标**帧间持久**（同 run 循环——循环内声明 = 漏闸挂死）
     let mut io_wait = false;
+    let mut sleep_wait: u32 = 0; // tasks.sleep 主协程帧计数（帧间持久）
     loop {
         let seg_pump = starfish_std::debug::Stopwatch::now();
         if starfish_pygame::event::pump() || starfish_std::run_control::stop_requested() {
@@ -946,11 +1063,21 @@ pub async fn run_script_in(
         let seg_send = starfish_std::debug::Stopwatch::now();
         let mut done = false;
         interp.enter(|vm| {
+            let pump = pump_cell.borrow().clone();
             let borrowed = gen_cell.borrow();
             let Some(genobj) = borrowed.as_ref() else {
                 done = true;
                 return;
             };
+            if let Some(pump) = pump.as_ref() {
+                let _ = pump.call((), vm);
+            }
+            // tasks.sleep 帧计数递减门（**pump 之后**——挂起期间任务照常
+            // 推进；主协程 N 帧挂起与任务表 sleep 同款帧语义）
+            if sleep_wait > 0 {
+                sleep_wait -= 1;
+                return;
+            }
             // 协程步进（共享步进器）：send 恢复——await 帧桥挂起 = 本帧完成；
             // await io fetch = 两拍桥（native 即取 / web spawn 后续帧恢复）
             match step_coro(
@@ -958,6 +1085,7 @@ pub async fn run_script_in(
                 genobj,
                 vm,
                 &mut io_wait,
+                &mut sleep_wait,
                 &errored,
             ) {
                 StepOutcome::Continue | StepOutcome::WaitIo => {}
