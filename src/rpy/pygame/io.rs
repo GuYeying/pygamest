@@ -98,6 +98,56 @@ use std::cell::Cell;
             Ok(())
         }
 
+        /// io_take_chunk(key) -> bytes | None：完成表按 "path#off" 键
+        /// 取走分块数据（io_read_chunk 协议的恢复侧——恢复值恒 None 避
+        /// RP 委派链，数据走完成表）
+        #[pyfunction]
+        fn io_take_chunk(key: PyStrRef, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+            match crate::rpy::bridge::take_io_result(key.to_str().unwrap_or("")) {
+                Some(data) => Ok(vm.ctx.new_bytes(data).into()),
+                None => Ok(vm.ctx.none().into()),
+            }
+        }
+
+        /// io_size(path) -> int | None：文件大小（native fs metadata）。
+        /// **None = wasm**（fetch 全量承载——fetch 的分块判定据此退化
+        /// 全量路径，v3.1 定约 2026-11-19）
+        #[pyfunction]
+        fn io_size(path: PyStrRef, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+            #[cfg(target_arch = "wasm32")]
+            return Ok(vm.ctx.none().into());
+            #[cfg(not(target_arch = "wasm32"))]
+            match pollster::block_on(starfish_io::size(path_str(&path, vm)?)) {
+                Ok(n) => Ok(vm.ctx.new_int(n as i64).into()),
+                Err(e) => Err(vm.new_value_error(format!("io_size 失败: {e}"))),
+            }
+        }
+
+        /// io_read_chunk(path, offset, n) -> bytes：区间同步读（**native
+        /// 分块流式加载的帧级口**——每帧一块不超帧预算；明文读，加密资产
+        /// 走全量解密面）。Web 端 Err（fetch 全量退化）
+        #[pyfunction]
+        fn io_read_chunk(
+            path: PyStrRef,
+            offset: i64,
+            n: i64,
+            vm: &VirtualMachine,
+        ) -> PyResult<PyObjectRef> {
+            #[cfg(target_arch = "wasm32")]
+            return Err(vm.new_value_error(
+                "pygame.io: Web 端分块读退化（fetch 全量承载）",
+            ));
+            #[cfg(not(target_arch = "wasm32"))]
+            match starfish_io::read_sync_range(
+                path_str(&path, vm)?,
+                offset.max(0) as u64,
+                n.max(1) as u64,
+            ) {
+                Ok(data) => Ok(vm.ctx.new_bytes(data).into()),
+                Err(e) => Err(vm.new_value_error(format!("io_read_chunk 失败: {e}"))),
+            }
+        }
+
         #[pyfunction]
         fn exists(path: PyStrRef, vm: &VirtualMachine) -> PyResult<bool> {
             #[cfg(target_arch = "wasm32")]

@@ -23,7 +23,7 @@ use std::io::Write;
 /// 帧桥 + async 微调度器（**单一定义，游戏门/脚本直跑门两宿主共用**）：
 /// 协作式任务表——spawn/gather/sleep_frames，帧边界推进零竞态；
 /// 替代 asyncio 的游戏场景子集（asyncio 已随冻结裁剪移除）
-const FRAME_BRIDGE: &str = r#"
+const FRAME_BRIDGE: &str = r##"
 class _FrameAwait:
     def __await__(self):
         # 任务推进在 Rust 帧边界统一 pump（**不在挂起点同步推进**——
@@ -205,12 +205,34 @@ _async_ns.frame = lambda: _async_frame
 # → io_take(path) 取字节。恒单层 __await__：主协程/任务直接委派到 gen
 # （不走 async def 中间层——协程套协程的多层委派在 RP 实测恢复病态，
 # 2026-11-03；io_wait 闸门须帧间持久，循环局部变量会漏闸）
+_CHUNK_LIMIT = 8 * 1024 * 1024   # 8MB——超此尺寸走分块流式（每帧一块）
+
 class _IoFetch:
     def __init__(self, path):
         self._p = path
     def __await__(self):
-        yield ("io_read", self._p)
-        return _io_take(self._p)
+        # **分块流式加载**（v3.1，2026-11-19）：_io_size 探大小——
+        # 大文件（>8MB）走分块循环（每帧一块 + yield 交出控制权 = 加载
+        # 不卡帧）；小文件单帧全量（省帧）；wasm（_io_size None/Err）
+        # = 退化全量（fetch 浏览器异步承载）。恢复值恒 None——数据走
+        # 完成表（_io_take 按 "path#off" 键），避 RP 委派链病态
+        total = None
+        try:
+            total = _io_size(self._p)
+        except Exception:
+            total = None
+        if total is None or total <= _CHUNK_LIMIT:
+            yield ("io_read", self._p)
+            return _io_take(self._p)
+        parts = []
+        off = 0
+        while off < total:
+            n = min(_CHUNK_LIMIT, total - off)
+            yield ("io_read_chunk", self._p, off, n)
+            part = _io_take_chunk(self._p + "#" + str(off))
+            parts.append(part)
+            off += len(part)
+        return b"".join(parts)
 
 def fetch(path):
     # 底层通用口：await 挂起（Rust fetch+解密+按路径入表）→ 恢复取走
@@ -278,7 +300,7 @@ def _video_open(path):
 
 # （资源加密嵌入钥接线已移至 runtime bin Rust 侧——init_crypto 由
 # 宿主 main 直接调 starfish_io::init_crypto，不经过 Python 层）
-"#;
+"##;
 
 /// 诊断日志（统一走 starfish-debug log 模块：桌面/Android 文件 +
 /// wasm 控制台回退；与 binding_probe 的 dlog 同构）。**Debug 级**——
@@ -412,7 +434,16 @@ fn mount_unified_io(
         }
     }
     if let Ok(io_mod) = pg.get_attr("io", vm) {
-        for attr in ["fetch", "payload_list", "io_take", "io_ready", "io_pending_append"] {
+        for attr in [
+            "fetch",
+            "payload_list",
+            "io_take",
+            "io_ready",
+            "io_pending_append",
+            "io_size",
+            "io_read_chunk",
+            "io_take_chunk",
+        ] {
             if let Ok(f) = io_ns.get_attr(attr, vm) {
                 let _ = io_mod.set_attr(attr, f, vm);
             }
@@ -551,6 +582,38 @@ fn step_coro(
             }
             if is_sleep {
                 return StepOutcome::WaitIo; // 记帧数后挂起——递减到 0 放行
+            }
+            // ("io_read_chunk", path, off, n) 协议识别——**分块流式加载**
+            //（v3.1：帧内同步区间读一块 + 按 "path#off" 键入完成表 →
+            // Continue 同帧恢复——每帧一块交出控制权 = 加载不卡帧）；
+            // 明文读（read_sync_range）——加密资产走全量解密面不支持分块
+            let mut chunk = None;
+            if let Ok(t) = PyTupleRef::try_from_object(vm, req.clone()) {
+                if t.len() == 4 {
+                    let head = PyStrRef::try_from_object(vm, t[0].clone())
+                        .map(|s| s.to_str() == Some("io_read_chunk"))
+                        .unwrap_or(false);
+                    if head {
+                        let pp = PyStrRef::try_from_object(vm, t[1].clone())
+                            .map(|s| s.to_str().unwrap_or("").to_string())
+                            .unwrap_or_default();
+                        let off: i64 = t[2].clone().try_into_value(vm).unwrap_or(0);
+                        let nn: i64 = t[3].clone().try_into_value(vm).unwrap_or(1);
+                        chunk = Some((pp, off, nn));
+                    }
+                }
+            }
+            if let Some((pp, off, nn)) = chunk {
+                let key = format!("{}#{}", pp, off);
+                match starfish_io::read_sync_range(
+                    &pp,
+                    off.max(0) as u64,
+                    nn.max(1) as u64,
+                ) {
+                    Ok(data) => crate::rpy::bridge::store_io_result(&key, data),
+                    Err(_) => crate::rpy::bridge::store_io_result(&key, Vec::new()),
+                }
+                return StepOutcome::Continue; // 同帧恢复（数据已在完成表）
             }
             // ("io_read", path) 协议识别（其余 yield = 帧桥常规挂起）
             let io_path: Option<String> = PyTupleRef::try_from_object(vm, req.clone())
