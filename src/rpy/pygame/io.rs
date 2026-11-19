@@ -19,13 +19,19 @@ use std::cell::Cell;
             p.to_str().ok_or_else(|| vm.new_value_error("路径含非 UTF-8 字符"))
         }
 
-        /// read(path) -> bytes
+        /// read(path) -> bytes（同步全量——native block_on fs；wasm 同步
+        /// XHR 退化全量，2026-11-19 用户定约：阻塞语义与 native 对称，
+        /// wasm 不再 Err。**注意走 sfx 加密面**——native 分支的
+        /// sfx::read 内含解密；wasm 分支 read_sync 是裸读（io 裸口），
+        /// 加密资产 wasm 上暂不支持同步读——fetch 异步面承载）
         #[pyfunction]
         fn read(path: PyStrRef, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
             #[cfg(target_arch = "wasm32")]
-            return Err(vm.new_value_error(
-                "pygame.io: Web 端 v1 不提供同步 io（宿主预加载/异步资源装载承载）",
-            ));
+            {
+                let data = starfish_io::read_sync(path_str(&path, vm)?)
+                    .map_err(|e| vm.new_value_error(format!("io 读取失败: {e}")))?;
+                Ok(vm.ctx.new_bytes(data).into())
+            }
             #[cfg(not(target_arch = "wasm32"))]
             {
                 let data = pollster::block_on(starfish_pygame::sfx::read(path_str(&path, vm)?))
@@ -34,13 +40,16 @@ use std::cell::Cell;
             }
         }
 
-        /// read_text(path) -> str（UTF-8，非法序列替换）
+        /// read_text(path) -> str（UTF-8，非法序列替换；wasm 同步 XHR
+        /// 退化全量——同 read 定约）
         #[pyfunction]
         fn read_text(path: PyStrRef, vm: &VirtualMachine) -> PyResult<String> {
             #[cfg(target_arch = "wasm32")]
-            return Err(vm.new_value_error(
-                "pygame.io: Web 端 v1 不提供同步 io（宿主预加载/异步资源装载承载）",
-            ));
+            {
+                let data = starfish_io::read_sync(path_str(&path, vm)?)
+                    .map_err(|e| vm.new_value_error(format!("io 读取失败: {e}")))?;
+                Ok(String::from_utf8_lossy(&data))
+            }
             #[cfg(not(target_arch = "wasm32"))]
             {
                 let data = pollster::block_on(starfish_pygame::sfx::read(path_str(&path, vm)?))
