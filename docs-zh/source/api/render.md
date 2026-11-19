@@ -15,17 +15,15 @@ set_camera 等全剔）。绘制接口按管线分域：图元/贴图/状态机 
 `(-w/2, -h/2) .. (w/2, h/2)`，与 3D 透视相机（看向原点）、物理米制系
 **三方同构**；鼠标/触摸/事件坐标由泵层统一换算到中心系。
 
-[域分层定约（v3，2026-11-19）] **域以 API 面固定，无隐式相机**：
-①pygame 图元 API（draw/blit/gfxdraw 无相机口/字体）恒**像素域**——
-pack None 段内置换算（present_fit × 像素正交单点），与相机彻底解耦
-（HUD/UI 不随游戏相机漂移）；②raw 段/裸管线顶点 = **wgpu NDC 直通**
-（无相机时 write_camera_mvp 单参 = present_fit 纯 letterbox）；
-③会话级 `pygame.gfxdraw.set_camera(f, cam)` = 段 override（画世界域
-图元的正道，跨会话重置）；④**显式 Screen 相机** `screen.set_camera(cam)`
-= 唯一域切换口——一次设置**跨会话/resize/换画布缓存**（相机基底 =
-world→画布 脚本构造意图，不被引擎改写；呈现 letterbox 由 present_fit
-独立现算，消费点统一两段组合）。同画布多相机 = 会话内多次
-`gfxdraw.set_camera` 分段绘制。
+[域分层定约（v3.1 全显式收敛，2026-11-19）] **一个公式，无例外面**：
+一切图元 = `present_fit × Screen.camera.mvp()`（段 override 优先）；
+**未显式 set_camera = NDC 恒等直通**（裸管线原生域——错位显眼易诊
+断，杜绝隐式域）。像素域也是相机：`screen.set_camera(
+game_camera_ortho(W, H, W, H))` 显式声明（不写 = NDC，不落到像素）。
+世界域文字/UI：会话级 `gfxdraw.set_camera(f, cam)` 切世界域 +
+`clear_camera()` **显式回落像素基线段**（画布正交，clear 的落点语义）
+——同帧"世界名字牌 → 像素 HUD"分段共存。fill 盖满/离屏 Surface =
+结构性像素（恒像素单点，非隐式相机）。
 
 [严格精细控制] 自建管线（raw_render）**引擎不做相机兜底**——相机
 buffer 由用户全权管理（同帧多 raw 会话须各持独立 buffer）。

@@ -105,7 +105,7 @@ with 会话入口：进入 = 开启 RenderPass，退出 = finish 打包
 
 #### <span class="c-func">screen.set_camera(cam)</span>
 
-**显式设置渲染相机**（域分层 v3，2026-11-19——唯一域切换口）。
+**显式设置渲染相机**（域分层 v3.1 全显式——唯一域切换口）。
 `cam` = `pygame.render.game_camera_ortho(lw, lh, pw, ph)` /
 `game_camera_perspective(fov, lw, lh, pw, ph, near, far)` 构造的
 GameCamera（**world→画布 基底**——MVP / 坐标映射同一事实源，详见
