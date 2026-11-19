@@ -48,7 +48,7 @@ use std::cell::Cell;
             {
                 let data = starfish_io::read_sync(path_str(&path, vm)?)
                     .map_err(|e| vm.new_value_error(format!("io 读取失败: {e}")))?;
-                Ok(String::from_utf8_lossy(&data))
+                Ok(String::from_utf8_lossy(&data).into_owned())
             }
             #[cfg(not(target_arch = "wasm32"))]
             {
