@@ -408,11 +408,10 @@ pub mod pygame {
             crate::rpy::pygame::render::render::raw_compute_session(vm)
         }
 
-        /// set_camera(cam)：显式设置渲染相机（阶段一 1.2 定约——
-        /// 必须显式传入，不再有兜底）。**物理面对账回写**：引擎按当前
-        /// 交换链面 resize 相机后同步回 cam 对象（Android native 面 ≠
-        /// 构造 pw/ph——脚本侧 mvp() 全链自动同域，2026-11-18 手机
-        /// 拉伸实测根因 = 脚本对象持旧拟合）。
+        /// set_camera(cam)：显式设置渲染相机（域分层 v3——唯一域切换
+        /// 口，一次设置跨会话/resize/换画布缓存；未显式 = NDC 恒等
+        /// 默认域）。**物理面对账回写**：脚本 cam 对象同步引擎侧状态
+        ///（mvp() 消费全链自动同域）。
         #[pymethod]
         fn set_camera(
             &self,
@@ -422,7 +421,9 @@ pub mod pygame {
             let _ = vm;
             let screen = starfish_pygame::display::get_screen_id(&self.id);
             screen.set_game_camera(cam.0.get());
-            cam.0.set(screen.get_camera());
+            if let Some(synced) = screen.get_camera() {
+                cam.0.set(synced);
+            }
             Ok(())
         }
 

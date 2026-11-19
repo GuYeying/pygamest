@@ -1148,7 +1148,7 @@ pub(crate) fn draw_debug_3d_on_surface(
         1, // 离屏：无 MSAA
         starfish_pygame::render::DrawTarget::size(surface),
         // 离屏面无 letterbox（逻辑==物理）——全局相机按表面尺寸解算
-        starfish_pygame::render::camera_mvp_for(
+        starfish_pygame::render::pixel_ortho_mvp(
             starfish_pygame::render::DrawTarget::size(surface),
         )
         .to_cols_array_2d(),

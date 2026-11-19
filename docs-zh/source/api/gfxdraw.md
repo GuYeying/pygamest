@@ -56,7 +56,7 @@ pygame.gfxdraw.filled_circle(f, 100, 0, 50)  # → 填充面（默认）
 会话相机切换（后续 gfx 绘制进新段；仅本会话生效）。
 
 - :param f: 渲染会话
-- :param camera: 相机（`pygame.render.camera_ortho` / `camera_perspective` 产物）
+- :param camera: 相机（`pygame.render.game_camera_ortho` / `game_camera_perspective` 产物）
 - :type camera: Camera
 
 #### <span class="c-func">reset_camera(f)</span>
@@ -161,7 +161,7 @@ pygame.gfxdraw.filled_circle(f, 100, 0, 50)  # → 填充面（默认）
 
 ### 3D 形状（starfish-gfx shape3d 对接——2026-11-12）
 
-透视相机（`set_camera` + `camera_perspective`）+ `render_depth` 深度
+透视相机（`set_camera` + `game_camera_perspective`）+ `render_depth` 深度
 会话配套；顶点 z 真实参与（深度测试管线）。完整案例 `gfx3d_demo.py`，
 教程见 [gfxdraw 3D 词汇](../tutorials/gfx-3d.md)。
 

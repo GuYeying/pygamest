@@ -320,17 +320,28 @@ use std::cell::Cell;
         // renderpass 作首参——与 SDL_gfx 签名同构，render 会话保持纯通道）──
 
         /// set_camera(f, camera)：会话相机切换（后续 gfx 绘制进新段；
-        /// 仅本会话生效）
+        /// 仅本会话生效）。**域分层 v3**：收 PyGameCamera（唯一相机
+        /// 类型——PyCamera 已退役；构造 logical==physical 时 fit 恒等
+        /// = 纯投影，会话段数学不变）
         #[pyfunction]
         fn set_camera(
             f: PyObjectRef,
-            camera: PyRef<crate::rpy::pygame::render::render::PyCamera>,
+            camera: PyRef<crate::rpy::pygame::render::render::PyGameCamera>,
             vm: &VirtualMachine,
         ) -> PyResult<()> {
             match route(&f, vm)? {
-                Target::Surf(s) => s.surface.with_batch(|b| b.set_mvp(Some(camera.0.mvp()))),
-                Target::Active => bridge::with_session(vm, |t| t.set_camera(&camera.0))?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| t.set_camera(&camera.0))?,
+                Target::Surf(s) => {
+                    s.surface
+                        .with_batch(|b| b.set_mvp(Some(camera.0.get().mvp())))
+                }
+                Target::Active => {
+                    let cam = camera.0.get();
+                    bridge::with_session(vm, |t| t.set_camera(&cam))?
+                }
+                Target::Targets => {
+                    let cam = camera.0.get();
+                    bridge::with_mrt_session(vm, |t| t.set_camera(&cam))?
+                }
             }
             Ok(())
         }

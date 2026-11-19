@@ -1,18 +1,15 @@
-//! pygame.render 绑定：渲染配置口（render.init 愿望）+ 全局相机
-//!（set_camera / reset_camera / camera_mvp + Camera 构造）。
-//!
-//! 定约（渲染架构批次五十二）：相机全局唯一——Screen/Surface 无相机
-//! 字段，pack 按全局 CameraState 解 MVP（Auto = 按目标尺寸隐式；
-//! Manual = set_camera override，一处设置全体生效）。render.init =
-//! set_mode 前愿望（dim / fov / 剔除 / 混合细粒度；后设优先，Gpu
-//! 装配时消费一次）；pygame.init(dim=) 为其引擎级简写。Camera 构造
-//! 经模块函数（camera_ortho / camera_perspective——pygame.math 的
-//! mat4_* 同款先例）。
-
-//! pygame.render 绑定：渲染配置口（render.init 愿望）+ 全局相机
-//!（set_camera / reset_camera / camera_mvp + Camera 构造）+ **底层资源
+//! pygame.render 绑定：渲染配置口（render.init 愿望）+ 显式相机
+//!（game_camera_* 构造族 + screen.set_camera——域分层 v3）+ **底层资源
 //! 两入口**（ResourceAccess 建资源 + 主屏 RenderSurface 查询）与
-//! raw_render 直绘会话（批次 C/D）。
+//! raw_render 直绘会话。
+//!
+//! 定约（域分层 v3，2026-11-19）：**显式相机唯一**——Camera 为唯一
+//! 相机类型（PyCamera/双类型并存退役）；screen.set_camera 一次设置
+//! 跨会话/resize/换画布缓存；未显式 = NDC 恒等默认域。pygame 图元
+//! API 恒像素域（pack None 段内置换算，不读相机）；raw 段顶点 NDC
+//! 直通。render.init = set_mode 前愿望（dim / fov / 剔除 / 混合
+//! 细粒度；后设优先，Gpu 装配时消费一次）——**不再喂 Auto 相机**
+//!（3D 须显式 set_camera）。
 //!
 //! 批次 C/D（暴露面收缩定约）：**wgpu 裸对象（Device/Queue/Buffer/
 //! TextureView）零出 Python 界**——自建管线走 ResourceAccess 包装
@@ -105,31 +102,8 @@ pub(crate) mod render {
         })
     }
 
-    // ── Camera：全局相机的 Python 形态（构造经模块函数）──────────
-
-    /// 相机（视图 + 投影；mvp() 唯一上传量）。camera_ortho /
-    /// camera_perspective 构造；直呼不可实例化。
-    #[derive(Clone, Copy, Debug, PyPayload)]
-    #[pyattr]
-    #[pyclass(module = "pygame.render", name = "Camera", unhashable = true)]
-    pub(crate) struct PyCamera(pub(crate) sf::Camera);
-
-    #[pyclass]
-    impl PyCamera {
-        /// 替换视图矩阵（3D 位姿：look_at 等 Mat4；2D 恒 Identity）。
-        #[pymethod]
-        fn with_view(zelf: PyRef<Self>, view: PyRef<PyMat4>, vm: &VirtualMachine) -> PyRef<Self> {
-            Self(zelf.0.clone().with_view(view.0.get())).into_ref(&vm.ctx)
-        }
-
-        /// MVP（projection × view——唯一上传量；调试/教学口）。
-        #[pymethod]
-        fn mvp(&self, vm: &VirtualMachine) -> PyRef<PyMat4> {
-            PyMat4(std::cell::Cell::new(self.0.mvp())).into_ref(&vm.ctx)
-        }
-    }
-
-    // ── GameCamera：letterbox 内聚相机（阶段一 1.2 新类型——显式传入）──
+    // ── Camera：唯一相机类型的 Python 形态（域分层 v3——构造经模块
+    //    函数；旧 PyCamera/双类型并存已退役）────────────────────────
 
     /// GameCamera（letterbox 内聚——MVP/坐标映射/裁剪全在内部）。
     /// 构造经 game_camera_ortho / game_camera_perspective。
@@ -477,33 +451,8 @@ pub(crate) mod render {
         }
     }
 
-    // ── 相机构造（模块函数）─────────────────────────────────────
-
-    /// 2D 正交相机：像素坐标直入（(0,0) 左上 / (w,h) 右下，y 向下）。
-    #[pyfunction]
-    fn camera_ortho(width: f32, height: f32, vm: &VirtualMachine) -> PyRef<PyCamera> {
-        PyCamera(sf::Camera::ortho(width, height)).into_ref(&vm.ctx)
-    }
-
-    /// 3D 透视相机（fov 度数制、右手系、看向 -Z；位姿接 .with_view）。
-    #[pyfunction]
-    fn camera_perspective(
-        fov_degrees: f32,
-        aspect: f32,
-        near: f32,
-        far: f32,
-        vm: &VirtualMachine,
-    ) -> PyRef<PyCamera> {
-        PyCamera(sf::Camera::perspective(fov_degrees, aspect, near, far)).into_ref(&vm.ctx)
-    }
-
-    // ── 相机（Auto 兜底查询；会话级选择走 f.set_camera）────────────
-
-    /// 当前 Auto 兜底 MVP（主屏尺寸现算——resize 天然跟随）。
-    #[pyfunction]
-    fn camera_mvp(vm: &VirtualMachine) -> PyRef<PyMat4> {
-        PyMat4(std::cell::Cell::new(sf::camera_mvp())).into_ref(&vm.ctx)
-    }
+    // ── 相机构造（模块函数；域分层 v3——camera_ortho/camera_perspective/
+    //    camera_mvp 兜底口已退役，全走 game_camera_* 单一构造族）────
 
     /// 呈现拟合矩阵（NDC 域 clip 空间仿射）——**自管相机的 letterbox
     /// 对齐口**：write_buffer 直写矩阵的自绘管线，引擎无法拦截组合，
@@ -1731,8 +1680,9 @@ pub(crate) mod render {
     /// write_camera_mvp(buf[, cam_mvp])：矩阵（列主 16 float）写入
     /// Buffer——**自绘管线在设置相机处的引擎侧 letterbox 插入点**
     ///（group0/b0 = 64B mat4 定约）。两形态：
-    /// · 单参 = 全局相机 MVP（present_mvp，帧内快照语义）；
-    /// · 双参 = 自管相机矩阵（如 camera_ortho/perspective 的 .mvp()）
+    /// · 单参 = present_fit × present_mvp（显式相机两段组合；未显式
+    ///   相机 = present_fit 单段——NDC 直通默认域，域分层 v3）；
+    /// · 双参 = 自管相机矩阵（如 game_camera_* 的 .mvp()）
     ///   ——引擎自动左乘呈现拟合收进画布（脚本零矩阵知识；桌面/全屏
     ///   恒等，Android 窗口化与主绘制/UI/物理调试线同一映射）。
     #[pyfunction]

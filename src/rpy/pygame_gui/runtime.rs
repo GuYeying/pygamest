@@ -367,7 +367,7 @@ struct DeferredFrame {
     /// 渲染目标槽键（格式+样本数——run_deferred 据此选/懒建 Renderer）
     key: RendererKey,
     desc: egui_wgpu::ScreenDescriptor,
-    /// **合成 MVP 快照**（排程时点的 `camera_mvp_for(目标尺寸)` 产出）：
+    /// **合成 MVP 快照**（排程时点的 `pixel_ortho_mvp(目标尺寸)` 产出）：
     /// 帧内多次 set_camera 时主屏收口（present 帧末）的全局相机可能已
     /// 非排程时的值——快照锁定"draw_ui 时刻的相机"，A 相机画主屏 /
     /// B 相机画离屏各得其所（批次 53 补）。
@@ -492,7 +492,7 @@ pub(crate) fn draw_ui(vm: &VirtualMachine, panel: PyObjectRef) -> PyResult<()> {
     // （egui 恒像素域——与游戏相机种类解耦）× S(1/ppp)（mid 像素 =
     // 逻辑点×ppp 折回逻辑域）
     let compose_mvp = (screen.present_fit()
-        * starfish_pygame::render::camera_mvp_for(screen.logical_size())
+        * starfish_pygame::render::pixel_ortho_mvp(screen.logical_size())
         * glam::Mat4::from_scale(glam::Vec3::new(1.0 / ppp, 1.0 / ppp, 1.0)))
     .to_cols_array_2d();
     draw_ui_generic(vm, rc, panel, raw, key, compose_mvp, |boxed| {
@@ -535,7 +535,7 @@ pub(crate) fn draw_ui_on_surface(
     // 离屏目标恒 Rgba8Unorm 无 MSAA（Surface/Texture 纹理定约）——与
     // 主屏交换链格式（随平台漂移）分槽持管线
     let key: RendererKey = (egui_wgpu::wgpu::TextureFormat::Rgba8Unorm, 1);
-    let compose_mvp = starfish_pygame::render::camera_mvp_for(
+    let compose_mvp = starfish_pygame::render::pixel_ortho_mvp(
         starfish_pygame::render::DrawTarget::size(surface),
     )
     .to_cols_array_2d();
@@ -627,7 +627,7 @@ fn run_deferred(octx: &mut starfish_pygame::render::OverlayCtx, mut frame: Defer
     // ① egui 自带管线画进中间面（Rgba8 无深度、清透明——原 NDC 公式
     //    在面上 1:1 成立，绘制行为与直绘目标完全等价）
     // ② 引擎 sprite 管线 blit_fullscreen 合成回目标——MVP =
-    //    camera_mvp_for(目标尺寸)：Auto2d = 像素级 1:1 全屏（零回归），
+    //    pixel_ortho_mvp(目标尺寸)：恒像素 = 像素级 1:1 全屏（零回归），
     //    set_camera 后 egui 跟随全局相机（一处设置、全体生效）。
     // （中间面 ensure 先于 renderer 借用——同 rt 的两字段不冲突借用）
     let mid_size = (frame.desc.size_in_pixels[0], frame.desc.size_in_pixels[1]);

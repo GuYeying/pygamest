@@ -15,11 +15,17 @@ set_camera 等全剔）。绘制接口按管线分域：图元/贴图/状态机 
 `(-w/2, -h/2) .. (w/2, h/2)`，与 3D 透视相机（看向原点）、物理米制系
 **三方同构**；鼠标/触摸/事件坐标由泵层统一换算到中心系。
 
-[相机归属] 相机选择是**会话级**（`pygame.gfxdraw.set_camera(f, cam)`），
-每会话/每目标独立持有，互不串线；`Auto` = 按目标尺寸隐式（resize
-天然跟随）。同画布多相机 = 会话内多次 `set_camera` 分段绘制。
-**全局显式相机**走 `screen.set_camera(cam)`（GameCamera——letterbox
-内聚，见下）；设置后 Auto 兜底不再覆盖（显式优先于自动）。
+[域分层定约（v3，2026-11-19）] **域以 API 面固定，无隐式相机**：
+①pygame 图元 API（draw/blit/gfxdraw 无相机口/字体）恒**像素域**——
+pack None 段内置换算（present_fit × 像素正交单点），与相机彻底解耦
+（HUD/UI 不随游戏相机漂移）；②raw 段/裸管线顶点 = **wgpu NDC 直通**
+（无相机时 write_camera_mvp 单参 = present_fit 纯 letterbox）；
+③会话级 `pygame.gfxdraw.set_camera(f, cam)` = 段 override（画世界域
+图元的正道，跨会话重置）；④**显式 Screen 相机** `screen.set_camera(cam)`
+= 唯一域切换口——一次设置**跨会话/resize/换画布缓存**（相机基底 =
+world→画布 脚本构造意图，不被引擎改写；呈现 letterbox 由 present_fit
+独立现算，消费点统一两段组合）。同画布多相机 = 会话内多次
+`gfxdraw.set_camera` 分段绘制。
 
 [严格精细控制] 自建管线（raw_render）**引擎不做相机兜底**——相机
 buffer 由用户全权管理（同帧多 raw 会话须各持独立 buffer）。
@@ -29,29 +35,6 @@ Python 界**——一切经本模块句柄类安全收参。
 ```
 
 ## <span class="c-func">函数</span>
-
-#### <span class="c-func">camera_ortho(width, height) -> Camera</span>
-
-2D 正交相机——**中心原点、y 向上**：视野
-`(-w/2, -h/2) .. (w/2, h/2)`（与 3D 透视/物理米制系同构）。
-
-- :param width: 画布宽（float）
-- :param height: 画布高（float）
-- :rtype: Camera
-
-#### <span class="c-func">camera_perspective(fov_degrees, aspect, near, far) -> Camera</span>
-
-3D 透视相机（fov 度数制；右手系，看向 `-Z`；位姿接 `.with_view()`）。
-
-- :param fov_degrees: 垂直视场角（度，float）
-- :param aspect: 宽高比（float）
-- :rtype: Camera
-
-#### <span class="c-func">camera_mvp() -> Mat4</span>
-
-当前 Auto 兜底 MVP（主屏尺寸现算——resize 天然跟随）。
-
-- :rtype: Mat4
 
 #### <span class="c-func">game_camera_ortho(lw, lh, pw, ph) -> GameCamera</span>
 
@@ -88,7 +71,8 @@ set_game_camera）安装后本矩阵 = 物理面与构造 pw/ph 的比值**（�
 #### <span class="c-func">init(dim=None, fov=None, near=None, far=None, cull=None, blend=None)</span>
 
 渲染管线愿望（`set_mode` **前**设置；部分覆盖——未传保留现值，后设
-优先）。`dim`: 2 / 3；`fov` / `near` / `far`：Auto3d 相机参数；
+优先）。`dim`: 2 / 3（Gpu 装配消费——**不再喂隐式相机**，域分层 v3
+后 3D 须显式 `screen.set_camera(game_camera_perspective(...))`）；
 `cull`: `"none"`（默认）/ `"back"` / `"front"`（管线编译期定型，
 下次 set_mode 生效）；`blend`: `"alpha"`（默认）/ `"opaque"` /
 `"premultiplied"`。

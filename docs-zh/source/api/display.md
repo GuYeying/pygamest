@@ -105,19 +105,18 @@ with 会话入口：进入 = 开启 RenderPass，退出 = finish 打包
 
 #### <span class="c-func">screen.set_camera(cam)</span>
 
-**显式设置渲染相机**（2026-11 定约——渲染会话必传，杜绝兜底）。
+**显式设置渲染相机**（域分层 v3，2026-11-19——唯一域切换口）。
 `cam` = `pygame.render.game_camera_ortho(lw, lh, pw, ph)` /
 `game_camera_perspective(fov, lw, lh, pw, ph, near, far)` 构造的
 GameCamera（**world→画布 基底**——MVP / 坐标映射同一事实源，详见
 [pygame.render](render.md)）。
 
-**两段式渲染域（2026-11-18 统一）**：相机恒为 world→画布（构造基底
-保持脚本意志，引擎不再 resize 改写）；画布→物理视口的 letterbox 由
-`pygame.render.present_fit()` 独立承担，batch / write_camera_mvp /
-debug / egui 全消费点统一两段组合——自管裸相机（camera_ortho /
-camera_perspective 的 .mvp()）与 GameCamera 同一组合语义，无双重
-拟合。同尺寸 resize 事件（启动/DPI 抖动）不清除显式相机；逻辑画布
-真实变化 = 新画布（脚本重设走 set_camera）。
+**两段式渲染域（2026-11-18 统一；域分层 v3 升级）**：相机恒为
+world→画布（构造基底保持脚本意志，引擎不再 resize 改写）；画布→
+物理视口的 letterbox 由 `pygame.render.present_fit()` 独立现算。
+**一次设置跨会话/resize/换画布缓存**——未显式相机时呈现走 NDC 恒等
+默认域（raw 顶点直通）；pygame 图元 API 恒像素域（与相机解耦——
+HUD/UI 不随游戏相机漂移）。同尺寸事件守卫随显式缓存语义自然消亡。
 
 ```python
 cam = pygame.render.game_camera_perspective(58.0, 800, 600, 800, 600, 0.1, 300.0)
