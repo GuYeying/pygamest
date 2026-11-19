@@ -71,7 +71,17 @@ pub(crate) fn sample_shell(corner: [SReal; 2], dims: [SReal; 2], spacing: SReal)
 /// boundary (rapier contact projection - the only reliable boundary for
 /// impact/sloshing scenes in salva 0.11, see sync_coupling notes).
 pub(crate) fn make_pipeline(particle_radius: SReal, smoothing_factor: SReal) -> FluidsPipeline {
-    FluidsPipeline::new(particle_radius, smoothing_factor)
+    let mut pipeline = FluidsPipeline::new(particle_radius, smoothing_factor);
+    // boundary_force_coefficient = 0（**单向耦合定约**，2026-11-19）：
+    // salva 的 rapier 集成每步对 dynamic 父体强制重开力反馈（手动置
+    // boundary.forces = None 会被 update_boundaries 覆盖）——冲量直灌
+    // 刚体 = 落水方块能量爆炸/飞出（2026-11-18 观测，dynamic 耦合因此
+    // 被整体跳过）。系数归零在 transmit 端消灭冲量（fixed 边界 forces
+    // 恒 None 无影响），DC 位置投影照常 = 粒子被动态刚体推开而刚体
+    // 不受力——排开/绕流交互开放且数值稳定；双向（浮力/拖拽）= 后续
+    // 以非零系数+稳定性实验立项
+    pipeline.liquid_world.boundary_force_coefficient = 0.0;
+    pipeline
 }
 
 /// Fluid constructor shim (positions in, velocities zeroed - salva
@@ -122,27 +132,19 @@ pub(crate) mod coupling {
     pub(crate) fn sync_coupling(
         pipeline: &mut FluidsPipeline,
         colliders: &ColliderSet,
-        bodies: &RigidBodySet,
+        _bodies: &RigidBodySet,
         _particle_radius: SReal,
     ) {
         for (handle, collider) in colliders.iter() {
             if pipeline.coupling.entries.contains_key(&handle) {
                 continue;
             }
-            // Coupling contract: static (fixed) bodies only. salva's DC
-            // boundary force feedback auto-arms for dynamic parents and
-            // its numerics are unstable (a falling cube through the fluid
-            // collects the full projected-particle pressure as impulses ->
-            // energy explosion, fly-off observed 2026-11-18) - dynamic
-            // coupling is v2 work, skip registration here.
-            let dynamic = collider
-                .parent()
-                .and_then(|p| bodies.get(p))
-                .map(|b| b.is_dynamic())
-                .unwrap_or(false);
-            if dynamic {
-                continue;
-            }
+            // 域分层 v3 配套（2026-11-19）：dynamic collider 照常注册
+            //（曾整体跳过——力反馈冲量爆炸/飞出；根修 =
+            // make_pipeline 的 boundary_force_coefficient = 0，冲量在
+            // transmit 端归零而 DC 位置投影保留 = 单向排开交互开放）。
+            // fixed 边界的力反馈由 salva 自动关闭（forces = None），
+            // 系数归零只作用于 dynamic 父体路径，零副作用。
             let bh = pipeline.liquid_world.add_boundary(make_boundary(Vec::new()));
             pipeline.coupling.register_coupling(
                 bh,

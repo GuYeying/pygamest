@@ -79,7 +79,16 @@ pub(crate) fn sample_shell(corner: [SReal; 3], dims: [SReal; 3], spacing: SReal)
 /// boundary (rapier contact projection - the only reliable boundary for
 /// impact/sloshing scenes in salva 0.11, see sync_coupling notes).
 pub(crate) fn make_pipeline(particle_radius: SReal, smoothing_factor: SReal) -> FluidsPipeline {
-    FluidsPipeline::new(particle_radius, smoothing_factor)
+    let mut pipeline = FluidsPipeline::new(particle_radius, smoothing_factor);
+    // boundary_force_coefficient = 0（**单向耦合定约**，2026-11-19，
+    // 2D 同款）：salva 的 rapier 集成每步对 dynamic 父体强制重开力反馈
+    //（手动置 boundary.forces = None 会被 update_boundaries 覆盖）——
+    // 冲量直灌刚体 = 落水方块能量爆炸/飞出（dynamic 耦合因此被整体
+    // 跳过）。系数归零在 transmit 端消灭冲量（fixed 边界 forces 恒
+    // None 无影响），DC 位置投影照常 = 粒子被动态刚体推开而刚体不受
+    // 力；双向（浮力/拖拽）= 后续以非零系数+稳定性实验立项
+    pipeline.liquid_world.boundary_force_coefficient = 0.0;
+    pipeline
 }
 
 /// DFSPH pipeline (volume-conserving flagship - kept for comparison / v2
@@ -146,24 +155,16 @@ pub(crate) mod coupling {
     pub(crate) fn sync_coupling(
         pipeline: &mut FluidsPipeline,
         colliders: &ColliderSet,
-        bodies: &RigidBodySet,
+        _bodies: &RigidBodySet,
         _particle_radius: SReal,
     ) {
         for (handle, collider) in colliders.iter() {
             if pipeline.coupling.entries.contains_key(&handle) {
                 continue;
             }
-            // Coupling contract: static (fixed) bodies only - DC force
-            // feedback numerics explode for dynamic parents (2D sibling
-            // fly-off observation 2026-11-18). Dynamic coupling = v2.
-            let dynamic = collider
-                .parent()
-                .and_then(|p| bodies.get(p))
-                .map(|b| b.is_dynamic())
-                .unwrap_or(false);
-            if dynamic {
-                continue;
-            }
+            // 域分层 v3 配套（2026-11-19）：dynamic collider 照常注册
+            //（曾整体跳过——力反馈冲量爆炸/飞出；根修 = make_pipeline
+            // 的 boundary_force_coefficient = 0，2D 同款）。
             let bh = pipeline.liquid_world.add_boundary(make_boundary(Vec::new()));
             pipeline.coupling.register_coupling(
                 bh,
