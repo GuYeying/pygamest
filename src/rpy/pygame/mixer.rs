@@ -364,17 +364,29 @@ use std::cell::Cell;
 
             #[pyfunction]
             fn load(path: String, vm: &VirtualMachine) -> PyResult<()> {
-                if let Err(e) = bridge::with_mixer(vm, |m| m.music_load_file(&path)) {
+                // v3.1 统一（2026-11-19）：path 读走 io 门面（BASE_DIR+加密
+                // 语义统一——symphonia 直开的 cwd 基准/无解密退役）→ 字节
+                // 建流（MusicStream 解码线程自治不变）
+                #[cfg(target_arch = "wasm32")]
+                return Err(vm.new_value_error(
+                    "pygame.mixer: Web 端 music path 构造退化——await pygame.io.fetch(bytes) 后 load_bytes(bytes)",
+                ));
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let data = starfish_io::read_sync(&path)
+                        .map_err(|e| vm.new_value_error(format!("music 加载失败 {path}: {e}")))?;
                     // "缺资源不崩溃"：BGM 缺失 = 静音继续（游戏性不受阻），
                     // 严格模式恢复真异常（CI 测漏）
-                    starfish_debug::log_error!(format!(
-                        "[assets] 音乐加载失败 {path}: {e:?}——静音继续"
-                    ));
-                    if starfish_pygame::image::strict_assets() {
-                        return Err(e);
+                    if let Err(e) = bridge::with_mixer(vm, |m| m.music_load_bytes(data)) {
+                        starfish_debug::log_error!(format!(
+                            "[assets] 音乐解码失败 {path}: {e:?}——静音继续"
+                        ));
+                        if starfish_pygame::image::strict_assets() {
+                            return Err(e);
+                        }
                     }
+                    Ok(())
                 }
-                Ok(())
             }
 
             /// 字节流式加载（内嵌 BGM 零落盘；starfish music_load_bytes）
