@@ -91,6 +91,13 @@ class _AsyncTask:
     def exception(self):
         return self.exc
 
+    def wait(self):
+        # **awaitable 主口**（返回 _TaskWait 实例——RP 的 await 只认
+        # __await__ 方法对象/coroutine，**裸 generator can't be awaited
+        # 实测**；_TaskWait.__await__ 恒先 yield 一帧规避立即
+        # StopIteration 病态）
+        return _TaskWait(self)
+
 
 
 
@@ -157,6 +164,19 @@ class _WaitFor:
             raise self.task.exc
         if self.task.cancelled:
             return None
+        return self.task.result
+
+class _TaskWait:
+    # Task 等待 awaitable（实例形态——__await__ 恒先 yield 一帧，
+    # 规避 RP 对零 yield/立即 StopIteration gen 的 send 病态）
+    def __init__(self, task):
+        self.task = task
+    def __await__(self):
+        yield "frame"
+        while not self.task.done:
+            yield "frame"
+        if self.task.exc is not None:
+            raise self.task.exc
         return self.task.result
 
 class _QueueGet:
