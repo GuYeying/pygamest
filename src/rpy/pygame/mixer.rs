@@ -472,16 +472,29 @@ use std::cell::Cell;
             /// 排队下一首（当前曲播完自动接播；load 同源的路径形态）
             #[pyfunction]
             fn queue(path: String, vm: &VirtualMachine) -> PyResult<()> {
-                if let Err(e) = bridge::with_mixer(vm, |m| m.music_queue_file(&path)) {
-                    // 与 load 同一定约：缺资源不崩溃（静音继续），严格模式真异常
-                    starfish_debug::log_error!(format!(
-                        "[assets] 音乐排队失败 {path}: {e:?}——静默跳过"
-                    ));
-                    if starfish_pygame::image::strict_assets() {
-                        return Err(e);
+                // v3.1 统一（同 load——path 读走 io 门面 BASE_DIR+加密，
+                // symphonia 直开退役）→ 字节排队（排队语义不变）
+                #[cfg(target_arch = "wasm32")]
+                return Err(vm.new_value_error(
+                    "pygame.mixer: Web 端 queue path 构造退化——await pygame.io.fetch(bytes) 后用字节口",
+                ));
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let data = starfish_io::read_sync(&path)
+                        .map_err(|e| vm.new_value_error(format!("music 排队失败 {path}: {e}")))?;
+                    let sound = starfish_audio::SoundData::from_bytes(data)
+                        .map_err(|e| vm.new_value_error(format!("music 排队解码失败 {path}: {e:?}")))?;
+                    if let Err(e) = bridge::with_mixer(vm, |m| m.music_queue(std::sync::Arc::new(sound))) {
+                        // 与 load 同一定约：缺资源不崩溃（静音继续），严格模式真异常
+                        starfish_debug::log_error!(format!(
+                            "[assets] 音乐排队失败 {path}: {e:?}——静默跳过"
+                        ));
+                        if starfish_pygame::image::strict_assets() {
+                            return Err(e);
+                        }
                     }
+                    Ok(())
                 }
-                Ok(())
             }
 
             /// 音乐播放中（不含 SFX——与 mixer.get_busy 分工）
