@@ -122,8 +122,8 @@ class _Gather:
         # 异常 re-raise（asyncio gather 默认语义——首个失败任务重抛，
         # 失败定位 = t.name / t.exception()）
         for t in self.tasks:
-            if t.exception is not None:
-                raise t.exception
+            if t.exc is not None:
+                raise t.exc
         return [t.result for t in self.tasks]
 
 def _async_spawn(coro, name=None):
@@ -152,9 +152,9 @@ class _WaitFor:
                 self.task.cancel()
                 raise TimeoutError("tasks.wait_for 超时")
             yield "frame"
-        # 任务异常 re-raise（asyncio 对齐——失败定位 = task.name/exception()）
-        if self.task.exception is not None:
-            raise self.task.exception
+        # 任务异常 re-raise（asyncio 对齐——失败定位 = task.name/exc）
+        if self.task.exc is not None:
+            raise self.task.exc
         if self.task.cancelled:
             return None
         return self.task.result
