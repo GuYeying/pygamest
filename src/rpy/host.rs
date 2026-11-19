@@ -36,11 +36,13 @@ def next_frame():
 
 # ── 帧泵驱动的协作式微调度器 ──
 class _AsyncTask:
-    def __init__(self, coro):
+    def __init__(self, coro, name=None):
         self.coro = coro
+        self.name = name or "task"
         self.done = False
         self.cancelled = False
         self.result = None
+        self.exception = None   # 任务异常存档（不炸帧循环——failed()/exception() 查询）
         self.wake_frame = 0
         self.wait_io = False
         self.io_path = None
@@ -68,6 +70,10 @@ class _AsyncTask:
         except StopIteration as e:
             self.done = True
             self.result = e.value
+        except BaseException as e:
+            # 任务异常捕获存档（asyncio 同款语义——一个任务失败不炸帧循环）
+            self.done = True
+            self.exception = e
 
     def cancel(self):
         # 协作式取消：标记终止 + 协程对象弃置（GC 回收——RP 的
@@ -76,6 +82,16 @@ class _AsyncTask:
             self.done = True
             self.cancelled = True
             self.result = None
+
+    def failed(self):
+        # 任务异常存档判定（哪个任务失败 = self.name；异常体 = exception()）
+        return self.exception is not None
+
+    def exception(self):
+        return self.exception
+
+
+
 
 _async_tasks = []
 _async_frame = 0
@@ -102,13 +118,18 @@ class _Gather:
         # 同步推进 = send 嵌套重入，2026-11-19 实测）
         while any(not t.done for t in self.tasks):
             yield "frame"
+        # 异常 re-raise（asyncio gather 默认语义——首个失败任务重抛，
+        # 失败定位 = t.name / t.exception()）
+        for t in self.tasks:
+            if t.exception is not None:
+                raise t.exception
         return [t.result for t in self.tasks]
 
-def _async_spawn(coro):
+def _async_spawn(coro, name=None):
     # 幂等：传入的已是任务（spawn 产物/gather 复用）直接返回
     if hasattr(coro, "tick"):
         return coro
-    t = _AsyncTask(coro)
+    t = _AsyncTask(coro, name or "task")
     _async_tasks.append(t)
     return t
 
@@ -130,6 +151,9 @@ class _WaitFor:
                 self.task.cancel()
                 raise TimeoutError("tasks.wait_for 超时")
             yield "frame"
+        # 任务异常 re-raise（asyncio 对齐——失败定位 = task.name/exception()）
+        if self.task.exception is not None:
+            raise self.task.exception
         if self.task.cancelled:
             return None
         return self.task.result
@@ -142,6 +166,7 @@ class _QueueGet:
         while not self.q.items:
             yield "frame"
         return self.q.items.pop(0)
+
 
 class _Queue:
     def __init__(self):
