@@ -135,7 +135,17 @@ pygame-rs-dev/       # 开发解释器 pygamest-dev + examples/（78 案例）+ 
 - **`ac.update_mesh` 不增长**（裸 queue.write_buffer）——顶点数可变的 mesh
   用**索引驱动**：建 mesh 时容量垫底（零顶点尾段），update 原地写 + 按索引
   计数绘制（draw 恒 index_count）——超容量才整 mesh 重建。动态 mesh 每
-  次新建 = GPU 分配 churn + 编辑卡帧（voxel_mc remesh 140→21ms 实录）。
+  次新建 = GPU 分配 churn + 编辑卡帧（voxel_mc remesh 140→21→6ms 实录：
+  ①py 循环挪 Rust ②索引驱动原地更新 ③bytes 直喂消 RP 逐元素转换）。
+- **`Surface::draw_surface` 的变换位置 = 贴图中心**（实现 ±hw/2 四角；文档
+  "(0,0)-(sw,sh)" 过时）——锚语义按中心锚用。
+- **覆盖面离屏面每帧须真清屏**（`surf.clear(color)` = write_texture 直写）——
+  alpha-blend fill 无法穿透已写像素（透明 quad 混合后 dst 原样保留）=
+  文字跨帧堆叠。离屏面尺寸须跟随屏幕（`screen.get_size()`）——覆盖面全屏
+  合成 1:1，尺寸失配 = 半比例错位。
+- **vsync 锯齿**：渲染贴近 vsync 上限时，尖峰帧整帧推迟到下一同步刻 = 直接
+  掉半帧率（debug 构建 + 高分辨率易触发）——体感比无 vsync 的均匀掉帧差
+  得多；性能验收看**平均帧耗时**而非 fps 数字。
 - **体素/物理（parry 0.31）**：voxels 形状射线键在 **`hit.subshape`**
   （flat_id = chunk_id×512 + 格内序），`hit.feature` 只是该 voxel AABB 的面
   id——`voxel_at_flat_id(hit.subshape)` 解码格键；`set_voxel` 原位编辑经
