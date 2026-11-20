@@ -115,6 +115,16 @@ pygame-rs-dev/       # 开发解释器 pygamest-dev + examples/（78 案例）+ 
 
 - `raw_render` **必须上下文形态**：`with t.raw_render(depth=True) as p:`——裸调用
   `p = t.raw_render()` 命令在 `__exit__` 才排程回放，不进 with = **静默无图**。
+- **raw 回放恒在游戏内容之上**（画家定约）——gfxdraw/内容层 HUD 会被 raw 的
+  3D 不透明像素盖住。HUD-over-3D 正道 = fluid3d/voxel_mc 的**覆盖面模式**：
+  HUD 画进透明底离屏面 → 3D 之后第二个 raw pass alpha 合成回主屏。
+- **全屏 quad uv v 翻转**：wgpu 纹理 v=0 = 顶行，quad 直排映射 = 内容上下颠倒
+  （fluid3d/voxel_mc 均踩过；纹理顶行 ↔ NDC y=-1）。
+- **`gfxdraw.set_color` 是 one-shot**（状态机——每次 draw 消费，漏设回落引擎
+  默认紫 128,0,128）；同批多图元逐个重设。
+- **fill quad z 的 RH 语义**：RH directx 正交 z 映射 = `-2·z_view-1`（视空间
+  前方恒负 z）——背景 quad 远平面 = `z_view=-1.0`；曾写 +1.0 = 相机背后 →
+  裁剪剔除 = fill 消失（fill 恒近黑两日无人察觉——BMP 真值 + 纯红判别实锤）。
 - `ac.mesh` 默认 **TriangleList**：全屏 quad 要 6 顶点两三角——4 顶点 = 半屏。
 - buffer 建完不写 = **全 0**：shader 依赖的 uniform 逐字段核对写入（含 WGSL
   uniform 对齐布局：vec2@0/f32@8/vec3@16 倍数）。
@@ -122,11 +132,25 @@ pygame-rs-dev/       # 开发解释器 pygamest-dev + examples/（78 案例）+ 
 - 同帧多 raw 会话共享相机 buffer = 后写覆盖（回放延迟性）——各持独立 buf。
 - Surface（离屏）颜色格式 `Rgba8Unorm`（ADR-3）、逻辑==物理 fit 恒等；
   主屏格式运行时查询（dump 取证为准）。
+- **`ac.update_mesh` 不增长**（裸 queue.write_buffer）——顶点数可变的 mesh
+  用**索引驱动**：建 mesh 时容量垫底（零顶点尾段），update 原地写 + 按索引
+  计数绘制（draw 恒 index_count）——超容量才整 mesh 重建。动态 mesh 每
+  次新建 = GPU 分配 churn + 编辑卡帧（voxel_mc remesh 140→21ms 实录）。
+- **体素/物理（parry 0.31）**：voxels 形状射线键在 **`hit.subshape`**
+  （flat_id = chunk_id×512 + 格内序），`hit.feature` 只是该 voxel AABB 的面
+  id——`voxel_at_flat_id(hit.subshape)` 解码格键；`set_voxel` 原位编辑经
+  `ColliderSet::get_mut` 脏标记 → 下步自动刷 broadphase（零刚体插拔）。
 
 **平台/发布**：
 
 - `web/*.py` 是 examples 的**分发副本**——改案例后必须 `cp examples/X.py web/`
   （build.py 自动同步挂账；忘 cp = 用户看到旧行为）。
+- **feature 门控**：`pygame_voxelis`（--features voxelis）、`fluid`（FluidWorld——
+  缺失按 F2 即 AttributeError 崩脚本）、spine/live2d——案例调缺失模块先查
+  构建特性，别只看代码。
+- **debug 构建的物理/渲染数值代码慢 10-50 倍**（rapier 求解器/wgpu 上传
+  无内联）——性能验收用 `target/release/python.exe`；"30 刚体就卡"类
+  报障先问构建形态（dev 日常 = debug）。
 - wasm 同步 XHR 禁 `responseType`（InvalidAccessError）——二进制走
   `x-user-defined` 字节映射；XHR API = `open/send/set_request_header/
   override_mime_type`（无 set_method）。
