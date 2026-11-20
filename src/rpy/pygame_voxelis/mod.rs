@@ -193,6 +193,44 @@ pub mod pygame_voxelis {
             Ok(vm.ctx.new_tuple(t).into())
         }
 
+        /// generate_mesh_flat() -> (flat_vn, indices)：**唯一顶点
+        /// pos3+nrm3 交错平铺 + u16 索引面**——配 ac.mesh(layout, verts,
+        /// indices) / ac.update_mesh 原地更新（draw 按索引计数 = 可变
+        /// 长度）。py 侧零循环（曾 py 展开 10200 次 ≈ 编辑 remesh 卡帧
+        /// 主源之一，2026-11-20 分段计时 remesh=140ms 实锤）
+        #[pymethod]
+        fn generate_mesh_flat(&self, vm: &VirtualMachine) -> PyResult<(PyObjectRef, PyObjectRef)> {
+            let model = self.model.borrow();
+            let guard = Self::interner_read(&self.interner);
+            let mut vertices: Vec<Vec3> = Vec::new();
+            let mut normals: Vec<Vec3> = Vec::new();
+            let mut indices: Vec<u32> = Vec::new();
+            for chunk in model.chunks.values() {
+                if chunk.is_empty() {
+                    continue;
+                }
+                chunk.generate_mesh_arrays(
+                    &guard,
+                    &mut vertices,
+                    &mut normals,
+                    &mut indices,
+                    chunk.get_world_position(),
+                    Lod::new(0),
+                );
+            }
+            let flat: Vec<PyObjectRef> = vertices
+                .iter()
+                .zip(normals.iter())
+                .flat_map(|(v, n)| [v.x, v.y, v.z, n.x, n.y, n.z])
+                .map(|f| vm.ctx.new_float(f as f64).into())
+                .collect();
+            let li: Vec<PyObjectRef> = indices
+                .iter()
+                .map(|&i| vm.ctx.new_int(i as i64).into())
+                .collect();
+            Ok((vm.ctx.new_list(flat).into(), vm.ctx.new_list(li).into()))
+        }
+
         /// 全清 chunk 表（interner 项引用计数不回退——上游无 interner
         /// 清面，案例级内存可接受；长会话建议重建 VoxWorld 代替 clear）。
         #[pymethod]

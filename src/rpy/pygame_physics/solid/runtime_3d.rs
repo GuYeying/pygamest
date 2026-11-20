@@ -27,7 +27,7 @@ use rapier_starfish_debug::dim3::prelude::{
     ColliderHandle, CollisionEvent, ContactForceEvent, DebugRenderMode, FillMode as SfFillMode3,
     QueryFilter, Ray as SfRay3, IVector as SfIVector3, ActiveEvents as SfActiveEvents3,
     Group as SfGroup, ImpulseJointHandle, InteractionGroups, InteractionTestMode,
-    RigidBodyBuilder as SfRigidBodyBuilder, RigidBodyHandle, FeatureId as SfFeatureId,
+    RigidBodyBuilder as SfRigidBodyBuilder, RigidBodyHandle,
     SpringJointBuilder as SfSpringJointBuilder3,
 };
 use rapier_starfish_debug::dim3::world::PhysicsWorld as SfPhysicsWorld;
@@ -1050,19 +1050,22 @@ impl PyPhysicsWorld3D {
         if let Some((ch, hit)) = q.cast_ray_and_get_normal(&ray, max, true) {
             let co = &w.get_ref().colliders[ch];
             if let Some(v) = co.shape().as_voxels() {
-                if let SfFeatureId::Face(id) = hit.feature {
-                    if let Some(key) = v.voxel_at_flat_id(id) {
-                        let pos = co.position();
-                        let center = pos.rotation * v.voxel_center(key) + pos.translation;
-                        let n = hit.normal;
-                        return Ok(Some((
-                            pack_collider(ch),
-                            hit.time_of_impact as f64,
-                            (n.x as f64, n.y as f64, n.z as f64),
-                            (key.x as i64, key.y as i64, key.z as i64),
-                            (center.x as f64, center.y as f64, center.z as f64),
-                        )));
-                    }
+                // parry voxels 射线（0.31）：**voxel 标识 = hit.subshape
+                // （flat_id = chunk_id*512 + 格内序）**——hit.feature 只是
+                // 该 voxel AABB 的面 id（与格坐标无关；官方 voxel 案例
+                // 的 feature 解码在本版本不适用，2026-11-20 上行探针
+                // 实锤：flat_id 1 → 键 (1,0,0) 而非真身 (5,0,0)）
+                if let Some(key) = v.voxel_at_flat_id(hit.subshape as u32) {
+                    let pos = co.position();
+                    let center = pos.rotation * v.voxel_center(key) + pos.translation;
+                    let n = hit.normal;
+                    return Ok(Some((
+                        pack_collider(ch),
+                        hit.time_of_impact as f64,
+                        (n.x as f64, n.y as f64, n.z as f64),
+                        (key.x as i64, key.y as i64, key.z as i64),
+                        (center.x as f64, center.y as f64, center.z as f64),
+                    )));
                 }
             }
         }
