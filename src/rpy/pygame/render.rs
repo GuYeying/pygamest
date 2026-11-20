@@ -601,6 +601,18 @@ pub(crate) mod render {
         indices: Option<PyObjectRef>,
     }
 
+    /// update_mesh_vertex_bytes(mesh, data) 收参——**原始字节顶点更新**
+    /// （f32 LE 直喂——compute/voxelis 平铺出口的零转换通路；与
+    /// update_mesh_index_bytes 同级对称，2026-11-20 体素动态 mesh
+    /// 批次：RP 逐 float 转换 = remesh 卡帧残余主源）
+    #[derive(FromArgs)]
+    pub(crate) struct UpdateMeshVertexBytesArgs {
+        #[pyarg(any)]
+        mesh: PyRef<PyMesh>,
+        #[pyarg(any)]
+        data: PyObjectRef,
+    }
+
     /// update_mesh_index_bytes(mesh, data, format="u16") 收参——原始字
     /// 节索引更新（u32 大 mesh 通路；format 可选缺省 u16）
     #[derive(FromArgs)]
@@ -1275,6 +1287,28 @@ pub(crate) mod render {
                         vm.new_value_error(format!("索引缓冲更新失败：{e:?}"))
                     })?;
             }
+            Ok(())
+        }
+
+        #[pymethod]
+        fn update_mesh_vertex_bytes(
+            &self,
+            args: UpdateMeshVertexBytesArgs,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            let (mesh, data) = (args.mesh, args.data);
+            let bytes = data.try_bytes_like(vm, |b| b.to_vec())?;
+            let cap = mesh.inner.vertex_buffer().size();
+            let n = if bytes.len() as u64 > cap {
+                starfish_debug::log_warn!(format!(
+                    "[update_mesh_vertex_bytes] {len}B 超顶点缓冲 {cap}B——截断",
+                    len = bytes.len()
+                ));
+                cap as usize
+            } else {
+                bytes.len()
+            };
+            self.access.write_vertex_buffer(&mesh.inner, &bytes[..n]);
             Ok(())
         }
 

@@ -231,6 +231,45 @@ pub mod pygame_voxelis {
             Ok((vm.ctx.new_list(flat).into(), vm.ctx.new_list(li).into()))
         }
 
+        /// generate_mesh_bytes() -> (vertex_bytes, index_bytes)：**f32 LE
+        /// / u16 LE 原始字节出口**——RP 零逐元素转换（配 mesh_builder
+        /// vertices_bytes/index_bytes 与 update_mesh_vertex_bytes/
+        /// index_bytes 原地更新；动态 mesh 编辑零转换通路，2026-11-20
+        /// ——list 口的 20400 次 new_float ≈ remesh 卡帧残余）
+        #[pymethod]
+        fn generate_mesh_bytes(&self, vm: &VirtualMachine) -> PyResult<(PyObjectRef, PyObjectRef)> {
+            let model = self.model.borrow();
+            let guard = Self::interner_read(&self.interner);
+            let mut vertices: Vec<Vec3> = Vec::new();
+            let mut normals: Vec<Vec3> = Vec::new();
+            let mut indices: Vec<u32> = Vec::new();
+            for chunk in model.chunks.values() {
+                if chunk.is_empty() {
+                    continue;
+                }
+                chunk.generate_mesh_arrays(
+                    &guard,
+                    &mut vertices,
+                    &mut normals,
+                    &mut indices,
+                    chunk.get_world_position(),
+                    Lod::new(0),
+                );
+            }
+            let mut f32s: Vec<f32> = Vec::with_capacity(vertices.len() * 6);
+            for (v, n) in vertices.iter().zip(normals.iter()) {
+                f32s.extend_from_slice(&[v.x, v.y, v.z, n.x, n.y, n.z]);
+            }
+            let vbytes =
+                unsafe { std::slice::from_raw_parts(f32s.as_ptr() as *const u8, f32s.len() * 4) }
+                    .to_vec();
+            let ibytes: Vec<u8> = indices
+                .iter()
+                .flat_map(|&i| (i as u16).to_le_bytes())
+                .collect();
+            Ok((vm.ctx.new_bytes(vbytes).into(), vm.ctx.new_bytes(ibytes).into()))
+        }
+
         /// 全清 chunk 表（interner 项引用计数不回退——上游无 interner
         /// 清面，案例级内存可接受；长会话建议重建 VoxWorld 代替 clear）。
         #[pymethod]
