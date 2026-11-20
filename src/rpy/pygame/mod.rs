@@ -85,6 +85,28 @@ pub mod pygame {
             .into_ref(&vm.ctx))
         }
 
+        /// clear(color=(0,0,0,0))：**下一条 pack GPU 清屏**（离屏面颜色
+        /// 附件 load = Clear(色)——曾 write_texture 全尺寸上传捷径 =
+        /// 每帧 10.5MB CPU→GPU 拷贝，2026-11-20 改 GPU 清屏；alpha-blend
+        /// fill 无法穿透已写像素 = 跨帧堆叠的清屏必要性与 upload 形态
+        /// 无关）。color = [r,g,b,a] 0-255（缺省全透明）。
+        #[pymethod]
+        fn clear(
+            &self,
+            color: Option<crate::rpy::args::SfColor>,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            let c: [u8; 4] = color.map(|c| c.0).unwrap_or([0, 0, 0, 0]);
+            self.surface.set_clear_bg(Some([
+                c[0] as f32 / 255.0,
+                c[1] as f32 / 255.0,
+                c[2] as f32 / 255.0,
+                c[3] as f32 / 255.0,
+            ]));
+            let _ = vm;
+            Ok(())
+        }
+
         /// has_depth() -> bool：是否带深度缓冲（构造期 `depth_buffer=True`
         /// 定格——`render_depth()` 深度会话的前置）
         #[pymethod]
