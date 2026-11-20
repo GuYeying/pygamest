@@ -45,6 +45,20 @@ use std::cell::Cell;
             starfish_pygame::mouse::get_visible()
         }
 
+        /// 鼠标抓取（限定客户区内逃不出——FPS 沉浸式定约 2026-11-20；
+        /// 与 set_visible(False) 组合 = 隐藏光标 + 锁窗内自由转向。
+        /// web = no-op 降级[Pointer Lock 挂账]，移动端 = no-op）。
+        #[pyfunction]
+        fn set_grab(grabbed: bool, _vm: &VirtualMachine) {
+            starfish_pygame::mouse::set_grab(grabbed)
+        }
+
+        /// 鼠标抓取态（窗口层真值；web/移动恒 false）。
+        #[pyfunction]
+        fn get_grab(_vm: &VirtualMachine) -> bool {
+            starfish_pygame::mouse::get_grab()
+        }
+
         /// 窗口鼠标聚焦态（简化：与键盘聚焦同源）。
         #[pyfunction]
         fn get_focused(_vm: &VirtualMachine) -> bool {
