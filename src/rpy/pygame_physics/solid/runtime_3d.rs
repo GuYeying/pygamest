@@ -23,11 +23,11 @@ use rapier_starfish_debug::dim3::debug::{
     collect as sf_collect, DebugDraw as SfDebugDraw, LineSink as SfLineSink,
 };
 use rapier_starfish_debug::dim3::prelude::{
-    ChannelEventCollector, ColliderBuilder as SfColliderBuilder, ColliderHandle,
-    CollisionEvent, ContactForceEvent, DebugRenderMode, FillMode as SfFillMode3, QueryFilter,
-    Ray as SfRay3, IVector as SfIVector3, ActiveEvents as SfActiveEvents3, Group as SfGroup,
-    ImpulseJointHandle, InteractionGroups, InteractionTestMode,
-    RigidBodyBuilder as SfRigidBodyBuilder, RigidBodyHandle,
+    ChannelEventCollector, Collider as SfCollider, ColliderBuilder as SfColliderBuilder,
+    ColliderHandle, CollisionEvent, ContactForceEvent, DebugRenderMode, FillMode as SfFillMode3,
+    QueryFilter, Ray as SfRay3, IVector as SfIVector3, ActiveEvents as SfActiveEvents3,
+    Group as SfGroup, ImpulseJointHandle, InteractionGroups, InteractionTestMode,
+    RigidBodyBuilder as SfRigidBodyBuilder, RigidBodyHandle, FeatureId as SfFeatureId,
     SpringJointBuilder as SfSpringJointBuilder3,
 };
 use rapier_starfish_debug::dim3::world::PhysicsWorld as SfPhysicsWorld;
@@ -983,6 +983,90 @@ impl PyPhysicsWorld3D {
         Ok(w.get_ref()
             .cast_ray(&ray, max, true, f)
             .map(|(ch, toi)| (pack_collider(ch), toi as f64)))
+    }
+
+    /// set_voxel(collider, i, j, k, add)：体素形状**原位编辑**（官方
+    /// voxel 案例对齐 2026-11-20——collider.get_mut 自带 modified 脏
+    /// 标记，下一步 step 自动刷 broadphase/narrowphase，无需手动
+    /// update）。add = 填充(True)/移除(False)；非体素形状 collider 报错。
+    #[pymethod]
+    fn set_voxel(
+        &self,
+        collider: u64,
+        i: i64,
+        j: i64,
+        k: i64,
+        add: bool,
+        vm: &VirtualMachine,
+    ) -> PyResult<()> {
+        let mut w = self.inner.borrow_mut();
+        let ch = unpack_collider(collider);
+        let co = w
+            .get()
+            .colliders
+            .get_mut(ch)
+            .ok_or_else(|| vm.new_value_error("set_voxel: collider 不存在"))?;
+        match co.shape_mut().as_voxels_mut() {
+            Some(v) => {
+                v.set_voxel(SfIVector3::new(i as i32, j as i32, k as i32), add);
+                Ok(())
+            }
+            None => Err(vm.new_value_error("set_voxel: collider 非体素形状（kind=\"voxels\"）")),
+        }
+    }
+
+    /// cast_ray_voxel(origin, dir, max_toi=None) -> None | (collider, toi,
+    /// normal, voxel_key, voxel_center)：**体素专用射线**（官方 voxel
+    /// 案例对齐——broadphase query pipeline + as_voxels predicate 过滤，
+    /// 命中 FeatureId::Face → voxel_at_flat_id 直接映射被击中的格；
+    /// voxel_center = 世界系格中心（(key+0.5)*size + collider 位姿）。
+    /// DDA 自算退役口——物理命中即事实源）。
+    #[pymethod]
+    fn cast_ray_voxel(
+        &self,
+        origin: SfFPoint3,
+        dir: SfFPoint3,
+        max_toi: Option<ArgIntoFloat>,
+        vm: &VirtualMachine,
+    ) -> PyResult<Option<(u64, f64, (f64, f64, f64), (i64, i64, i64), (f64, f64, f64))>> {
+        let w = self.inner.borrow();
+        let ray = SfRay3::new(
+            [origin.0, origin.1, origin.2].into(),
+            [dir.0, dir.1, dir.2].into(),
+        );
+        let max = max_toi.map(|m| m.into_float() as f32).unwrap_or(100.0);
+        // predicate 只查体素形状（球/其他 collider 不吃射线编辑——官方
+        // 同款过滤）
+        let filter = QueryFilter {
+            predicate: Some(&|_, co: &SfCollider| co.shape().as_voxels().is_some()),
+            ..Default::default()
+        };
+        let q = w.get_ref().broad_phase.as_query_pipeline(
+            w.get_ref().narrow_phase.query_dispatcher(),
+            &w.get_ref().bodies,
+            &w.get_ref().colliders,
+            filter,
+        );
+        if let Some((ch, hit)) = q.cast_ray_and_get_normal(&ray, max, true) {
+            let co = &w.get_ref().colliders[ch];
+            if let Some(v) = co.shape().as_voxels() {
+                if let SfFeatureId::Face(id) = hit.feature {
+                    if let Some(key) = v.voxel_at_flat_id(id) {
+                        let pos = co.position();
+                        let center = pos.rotation * v.voxel_center(key) + pos.translation;
+                        let n = hit.normal;
+                        return Ok(Some((
+                            pack_collider(ch),
+                            hit.time_of_impact as f64,
+                            (n.x as f64, n.y as f64, n.z as f64),
+                            (key.x as i64, key.y as i64, key.z as i64),
+                            (center.x as f64, center.y as f64, center.z as f64),
+                        )));
+                    }
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// intersection_pair(h1, h2) -> bool：两碰撞体当前是否相交
