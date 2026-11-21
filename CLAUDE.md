@@ -87,14 +87,23 @@ RustPython 解释器 + pygame 绑定面。引擎本体在**同级目录** `../st
   - **gen_*+push 迁移后首批回归修复（2026-11-21）**：①**双重烘焙
     bug**（见上 637cb58）②**gen_arc 折线配对 bug**——连续点列直入
     lines 流被按 2 点一组配对 = 隔点连线（虚线）+ 奇数尾点错连；
-    修复 = 折线成对展开（p0,p1, p1,p2,...）。**定约：gen_* 产出
-    lines 拓扑的生成器（arc 等）必须输出成对点列**；③**无相机会
-    话 = NDC 直通**（域分层 v3）——像素图元案例 9 个补
+    修复 = 折线成对展开（p0,p1, p1,p2,...）+ 分段密度对齐旧 arc
+    （每 ~10° 一段 clamp 4..256）。**定约：gen_* 产出 lines 拓扑的
+    生成器（arc 等）必须输出成对点列**；③**无相机会话 = NDC 直通**
+    （域分层 v3）——像素图元案例 9 个补
     `screen.set_camera(game_camera_ortho(w,h,w,h))`（center_origin/
     blit_transform/parity/test_transform/transparent/touch/input/
     gamepad/letterbox/draw_test——**Surface 离屏会话内置像素正交
     不需要**）；④pygame.gfx.draw 笔误 2 文件 + camera_mvp 退役残留
     1 处清除；
+  - **水平 quad 透视缺渲染挂账（CPU 端无 bug 实证）**：4 顶点 y 恒定
+    水平面（plane/gfx3d 地板）透视域系统性不渲染——全界内（y NDC
+    梯形非线/z [0,1]——camera.rs `perspective_floor_plane_ndc_probe`
+    测试锁定 CPU 投影正确）、wireframe/无相机/含 push 流与
+    push_geometry 直调均复现、mesh 口（强制 z=0）同结构渲染正常；
+    y 有跨度的形（盒/球/圆柱/锥）同管线全渲染。**地板临时替代 =
+    厚盒**（gfx3d_demo/leak_i y -1.5..-0.5）。根因需 GPU 级取证
+    （capture/renderdoc）——嫌疑顶点上传或光栅化端水平退化处理；
   - **图元函数族剔除（2026-11-21 P2/P3，用户定夺）**：SDL_gfx 风格
     直接绘制口 32 个（pixel/hline/vline/line/aaline/circle/aacircle/
     filled_circle/ellipse/aaellipse/filled_ellipse/arc/trigon 三件/
