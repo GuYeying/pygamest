@@ -19,7 +19,17 @@ use std::cell::Cell;
             builtins::{PyStrRef, PyType},
         };
         use starfish_pygame::video::{VideoSystem as SfVideoSystem, Video as SfVideo};
+        use starfish_video::VideoModule as SfVideoModule;
         use crate::rpy::pygame::pygame::PySurface;
+
+        // ── wasm 异步 open 交互盒（Video 非 Send 也无需 Send——wasm 单
+        // 线程，spawn_local 即主线程；桌面侧 = OPEN_JOBS 线程桥，两侧
+        // 语义同构：_open_start 发起 / _poll 轮询 / _open_take 取走）──
+        #[cfg(target_arch = "wasm32")]
+        thread_local! {
+            static WASM_JOBS: std::cell::RefCell<Vec<Option<starfish_video::Video>>> =
+                const { std::cell::RefCell::new(Vec::new()) };
+        }
 
         /// 路径规则单一事实源（io 同语义：相对路径 → 基准目录拼接，
         /// 绝对路径原样）——桌面/移动专属；Web 端 v1 站桩不走到此处
@@ -103,15 +113,32 @@ use std::cell::Cell;
         static OPEN_JOBS: std::sync::OnceLock<crate::rpy::jobs::Registry<SendVideo>> =
             std::sync::OnceLock::new();
 
-        /// _open_start(path) -> 句柄：后台线程跑 open（含 io 路径解析）
+        /// _open_start(path) -> 句柄：后台线程跑 open（含 io 路径解析）。
+        /// wasm = **WebCodecs 异步接线**（2026-11-21 批次）：spawn_local
+        /// 驱动 VideoModule::open（fetch+demux+WebCodecs 状态机），完成后
+        /// Video 落 thread_local 交互盒——_poll 轮询就绪 / _open_take 取走
         #[pyfunction]
         fn _open_start(path: PyStrRef, vm: &VirtualMachine) -> PyResult<rustpython_vm::builtins::PyIntRef> {
             #[cfg(target_arch = "wasm32")]
             {
-                let _ = path;
-                return Err(vm.new_value_error(
-                    "pygame.video: Web 端 v1 不开放（WebCodecs 播放管线后续批次）",
-                ));
+                use wasm_bindgen_futures::spawn_local;
+                let _ = vm;
+                let p = path.to_str().unwrap_or_default().to_string();
+                // VideoSystem::new 构造期取 GPU 槽（wasm 主线程 = 同步段 ✓）
+                let sys = SfVideoSystem::new();
+                let vm_mod = std::rc::Rc::new(sys.module());
+                let handle = WASM_JOBS.with(|jobs| {
+                    let h = jobs.borrow().len() + 1;   // 句柄 = 索引 + 1（0 保留）
+                    jobs.borrow_mut().push(None);      // Pending 占位
+                    h
+                });
+                spawn_local(async move {
+                    let opened = vm_mod.open(p).await.ok();
+                    WASM_JOBS.with(|jobs| {
+                        jobs.borrow_mut()[handle as usize - 1] = opened;
+                    });
+                });
+                return Ok(rustpython_vm::builtins::PyInt::from(handle as i64).into_ref(&vm.ctx));
             }
             #[cfg(not(target_arch = "wasm32"))]
             {
@@ -137,20 +164,55 @@ use std::cell::Cell;
         /// _poll(句柄) -> bool：job 就绪查询（帧轮询）
         #[pyfunction]
         fn _poll(handle: i64) -> bool {
-            OPEN_JOBS.get().map(|r| r.poll(handle)).unwrap_or(false)
+            #[cfg(target_arch = "wasm32")]
+            {
+                // wasm 交互盒：句柄位 Some = VideoModule::open 完成
+                WASM_JOBS.with(|jobs| {
+                    jobs.borrow()
+                        .get(handle as usize - 1)
+                        .map(|j| j.is_some())
+                        .unwrap_or(false)
+                })
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                OPEN_JOBS.get().map(|r| r.poll(handle)).unwrap_or(false)
+            }
         }
 
         /// _open_take(句柄) -> Video：取走结果
         #[pyfunction]
         fn _open_take(handle: i64, vm: &VirtualMachine) -> PyResult<PyRef<PyVideo>> {
-            let reg = OPEN_JOBS
-                .get()
-                .ok_or_else(|| vm.new_value_error("pygame.video: 打开任务表未初始化"))?;
-            let v = reg.take(handle).map_err(|e| vm.new_value_error(e))?;
-            Ok(PyVideo {
-                inner: std::cell::RefCell::new(v.0),
+            #[cfg(target_arch = "wasm32")]
+            {
+                let taken = WASM_JOBS.with(|jobs| {
+                    let idx = handle as usize - 1;
+                    let mut jobs = jobs.borrow_mut();
+                    jobs.get_mut(idx)?.take()
+                });
+                // BaseVideo → starfish-pygame 包装（from_base——wasm 完成侧
+                // 接线口，2026-11-21 video wasm 接线批次）
+                let v = taken
+                    .map(starfish_pygame::video::Video::from_base)
+                    .ok_or_else(|| {
+                        vm.new_value_error("pygame.video: 打开任务未完成（_poll 后再取）")
+                    })?;
+                Ok(PyVideo {
+                    inner: std::cell::RefCell::new(v),
+                }
+                .into_ref(&vm.ctx))
             }
-            .into_ref(&vm.ctx))
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let reg = OPEN_JOBS
+                    .get()
+                    .ok_or_else(|| vm.new_value_error("pygame.video: 打开任务表未初始化"))?;
+                let v = reg.take(handle).map_err(|e| vm.new_value_error(e))?;
+                Ok(PyVideo {
+                    inner: std::cell::RefCell::new(v.0),
+                }
+                .into_ref(&vm.ctx))
+            }
         }
 
         /// pygame.video.Video——已打开的媒体（update 驱动解码推进）。
