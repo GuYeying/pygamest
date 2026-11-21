@@ -286,7 +286,7 @@ ortho 相机（像素/米缩放）；GPU 惰性装配——首次 draw 须已 se
 
 ##### <span class="c-func">follow_global_camera(enable=True)</span>
 
-切全局相机跟随——draw 前同步引擎全局 MVP。**[差异]** 2D 调试线世界
+切全局相机跟随——draw 前同步引擎全局 MVP。2D 调试线世界
 坐标为米，Auto2d 全局相机按像素正交，米坐标直入会过小——跟随时请配
 Manual 相机。
 

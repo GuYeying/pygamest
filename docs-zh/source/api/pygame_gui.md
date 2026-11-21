@@ -38,7 +38,7 @@ def main():
 建 egui Context / 输入桥 / 绘制端。**须在 `pygame.display.set_mode`
 之后调用**（幂等；未满足报 RuntimeError）。
 
-**[差异]** init **不自动捕获事件**——输入需 `event(e)` 逐条显式喂
+init **不自动捕获事件**——输入需 `event(e)` 逐条显式喂
 （捕获行为在数据流层完全可见）。CJK 字体自动注入（Windows msyh /
 Web cjk.ttf / Android 系统候选链，miss 回退系统探测——仅桌面）。
 
@@ -122,7 +122,7 @@ Surface 回读口）。此二者为架构级扩展，非词汇缺口。
 
 ##### <span class="c-func">text_edit(text) -> str</span>
 
-单行文本框——返回本帧内容。**[差异]** 每帧以传入值重置——值状态由
+单行文本框——返回本帧内容。每帧以传入值重置——值状态由
 脚本侧保存。
 
 - :rtype: str
@@ -151,7 +151,7 @@ Surface 回读口）。此二者为架构级扩展，非词汇缺口。
 
 ##### <span class="c-func">combo_box(label, options, selected) -> int</span>
 
-下拉选择——返回本帧选中序号。**[差异]** 同 `label` 的两个下拉共享
+下拉选择——返回本帧选中序号。同 `label` 的两个下拉共享
 内部 id——`label` 须全局取唯一名。
 
 - :rtype: int
