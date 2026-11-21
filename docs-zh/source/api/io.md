@@ -1,123 +1,88 @@
 # pygame.io
 
-资源与存档读写——**跨平台统一走向**（v3.1，2026-11-20）：native 同步
-面全量可用；**Web 端同步口退化为同步 XHR 全量**（`read`/`read_text`/
-`exists` 不再 Err——阻塞语义与 native 对称，2026-11-19 用户定约）；
-**大文件流式加载**走 `fetch`（native = 分块循环每帧一块交出控制权，
-wasm = 浏览器异步全量）。
+资源与存档读写模块——统一处理资源加载与数据持久化，三平台语义一致。
 
-```{note}
-[基准目录] Python 面恒以 **main 所在目录**为基准写相对路径——打包形态
-不改写调用写法（Android 基准目录由引擎 run 自动注入，`set_base_dir`
-不暴露）。
+路径规则：相对路径基于**脚本所在目录**解析（各打包形态自动注入基准
+目录），绝对路径原样使用——同一份脚本跨平台无需修改。
 
-[走向矩阵] `read`/`read_text`/`exists`/`write`/`write_text`：native
-block_on fs；wasm 同步 XHR 退化全量。`io_read_chunk(path, off, n)`：
-**native 帧级区间口**（分块流式的底层协议——每帧一块交出控制权）；
-Web 端 Err（fetch 全量承载）。`io_size`：native fs metadata；wasm 返
-None（分块判定退化信号）。加密资产（SFXE1）：只走 `read` 全量解密面
-——`io_read_chunk` 明文读不支持分块解密。
+支持加密资源：`.sfx` 后缀的密文文件在读取时自动解密（明文资源原样
+透传）。
 
-[io 走向矩阵] `image.load`/`font.load`/`mixer.Sound`/`music.load`/
-`music.queue`：**全走 starfish_io 门面**（BASE_DIR+加密语义统一，
-2026-11-20 audio 统一批次）；`video.open`：路径直传平台解码器
-（MF/MediaPlayer/HTML5 video 自治流式——加密 video 挂账）。
+## 同步读取
+
+### read(path) -> bytes
+
+读取资源的全部字节。`.sfx` 密文自动解密。
+
+注意：**Web 平台上走同步 XHR**（阻塞主线程直到完成），且为裸读——
+加密资源在 Web 端请使用异步口 `pygame.io.fetch()`（自动解密）。
+
+```python
+data = pygame.io.read("assets/config.json")
 ```
 
-## <span class="c-func">函数</span>
+### read_text(path) -> str
 
-#### <span class="c-func">read(path) -> bytes</span>
+读取文本文件（UTF-8，非法序列自动替换）。
 
-读资源全部字节（`.sfx` 密文自动解密，明文资源原样透传）。
-**[差异]** Web 端 = 同步 XHR 退化全量（**裸读**——不走加密面，加密资产
-Web 端走 `io.fetch` 异步面）。
+```python
+text = pygame.io.read_text("assets/story.txt")
+```
 
-- :param path: 资源路径
-- :type path: str
-- :returns: 资源字节
-- :rtype: bytes
+### write(path, data)
 
-#### <span class="c-func">read_text(path) -> str</span>
+覆盖写入。`data` 为 bytes 时原样写入，为 str 时按 UTF-8 编码。
 
-读文本（UTF-8，非法序列替换）。
+注意：**Web 平台不可用**。
 
-- :param path: 资源路径
-- :type path: str
-- :rtype: str
+### write_text(path, text)
 
-#### <span class="c-func">write(path, data)</span>
+覆盖写入文本（UTF-8 编码）。注意：**Web 平台不可用**。
 
-覆盖写（str 按 UTF-8 编码）。**[差异]** Web 端不可用。
+### exists(path) -> bool
 
-- :param path: 目标路径
-- :type path: str
-- :param data: 写入内容
-- :type data: bytes | str
+判断路径是否存在。注意：Web 平台上为同步 XHR 探测。
 
-#### <span class="c-func">write_text(path, text)</span>
+## 异步读取
 
-覆盖写文本（UTF-8）。**[差异]** Web 端不可用。
+### fetch(path) -> bytes
 
-- :param path: 目标路径
-- :type path: str
-- :param text: 文本内容
-- :type text: str
-
-#### <span class="c-func">exists(path) -> bool</span>
-
-路径存在性。**[差异]** Web 端不可用。
-
-- :param path: 资源路径
-- :type path: str
-- :rtype: bool
-
-## <span class="c-func">函数</span>（续）——异步统一口
-
-#### <span class="c-func">fetch(path) -> bytes</span> <span class="tag async">async</span>
-
-底层通用异步读取口——取回资源字节（`.sfx` 密文自动解密）。
+底层通用异步读取口——**推荐的大文件加载方式**。读取过程不阻塞游戏
+循环：桌面在后台线程分块读取（每帧交出控制权），Web 端为浏览器异步
+全量加载。`.sfx` 密文自动解密。
 
 ```python
 async def main():
     data = await pygame.io.fetch("assets/map.json")
 ```
 
-- :param path: 资源路径
-- :type path: str
-- :rtype: bytes
+`pygame.image.load()` / `pygame.font.load()` / `pygame.mixer.load()`
+等资源加载接口内部均走同一 IO 门面（路径解析与加密语义统一）。
 
-#### <span class="c-func">payload_list() -> list</span>
+## 辅助口
 
-打包清单——runtime 单元内的资源路径表（native = 目录扫描；wasm =
-打包清单）。
+以下三个口为两拍 IO 桥的取数 / 判据 / 压队机制——普通脚本使用
+`pygame.image.load()` 等三线接口即可，无需直接接触。
 
-- :rtype: list
+### io_ready(path) -> bool
 
-## <span class="c-func">异步桥口</span>
+该路径的异步结果是否已就绪。
 
-两拍 IO 桥的取数 / 判据 / 压队口（三平台可用；普通脚本走 `image.load`
-等三线接口即可，无需直触）。
+### io_take(path) -> bytes
 
-#### <span class="c-func">io_ready(path) -> bool</span>
+取走该路径的异步读取结果（须先通过 `io_ready()` 确认就绪；多任务
+并发加载按路径隔离，不串数据）。
 
-该路径的异步结果是否已入完成表（恢复判据）。
+### io_pending_append(path)
 
-- :param path: 资源路径
-- :type path: str
-- :rtype: bool
+将该路径压入异步加载队列（每帧排空并发起读取）。
 
-#### <span class="c-func">io_take(path) -> bytes</span>
+## 读取走向一览
 
-按路径取走异步 IO 结果（恢复前必已就绪，调用方须先过 `io_ready`；
-多任务并发 io 按路径隔离不串数据）。
-
-- :param path: 资源路径
-- :type path: str
-- :rtype: bytes
-
-#### <span class="c-func">io_pending_append(path)</span>
-
-任务级 io 挂起压队（tick 收 io_read 挂起时调用——每帧排空并发起 fetch）。
-
-- :param path: 资源路径
-- :type path: str
+| 接口 | 桌面 / 移动 | Web |
+|---|---|---|
+| read / read_text / exists / write / write_text | 本地文件系统 | 同步 XHR 全量（write 系不可用） |
+| io_read_chunk（分块流式） | 帧级区间读取 | 不可用（fetch 全量承载） |
+| io_size | 文件元数据 | 返回 None |
+| fetch / 资源加载三线口 | 后台线程分块 | 浏览器异步全量 |
+| video.open | 平台解码器自治流式 | WebCodecs |
