@@ -1,13 +1,19 @@
 # pygame.font
 
-字体与文字渲染——TTF 解码 + 文字表面一等化（`render()` 产物走
-`pygame.gfxdraw.draw_surface` / `pygame.font.draw_text` 放置）。
+字体与文字渲染模块。加载 TTF 字体，把文字渲染为可绘制的 Surface。
 
-```{note}
-[差异] **缺资源不崩溃**：按名字查字体未命中（未预载且文件不存在）时
-落内嵌默认字体继续（纯英文字形——中文将显示豆腐块 = 可视化告警，
-日志同步记因）；`STARFISH_STRICT_ASSETS=1` 恢复真异常。
+文字表面经 `pygame.gfxdraw.draw_surface()` 放置到画布上；三维场景中
+可使用 `pygame.font.draw_text()` 一步完成渲染与放置。
+
+```python
+font = await pygame.font.load("zhao.ttf", 24)
+surf = font.render("得分 1200", True, (255, 220, 0))
+pygame.gfxdraw.draw_surface(screen, surf)
 ```
+
+注意：按名字查找字体未命中时，会使用内嵌默认字体继续运行（默认字体
+只含英文字形，中文将显示为方块）。设置环境变量
+`STARFISH_STRICT_ASSETS=1` 可改为直接抛出异常。
 
 ## <span class="c-func">函数</span>
 
@@ -24,7 +30,7 @@ async def main():
 
 #### <span class="c-func">load_from_bytes(bytes, size) -> Font</span>
 
-字节构造字体（三线同规范）。
+从 TTF 字节构造字体。
 
 - :param bytes: TTF 原始字节
 - :type bytes: bytes
@@ -34,16 +40,15 @@ async def main():
 
 #### <span class="c-func">SysFont(name, size) -> Font</span>
 
-系统字体查找形态。**[差异]** 查找未实现——一律用内嵌默认字体
-（pygame 常用形态的占位语义）。
+按名字查找系统字体。当前实现统一使用内嵌默认字体（占位形态）。
 
 - :rtype: Font
 
 #### <span class="c-func">draw_text(f, font, text, model, color)</span>
 
-文字表面渲染 + **显式矩阵放置**一步口（3D 文字牌 / 2D 仿射统一入口；
-renderpass 作首参——与 gfxdraw 同 route）。**中心锚**：局部原点 =
-文字面中心。
+渲染文字并按显式矩阵放置——一步完成。常用于三维场景中的文字牌
+（透视相机下自动跟随）或需要仿射变换的二维文字。文字以**中心锚**
+放置（局部原点为文字面中心）。
 
 ```python
 # 3D 世界中的玩家 ID 牌（透视相机下自动跟随）

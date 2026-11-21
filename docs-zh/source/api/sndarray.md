@@ -3,7 +3,7 @@
 声音 ↔ 样本数组互转——程序化合成音效用。
 
 ```{note}
-[差异] 无 numpy 环境——数组用**嵌套 list / tuple** 承载（真 pygame 是
+数组以**嵌套 list / tuple** 承载（无 numpy 环境；真 pygame 是
 numpy 数组）。
 ```
 
@@ -22,7 +22,7 @@ Sound → 样本数组：立体声 `[(L, R), ...]` / 单声道 `[(v,), ...]`。
 样本数组 → Sound。行宽 `1` = 单声道 / `2` = 立体声（混排报
 "行宽不一致"；行宽其他值直接报错）。
 
-**[差异]** 采样率 v1 固定 44100（真 pygame 从 array 推断采样率）。
+采样率当前固定 44100（pygame 会从数组推断采样率）。
 
 ```python
 beep = pygame.sndarray.make_sound(

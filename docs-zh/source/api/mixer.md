@@ -1,221 +1,202 @@
 # pygame.mixer
 
-音效与 BGM——`Sound` 短音效（通道模型）、`Channel` 定点通道、`Effect`
-实时特效、`mixer.music` 流式 BGM 子模块。
+音效与背景音乐模块。包含 `Sound` 短音效（带通道模型）、`Channel` 定点
+通道、`Effect` 实时特效，以及 `mixer.music` 流式 BGM 子模块。
 
-```{note}
-[差异] **Sound 路径构造退役**——路径加载统一 `await pygame.mixer.load(path)`，
-字节走 `load_from_bytes(bytes)`；`Sound(bytes)` / `Sound()` 仍可用
-（不传 = 内嵌提示音）。
+```python
+sfx = await pygame.mixer.load("assets/jump.wav")
+sfx.play()
+
+pygame.mixer.music.load("assets/bgm.mp3")
+pygame.mixer.music.play(-1)   # 循环播放
 ```
 
-## <span class="c-func">函数</span>
+## 函数
 
-#### <span class="c-func">load(path) -> Sound</span> <span class="tag async">async</span>
+### load(path) -> Sound
 
-路径加载音效（统一入口；三线规范同 `image.load`）。
+异步加载音效文件（三平台通用）。
 
 ```python
 sfx = await pygame.mixer.load("assets/jump.wav")
 ```
 
-- :rtype: Sound
+### load_from_bytes(bytes) -> Sound
 
-#### <span class="c-func">load_from_bytes(bytes) -> Sound</span>
+从音频字节构造音效。
 
-字节构造（同步；三线同规范）。
+### init(channels=8)
 
-- :rtype: Sound
+显式初始化音频设备。不调用也可以——首次播放时会自动创建。
 
-#### <span class="c-func">init(channels=8)</span>
-
-显式初始化音频设备（不调也行——首次播放自动建）。
-
-#### <span class="c-func">quit()</span>
+### quit()
 
 卸载音频设备。
 
-#### <span class="c-func">get_init() -> bool</span>
+### get_init() -> bool
 
-初始化态。**[差异]** bool 形态（真 pygame 返回参数三元组 / None）。
+返回音频设备是否已初始化。
 
-- :rtype: bool
+### set_master_volume(volume)
 
-#### <span class="c-func">set_master_volume(v)</span>
+设置全部声道的主音量，`0.0` 到 `1.0`（越界自动收敛）。
 
-主音量（`0.0` .. `1.0`，越界 clamp）。
+### get_busy() -> bool
 
-#### <span class="c-func">get_busy() -> bool</span>
+返回是否有任意音效或音乐正在播放。
 
-是否播放中（任意 SFX / 音乐）。
+### set_reserved(n)
 
-- :rtype: bool
+保留 `0` 到 `n` 号通道——这些通道不参与 `Sound.play()` 的自动分配，
+专供 `Channel(idx)` 定点使用。
 
-#### <span class="c-func">set_reserved(n)</span>
+### num_channels() -> int
 
-保留 `0..n` 通道（不参与 `Sound.play` 自动分配——专供 `Channel(idx)`
-定点使用）。
+返回当前通道总数（init 时确定）。
 
-#### <span class="c-func">num_channels() -> int</span>
+### output_sample_rate() -> int
 
-通道数（init 定格）。
+返回混音输出的采样率（Hz）。
 
-- :rtype: int
+### beep() -> Sound
 
-#### <span class="c-func">output_sample_rate() -> int</span>
+返回内嵌提示音（用于快速反馈的权宜音效）。
 
-混音输出采样率（Hz）。
+## Sound 类
 
-- :rtype: int
+短音效对象。
 
-#### <span class="c-func">beep() -> Sound</span>
+#### Sound(source=None)
 
-内嵌提示音（快速反馈用权宜音）。
+构造音效：传字节按音频数据解码；不传参数 = 内嵌提示音。路径加载请
+使用异步口 `pygame.mixer.load(path)`。
 
-- :rtype: Sound
+#### play(loops=0)
 
-## <span class="c-class">类</span>
+播放音效。`loops` = `-1` 无限循环、`0` 单次、`N` 重复 N 次。播放会
+记录使用的通道，供后续 `stop()` / `set_volume()` 定位。
 
-### <span class="c-class">Sound —— 音效</span>
+注意：通道索引在停止后会被回收复用——长期持有通道序号需注意此模型
+限制。
 
-##### <span class="c-func">Sound(source=None)</span>
+#### stop()
 
-`Sound(bytes)` 按字节构造；`Sound()` = 内嵌提示音；**路径形态已退役**
-（走 `await mixer.load(path)`）。
+停止该音效最近使用的播放通道（无播放记录时不动作）。
 
-##### <span class="c-func">play(loops=0)</span>
+#### set_volume(volume)
 
-播放（`-1` 无限 / `0` 单次 / `N` 次）。记录最近通道供 `stop()` /
-`set_volume()` 定位——**[差异]** 通道索引停止后会被回收复用，长持
-句柄需注意（starfish 通道模型固有限制）。
+设置该音效最近使用通道的音量，`0.0` 到 `1.0`。
 
-##### <span class="c-func">stop()</span>
+#### get_length() -> float
 
-停止最近播放的通道（无记录则不动）。
+返回音效时长（秒）。
 
-##### <span class="c-func">set_volume(v)</span>
+## Channel 类
 
-音量（`0.0` .. `1.0`，作用于最近通道）。
+定点通道——fade 与特效挂载在此。
 
-##### <span class="c-func">get_length() -> float</span>
+#### Channel(idx)
 
-时长（秒）。
+构造定点通道。`idx` 为通道序号（`0` 到 `num_channels()-1`），配合
+`set_reserved()` 使用以避免被自动分配占用。
 
-- :rtype: float
+#### play(sound, loops=0)
 
-### <span class="c-class">Channel —— 定点通道</span>
+在本通道定点播放。
 
-fade / 特效挂载在此。
+#### stop() / pause() / resume()
 
-##### <span class="c-func">Channel(idx)</span>
+停止 / 暂停 / 恢复本通道。
 
-构造定点通道（`idx` 不透明 int，`0..num_channels`；配合
-`set_reserved`）。
+#### set_volume(volume)
 
-##### <span class="c-func">play(sound, loops=0)</span>
+设置本通道音量（`0.0` 到 `1.0`；无自动收敛——越界行为未定义）。
 
-本通道定点播放。
+#### fade_in(sound, ms, loops=0)
 
-##### <span class="c-func">stop() / pause() / resume()</span>
+淡入播放。注意：当前实现 `loops` 不生效（实际播放一次）。
 
-停 / 暂停 / 恢复本通道。
+#### fade_out(ms)
 
-##### <span class="c-func">set_volume(v)</span>
+淡出停止本通道（`ms` 为淡出时长，毫秒）。
 
-本通道音量（`0.0` .. `1.0`；**无 clamp**——越界行为未定义）。
+#### get_busy() -> bool
 
-##### <span class="c-func">fade_in(sound, ms, loops=0)</span>
+返回本通道是否正在播放。
 
-淡入播放。**[差异]** `loops` 收下未转发底层（实际单次播放）。
+#### get_sound() -> Sound | None
 
-##### <span class="c-func">fade_out(ms)</span>
+返回本通道当前装载的音效。
 
-淡出。
+#### add_effect(effect)
 
-##### <span class="c-func">get_busy() -> bool</span>
+将特效挂载到本通道的数据通路。挂载后通过 `effect.set(key, value)`
+实时调参仍然生效。
 
-本通道播放中。
+## Effect 类
 
-- :rtype: bool
+音频实时特效。
 
-##### <span class="c-func">get_sound() -> Sound | None</span>
+#### Effect(kind)
 
-本通道当前装载的声音。
+构造特效。`kind` 取值：`"gain"`（增益）/ `"echo"`（回声）/
+`"distortion"`（失真）/ `"lowpass"`（低通滤波）。
 
-- :rtype: Sound | None
+#### set(key, value)
 
-##### <span class="c-func">add_effect(effect)</span>
+实时调整特效参数。可用键随特效类型：
 
-挂特效到本通道数据通路（Effect 句柄克隆共享参数态——挂载后
-`effect.set(key, v)` 仍实时生效）。
+| 特效 | 参数键 |
+|---|---|
+| gain | `"gain"` |
+| echo | `"delay_ms"`、`"feedback"` |
+| distortion | `"drive"` |
+| lowpass | `"cutoff"` |
 
-### <span class="c-class">Effect —— 音频特效</span>
+## mixer.music 子模块
 
-##### <span class="c-func">Effect(kind)</span>
+流式播放的背景音乐——与短音效通道独立。
 
-构造特效：`"gain"` / `"echo"` / `"distortion"` / `"lowpass"`。
+#### load(path)
 
-##### <span class="c-func">set(key, value)</span>
+加载背景音乐文件。文件缺失时不抛异常——静音继续播放其余内容
+（游戏性不受阻，日志记录原因）；设置环境变量
+`STARFISH_STRICT_ASSETS=1` 可改为抛出异常。
 
-实时调参（键随预设）：`gain` → `"gain"`；`echo` →
-`"delay_ms"` / `"feedback"`；`distortion` → `"drive"`；`lowpass` →
-`"cutoff"`。
+#### load_bytes(bytes)
 
-## <span class="c-func">mixer.music —— 流式 BGM 子模块</span>
+从字节流加载背景音乐（内嵌 BGM 零落盘）。
 
-#### <span class="c-func">load(path)</span>
+#### play(loops=0)
 
-加载 BGM。**[差异]** 缺资源不崩溃 = 静音继续（游戏性不受阻，日志记
-因）；`STARFISH_STRICT_ASSETS=1` 恢复真异常。
+播放背景音乐。`loops` = `-1` 无限循环、`0` 单次、`N` 重复 N 次。
 
-- :param path: 音乐文件路径
-- :type path: str
+#### stop() / pause() / resume() / rewind()
 
-#### <span class="c-func">load_bytes(bytes)</span>
+停止 / 暂停 / 恢复 / 回到曲首（`rewind` 等价于 `set_pos(0)`）。
 
-字节流式加载（内嵌 BGM 零落盘）。
+#### set_volume(volume) / get_volume() -> float
 
-#### <span class="c-func">play(loops=0)</span>
+背景音乐音量（`0.0` 到 `1.0`；`get_volume()` 返回当前值）。
 
-播放（`-1` 无限循环 / `0` 单次 / `N` 次）。
+#### get_length() -> float
 
-#### <span class="c-func">stop() / pause() / resume() / rewind()</span>
+返回音乐总时长（秒；未加载时为 `0.0`）——进度条等 UI 的分母。
 
-停 / 暂停 / 恢复 / 回曲首（`rewind` = `set_pos(0)` 惯用形态）。
+#### set_pos(seconds) / get_pos() -> float
 
-#### <span class="c-func">set_volume(v) / get_volume() -> float</span>
+进度跳转与当前进度查询（单位秒，为底层设备的**真实播放位置**——
+注意与 pygame 的"已播放时长"语义不同）。未加载时 `set_pos` 静默。
 
-音乐音量（`0.0` .. `1.0`；`get_volume` 读取现值）。
+#### fadeout(ms)
 
-#### <span class="c-func">get_length() -> float</span>
+淡出停止（`ms` 为淡出时长，毫秒）。
 
-音乐总时长（**秒**；未加载 = `0.0`）。进度条 / 播放器 UI 的分母。
+#### queue(path)
 
-- :rtype: float
+排队下一首——当前曲目播放完毕自动接播。文件缺失的处理与 `load`
+一致：静默跳过（严格模式下抛异常）。
 
-#### <span class="c-func">set_pos(seconds) / get_pos() -> float</span>
+#### get_busy() -> bool
 
-进度跳转 / 当前进度（**秒**——与 starfish 秒制一致；**[差异]** 真
-pygame `get_pos` 为毫秒制且语义是"已播放时长"，此处是底层设备的
-**真实进度位置**）。`set_pos` 未加载时静默。
-
-- :param seconds: 目标位置（float，秒）
-- :rtype: float
-
-#### <span class="c-func">fadeout(ms)</span>
-
-淡出停止（毫秒）。
-
-#### <span class="c-func">queue(path)</span>
-
-排队下一首（当前曲播完自动接播）。缺资源定约同 `load`：静默跳过
-（严格模式真异常）。
-
-- :param path: 音乐文件路径
-- :type path: str
-
-#### <span class="c-func">get_busy() -> bool</span>
-
-音乐播放中（不含 SFX——与 `mixer.get_busy()` 分工）。
-
-- :rtype: bool
+返回背景音乐是否正在播放（不含音效——与 `mixer.get_busy()` 分工）。

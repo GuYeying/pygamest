@@ -4,7 +4,7 @@
 `Mat4`（glam 直通）。数值参数收 int 或 float；内部全线 f32。
 
 ```{note}
-[差异] 向量乘法全对称——`vec * vec` 为**元素级**（glam 语义；真 pygame
+向量乘法全对称——`vec * vec` 为**元素级**（glam 语义；pygame 的
 乘法仅标量）。零向量归一化 = 零向量（pygame 语义）。四类均不可哈希。
 ```
 

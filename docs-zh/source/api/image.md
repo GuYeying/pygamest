@@ -1,67 +1,56 @@
 # pygame.image
 
-图片解码面——路径加载与字节加载**全平台同语义**（Web 由壳启动期预载表
-承载字节，桌面直读落盘），支持 PNG / JPEG / BMP / GIF / WebP 按内容
-解码。
+图片加载与保存模块——按内容自动识别 PNG / JPEG / BMP / GIF / WebP
+格式，三平台语义一致（Web 端字节由壳启动期预载表承载，桌面直接读取
+文件）。
 
-```{note}
-[差异] **缺资源不崩溃**：路径不存在 / 解码失败时返回 64px 品红棋盘格
-占位图（错误打进日志），游戏照常跑；设环境变量 `STARFISH_STRICT_ASSETS=1`
-恢复真异常，供 CI 测漏。
+```python
+sprite = await pygame.image.load("assets/player.png")
 ```
 
-## <span class="c-func">函数</span>
+注意：路径不存在或解码失败时，返回 64px 品红棋盘格**占位图**（错误
+记录到日志），游戏继续运行。设置环境变量 `STARFISH_STRICT_ASSETS=1`
+可改为直接抛出异常——适合 CI 中排查资源遗漏。
 
-#### <span class="c-func">load(path) -> Surface</span> <span class="tag async">async</span>
+## 函数
 
-按路径加载图片（**await 形态**；全平台同语义——Web 由壳启动期预载表
-承载字节）。
+### load(path) -> Surface
+
+异步加载图片文件（三平台通用）。
 
 ```python
 async def main():
     sprite = await pygame.image.load("assets/player.png")
 ```
 
-- :param path: 资源路径
-- :type path: str
-- :returns: Surface
-- :rtype: Surface
+### load_from_bytes(bytes) -> Surface
 
-#### <span class="c-func">load_from_bytes(bytes) -> Surface</span>
+从图片字节解码。Web 端的推荐入口——先用 `pygame.io.fetch` 取回字节，
+再交给本函数：
 
-按内容解码（Web 首选入口——`io.fetch` 取回字节后接这里）。
+```python
+data = await pygame.io.fetch("assets/player.png")
+sprite = pygame.image.load_from_bytes(data)
+```
 
-- :param bytes: 图片原始字节
-- :type bytes: bytes
-- :rtype: Surface
+### save(surface, path)
 
-#### <span class="c-func">save(surf, path)</span>
+将 Surface 保存为图片文件。格式按扩展名判断，无扩展名默认 PNG。
 
-Surface 落盘（格式按扩展名，无扩展名默认 PNG）。**[差异]** 桌面专用
-——Web 端调用抛 `NotImplementedError`（`save_async` 异步语义后续批次）。
+注意：**仅桌面平台可用**——Web 端调用抛 `NotImplementedError`
+（异步保存为后续批次）。
 
-- :param surf: 目标
-- :type surf: Surface
-- :param path: 输出路径
-- :type path: str
+### get_extended() -> bool
 
-#### <span class="c-func">get_extended() -> bool</span>
+返回扩展图像格式（PNG/JPEG 等）支持状态。
 
-扩展图像格式支持态。
+### placeholder_surface(size) -> Surface
 
-- :rtype: bool
+返回占位面（`size`×`size` 正方形，引擎内建品红棋盘格图案）。加载
+失败兜底、美术资源未到位时的合法 Surface——transform / draw 全链
+可用。
 
-#### <span class="c-func">placeholder_surface(size) -> Surface</span>
+### strict_assets() -> bool
 
-缺资源占位面（size×size 正方形，引擎内建图案）——加载失败兜底/
-美术未到位时的合法 Surface，可 transform / draw 全链可用。
-
-- :param size: 边长（像素）
-- :rtype: Surface
-
-#### <span class="c-func">strict_assets() -> bool</span>
-
-严格资产模式当前态（`STARFISH_STRICT_ASSETS=1` 时 load 链缺资源
-真异常而非静默兜底——CI 测漏用）。
-
-- :rtype: bool
+返回严格资产模式的当前状态（环境变量 `STARFISH_STRICT_ASSETS=1`
+时为 `True`——此时 load 链缺资源直接抛异常而非静默兜底，CI 测漏用）。
