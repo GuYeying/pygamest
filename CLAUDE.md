@@ -439,6 +439,29 @@ Python 触达 Rust 的分层链（自上而下，单向）：
   screen.logical_size，无需手跟）。诊断口：全屏跑打印 `get_size()`
   即可秒判（域冲突必现 请求值 ≠ 实测值）。
 
+### 主屏深度恒开定约（2026-11-21，用户定夺）
+
+- **Screen::render() 恒带深度**（`RenderPass::screen(self, true)`，
+  present 兜底 pack 同步 true）——RenderSurface 深度附件本就每帧
+  全平台创建（new 建 + resize 重建、采样数与颜色对齐），pygame 层
+  只是此前传 false 从未消费。`render_depth()` 保留为等价兼容口。
+- **动机**：设备不缺深度开销（2560×1600 ≈ 16MB 显存 + 逐图元测试
+  带宽）；主屏直接可画 gfxdraw 3D 内容（cube/mesh/sphere——无需再
+  建 `depth_buffer=True` 离屏面）。
+- **2D 重叠不闪烁**（用户疑虑点，实证否决担忧）：2D 图元 z 恒常量
+  （普通 0 / fill 背景 1.0），深度数值精确相等零浮点抖动；
+  `DepthMode::Standard = LessEqual`（builder.rs:375）对**相等深度判
+  过** = 后画稳定覆盖（画家序），无 z-fight 条件。z-fight 只发生在
+  深度有微差抖动的几何间——2D 常量 z 不具备。
+- **行为变化注意**：fill 恒背景层（z=1.0 最远）——**fill 画在图元
+  之后会被图元深度挡住**（无深度时代 fill 后画 = 直接覆盖）。pygame
+  惯例 fill 在帧首不受影响（draw_test 半透明叠加回归过）；图元后
+  叠色需求走半透明图元/overlay。
+- **`screen.probe()` 新取证口**：最近一帧 7×5 网格像素采样（扁平
+  [x,y,r,g,b,a]×35）——present 时刻异步快照读引擎真值（PrintWindow
+  截图在 flip-model 下拿陈旧帧不可信）。深度遮挡/布局断言用
+  （主屏 3D 双 cube 近挡远实证：红 4 露边 + 蓝 9 + 重叠区=蓝）。
+
 ## 文档指引
 
 - 本仓库 `reference/`：`三端构建与运行指南.md`（**pygamest 一站式构建入口**）、

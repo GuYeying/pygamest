@@ -469,6 +469,7 @@ pub mod pygame {
         /// 与普通会话一致，重叠图元按深度判定而非画家序；相机 v1 为
         /// 正交缺省，会话面 `set_camera` 随 3D 批次开放）。槽位与普通
         /// Screen 会话共用——开启即替换，`with` 块收口照常打包。
+        /// （主屏深度恒开后与 render() 同形态——保留兼容）
         #[pymethod]
         fn render_depth(&self, vm: &VirtualMachine) -> PyResult<PyRef<PyScreenSession>> {
             starfish_pygame::render::session::begin_screen_depth_id(&self.id);
@@ -476,6 +477,29 @@ pub mod pygame {
                 id: self.id.clone(),
             }
             .into_ref(&vm.ctx))
+        }
+
+        /// probe() -> [x0, y0, r0, g0, b0, a0, x1, ...]：最近一帧的 7×5
+        /// 网格像素采样，扁平 6 元一组（取证口——present 时刻异步快照，
+        /// print/合成器截图在 flip-model 下可能拿到陈旧帧，本口读引擎
+        /// 真值）。空列表 = 无可用快照（首帧 / web 无 COPY_SRC）。
+        #[pymethod]
+        fn probe(&self, vm: &VirtualMachine) -> PyObjectRef {
+            let items: Vec<PyObjectRef> = starfish_pygame::display::get_screen_id(&self.id)
+                .readback_probe()
+                .into_iter()
+                .flat_map(|(x, y, px)| {
+                    [
+                        vm.ctx.new_int(x as i64).into(),
+                        vm.ctx.new_int(y as i64).into(),
+                        vm.ctx.new_int(px[0] as i64).into(),
+                        vm.ctx.new_int(px[1] as i64).into(),
+                        vm.ctx.new_int(px[2] as i64).into(),
+                        vm.ctx.new_int(px[3] as i64).into(),
+                    ]
+                })
+                .collect();
+            PyObjectRef::from(vm.ctx.new_list(items))
         }
 
         // /// 全局屏填充（真身 bridge::sf_draw_fill——批次 A 签名）。
