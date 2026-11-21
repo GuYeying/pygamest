@@ -15,7 +15,7 @@
 
 同步申请权限，返回是否已授予。
 
-**[差异]** Android `MICROPHONE` 会弹系统授权框**阻塞等待**——自动化
+Android 的 MICROPHONE 权限会弹系统授权框并阻塞等待——自动化
 冒烟勿触碰；`INTERNET` 瞬时返回。未知标识抛 `ValueError`。
 
 ```python

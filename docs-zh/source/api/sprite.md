@@ -4,7 +4,7 @@
 纯配置，add 后成为组句柄）；`(z, y)` 排序会话绘制。
 
 ```{note}
-[差异] `with_tag(tag)` v1 返回**数量**（int）而非句柄列表——id 级过滤
+`with_tag(tag)` 当前返回**数量**（int）而非句柄列表——id 级过滤
 无法反查 Python 对象，句柄反查随 v2 资源句柄表立项。
 ```
 
@@ -130,7 +130,7 @@ group.add(player)
 
 ##### <span class="c-func">draw()</span>
 
-全组绘制到活跃会话——**单形态定约：须在 `with screen.render() as r:`
+全组绘制到活跃会话——须在 `with screen.render() as r:`
 块内调用**。
 
 ```python

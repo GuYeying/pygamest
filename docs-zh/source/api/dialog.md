@@ -1,6 +1,6 @@
 # pygame.dialog
 
-系统文件对话框——选取文件、另存文件。**[差异]** v1 同步对话框为
+系统文件对话框——选取文件、另存文件。同步对话框当前仅
 **桌面专属**（Windows / Linux / macOS）；Web / Android 调用报错
 （异步 job API 后续批次）。
 
@@ -52,7 +52,7 @@ if f is not None:
 
 - :rtype: bytes
 
-## 异步面（2026-11-10 定约）
+## 异步口
 
 `open_file` / `save_bytes` 为 **awaitable**——后台线程跑模态对话框，
 帧循环不冻（对话框背后画面继续渲染）：

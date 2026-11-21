@@ -4,7 +4,7 @@ Surface 几何变换——翻转、缩放、旋转、缩放旋转复合。全部
 Surface**（源不修改）。
 
 ```{note}
-[差异] `scale()` 与 `smoothscale()` 等同——采样器恒线性平滑（真 pygame
+`scale()` 与 `smoothscale()` 效果等同——采样器恒线性平滑（pygame 的
 两名分 nearest / linear；像素风 nearest 变体 v2 预留）。
 ```
 

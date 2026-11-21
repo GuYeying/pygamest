@@ -1,6 +1,6 @@
 # pygame.gamepad
 
-手柄输入——标准布局按钮 / 轴查询（每帧轮询态）。命名定约：替代
+手柄输入——标准布局按钮与轴查询（每帧轮询态）。命名规范：替代
 joystick + controller 两名，按钮语义对齐 SDL 标准布局；Web Gamepad
 API 同序。
 

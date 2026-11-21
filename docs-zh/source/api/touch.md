@@ -14,7 +14,7 @@
 
 活动手指快照，按 `id` 升序——`[{"id", "x", "y", "phase"}, ...]`。
 
-**[差异]** `phase` 仅 `"started"` / `"moved"` 两态——抬起的手指即出表
+`phase` 仅 `"started"` / `"moved"` 两态——抬起的手指即从列表移除
 （Ended / Cancelled 不驻留）。
 
 - :rtype: list[dict]

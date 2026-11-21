@@ -47,7 +47,7 @@ conn = pygame.net.TCP("127.0.0.1:9000")
 
 ### <span class="c-class">UDP —— 数据报套接字</span>
 
-非阻塞数据报。**[差异]** 原生平台专属——Web 端构造 / 调用即报错
+非阻塞数据报。仅原生平台可用——Web 端构造或调用即报错
 （Web 不支持 UDP）。
 
 #### <span class="c-func">UDP(local_addr)</span>
