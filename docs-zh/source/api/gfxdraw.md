@@ -3,7 +3,7 @@
 SDL_gfx 风格图元 + **渲染统一 draw 面**——图元函数**只收 renderpass + 几何参数**；颜色/线框经独立状态机单独设置（one-shot，draw 后自动重置）。
 
 ```{note}
-[差异] 首参 `f` 是**渲染会话**（`with screen.render() as f` 的 `f`，
+首参 `f` 是**渲染会话**（`with screen.render() as f` 的 `f`，
 或 Surface 会话）。
 
 [坐标系] **中心原点、y 向上**——`(0, 0)` = 屏幕/画布中心，`+y` 向上
@@ -153,11 +153,11 @@ pygame.gfxdraw.filled_circle(f, 100, 0, 50)  # → 填充面（默认）
 #### <span class="c-func">box(f, rect)</span>
 #### <span class="c-func">rounded_rectangle(f, rect, radius)</span>
 
-**[垫底]** 圆角 v1 未建——降级直角。
+圆角当前未实现——降级为直角矩形。
 
 #### <span class="c-func">rounded_box(f, rect, radius)</span>
 
-**[垫底]** 同上。
+同上（圆角降级为直角）。
 
 ### 3D 形状（starfish-gfx shape3d 对接——2026-11-12）
 

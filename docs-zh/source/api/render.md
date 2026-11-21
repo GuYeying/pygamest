@@ -84,8 +84,8 @@ wgpu 裸对象（Device / Queue / Buffer / TextureView）不出 Python 界——
 
 底层资源入口（自建管线建造工厂；须 `set_mode` 后，否则 RuntimeError）。
 
-**[差异]** 主屏版默认颜色格式 = 交换链格式（平台漂移：Web/macOS
-Bgra8、Windows Rgba8）；`offscreen=True` 离屏版恒 Rgba8。
+主屏 access 的默认颜色格式 = 交换链格式（平台相关：Web / macOS
+Bgra8，Windows Rgba8）；`offscreen=True` 离屏版恒 Rgba8。
 
 - :rtype: ResourceAccess
 
@@ -384,7 +384,7 @@ with 块内缓存生效——同一 `Pipeline`（Arc 指针）/同 slot 同 `Bin
 
 ##### <span class="c-func">set_bind_group(index, group)</span>
 
-绑定组。**[差异]** 绑定位按登记序自动排，`index` 实际被忽略。
+绑定组。绑定位按登记序自动排列，`index` 参数实际被忽略。
 
 ##### <span class="c-func">dispatch(x, y=1, z=1)</span>
 
