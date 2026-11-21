@@ -887,9 +887,13 @@ use std::cell::Cell;
             let seg = kw_arg_int(&args, vm, "segments", 48)?.max(2);
             let (r, a0, a1) = (p[0], p[1].to_radians(), p[2].to_radians());
             let mut g = starfish_gfx::geometry::Geometry::default();
-            for i in 0..=seg {
+            // 折线**成对展开**（p0,p1, p1,p2, ...）——lines 流按 2 点一组
+            // 解释，连续点列直接入流会隔点配对（虚线）+ 奇数尾点错配
+            for i in 0..seg {
                 let a = a0 + (a1 - a0) * i as f32 / seg as f32;
+                let b = a0 + (a1 - a0) * (i + 1) as f32 / seg as f32;
                 g.push([r * a.cos(), r * a.sin(), 0.0], [1.0; 4]);
+                g.push([r * b.cos(), r * b.sin(), 0.0], [1.0; 4]);
             }
             Ok(geo_to_buf(g))
         }
