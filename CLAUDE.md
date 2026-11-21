@@ -68,6 +68,22 @@ RustPython 解释器 + pygame 绑定面。引擎本体在**同级目录** `../st
     io write_text、KMOD_* 常量（display get_init 已随 init 剔除批次
     退役——pygame.init/display.get_init/render.init/egui.init 四口
     全清，gui 走 set_mode(gui=True) 自动装配）；
+  - **gfxdraw push 统一口**（2026-11-21 v1，用户定夺架构）：手写
+    顶点数据的通用出口——`VertexBuf`（位置流 f32 [x,y,z×N] + 可选
+    索引；add_point/add_points 扁平/extend bytes 三通道 + py 构造
+    `with(Constructor)` impl 块形态）+ `set_topology`（sticky——
+    triangles/lines/default）+ `push(f, data, indices=)`（四数据
+    通道：VertexBuf/bytes LE/扁平 list/点列表）+ `gen_*` 生成器六件
+    （circle/circle_outline/rect/rect_outline/polygon/cube——Rust 内
+    生成，原点中心局部坐标，性能与函数族同级）；
+  - **sticky 与 one-shot 分立定约**：push 流 = sticky（色/拓扑/变换
+    跨 push 持续）；draw 函数族 = one-shot 不变（pygame 兼容）。
+    batch 层 `expand_geometry` 抽取共用（push_geometry/push_stream
+    同一展开）+ push_stream 不调 end_draw；**索引越界防御**（push 收
+    用户任意数据——越界组跳过不 panic，batch.rs Filled/Line 两分支）；
+  - **instance 移除定约**：CPU 烘焙模型下 GPU 实例化（vertex-step
+    需管线变体扩散 / SSBO WebGL2 不支持）风险配不上收益——v1 不做；
+    VertexBuf 局部坐标数据模型已为未来留位，等真实批量热点再议；
   - **sprite pyclass 桥**：Sprite = 配置对象（at/tag/z/rotation/scale/
     alpha/visible 链式 + 多帧动画 set_fps），Group.add 物化配置并
     **回写世代 id 进 Python 对象**（Copy 纯值跨 GC 零负担）/remove/

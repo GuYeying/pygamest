@@ -2,6 +2,10 @@
 
 SDL_gfx 风格图元 + **渲染统一 draw 面**——图元函数**只收 renderpass + 几何参数**；颜色/线框经独立状态机单独设置（one-shot，draw 后自动重置）。
 
+另有 **push 统一口**（见下文 [push 统一口](#push-统一口)）——手写顶点数据
+的通用出口：`VertexBuf` 顶点容器 + `set_topology` 拓扑状态 + `push`
+入批，数据全程在 Rust 侧流转。
+
 ```{note}
 首参 `f` 是**渲染会话**（`with screen.render() as f` 的 `f`，
 或 Surface 会话）。
@@ -19,6 +23,74 @@ SDL_gfx 风格图元 + **渲染统一 draw 面**——图元函数**只收 rende
 [旧口退役] 会话对象上的 `r.rect` / `r.circle` 等绘制便捷方法与 `blit`
 家族已全部剔除——图元走本模块，贴图走 `draw_surface` 系。
 ```
+
+## <span class="c-func">push 统一口</span>
+
+手写顶点数据的统一出口——与图元函数族（SDL_gfx 风格）互补。数据
+形态为**位置流**（每点 x,y,z 三个分量），颜色、uv、变换全部在入批
+时按当前状态烘焙——数据全程 Rust 侧流转，Python 侧无逐顶点 tuple
+摆渡。
+
+```python
+with screen.render() as t:
+    tri = pygame.gfxdraw.gen_circle(60)          # 生成器：Rust 生成位置流
+    pygame.gfxdraw.set_topology(t, "triangles")  # sticky——跨 push 持续
+    pygame.gfxdraw.set_color(t, (230, 90, 60))
+    pygame.gfxdraw.set_transform(t, pygame.math.mat4_translation(-200, 0, 0))
+    pygame.gfxdraw.push(t, tri)                  # 生成器句柄
+    pygame.gfxdraw.push(t, [80, 0, -80, 0, 0, 100])  # 扁平 list 同色同拓扑
+
+    pygame.gfxdraw.set_topology(t, "lines")      # 切拓扑
+    pygame.gfxdraw.push(t, seg_bytes)            # bytes 直拷通道
+```
+
+语义与图元函数族的分界：**push 流是 sticky**——`set_color` /
+`set_topology` / `set_transform` 设置后跨 push 持续，直到再次设置；
+图元函数族保持 one-shot（draw 后重置，pygame 兼容语义）不变。
+
+拓扑语义：顶点按**点**分组——`triangles` = 3 点一三角、`lines` =
+2 点一线段；每点恒为 x,y,z 三分量（2D 场景 z 传 0）。索引越界自动
+跳过对应组（不 panic——push 收用户任意数据）。
+
+#### <span class="c-func">VertexBuf()</span>
+
+顶点位置流容器。`add_point(x, y)`（z=0）/ `add_point3(x, y, z)` 单点
+追加；`add_points(flat)` 扁平一维数组批量追加（一次调用，Rust 内
+解包）；`extend(data)` bytes 直拷（f32 LE 内存块，长度须为 12 的
+倍数——`struct.pack` / `array` / numpy 产出零解包）；`set_indices(
+indices)` 设置索引；`clear()` 清空复用容器。
+
+```python
+buf = pygame.gfxdraw.VertexBuf()
+buf.add_points([x1, y1, 0, x2, y2, 0, x3, y3, 0])   # 3 个点
+buf.set_indices([0, 1, 2])
+pygame.gfxdraw.push(t, buf)
+```
+
+#### <span class="c-func">push(f, data, indices=None)</span>
+
+顶点位置流入批。`data` 三通道：`VertexBuf`（含自带索引）/ bytes
+（f32 LE）/ list（扁平 `[x,y,z,...]` 数字流或 `[(x,y),...]` 点列表）。
+`indices` 参数可覆盖 VertexBuf 自带索引；不设索引时按拓扑逐组解释。
+
+#### <span class="c-func">set_topology(f, mode)</span>
+
+push 流拓扑状态（sticky）。`mode` 取 `"triangles"`（默认）、`"lines"`
+或 `"default"`（回默认）。
+
+#### 生成器族（gen_*）
+
+Rust 内生成位置流，返回 `VertexBuf`——性能与图元函数族同级（生成
+全程不落地 Python）。产出为**原点中心局部坐标**，位置由
+`set_transform` 赋予：
+
+| 生成器 | 产出 |
+|---|---|
+| `gen_circle(radius, segments=48)` | 填充圆（扇形三角化） |
+| `gen_circle_outline(radius, segments=64)` | 圆周线（1px） |
+| `gen_rect(w, h)` / `gen_rect_outline(w, h)` | 矩形 / 周界线 |
+| `gen_polygon(points)` | 多边形（耳切三角化，输入点即局部坐标） |
+| `gen_cube(size)` | 立方体（透视段相机消费） |
 
 ## <span class="c-func">状态机</span>
 

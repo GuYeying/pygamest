@@ -14,6 +14,11 @@ use std::cell::Cell;
     pub mod gfxdraw {
         use crate::rpy::pygame::pygame::{PyScreenSession, PySurface, PySurfaceSession, PyTargetsSession};
         use crate::rpy::args::{SfColor, SfPoints, SfRect};
+        use rustpython_derive::pyclass;
+        use rustpython_vm::PyPayload;
+        use rustpython_vm::convert::TryFromObject;
+        use rustpython_vm::builtins::PyStr;
+        use rustpython_vm::types::Constructor;
         use rustpython_derive::FromArgs;
         use crate::rpy::bridge;
         use starfish_pygame::render::DrawTarget;
@@ -425,6 +430,417 @@ use std::cell::Cell;
                 Target::Targets => bridge::with_mrt_session(vm, |t| t.set_draw_wireframe(enabled))?,
             }
             Ok(())
+        }
+
+        // ── push 统一口（v1 批次：VertexBuf + set_topology + push +
+        // gen_* 生成器族）────────────────────────────────────────────
+        // 数据模型：VertexBuf = 顶点位置流（f32 [x,y,z × N]）+ 可选索引
+        // ——颜色/uv/变换全部 push 时按状态烘焙（与 push_geometry 同款，
+        // Geometry 颜色通道本就是死数据）。生成器 = Rust 内生成位置流
+        // （原点中心局部坐标——位置由 set_transform 赋予），数据全程
+        // 不落地 Python 逐顶点结构。push 流 = sticky 语义（color/
+        // topology/transform 跨 push 持续）；draw 函数族保持 one-shot
+        // （pygame 兼容语义）不变。
+
+        /// VertexBuf：顶点位置流容器（Rust Vec 持有——py 侧零逐顶点
+        /// tuple 摆渡）。三条填充通道：add_point 单点 / add_points 扁平
+        /// 数组 / extend bytes 直拷；gen_* 生成器产出同类型。
+        #[derive(PyPayload)]
+        #[pyattr]
+        #[pyclass(module = "pygame.gfxdraw", name = "VertexBuf", unhashable = true)]
+        pub(crate) struct PyVertexBuf {
+            /// 扁平位置流 [x,y,z × N]
+            pub(crate) points: std::cell::RefCell<Vec<f32>>,
+            /// 可选索引（空 = 逐 3 一切三角 / 逐 2 一切线段）
+            pub(crate) indices: std::cell::RefCell<Vec<u16>>,
+        }
+
+        impl std::fmt::Debug for PyVertexBuf {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("VertexBuf(<pos-stream>)")
+            }
+        }
+
+        /// py 构造：VertexBuf() 空缓冲（gen_* 生成器产出的同类型）
+        impl rustpython_vm::types::Constructor for PyVertexBuf {
+            type Args = FuncArgs;
+
+            fn py_new(
+                _cls: &rustpython_vm::Py<rustpython_vm::builtins::PyType>,
+                _args: Self::Args,
+                _vm: &VirtualMachine,
+            ) -> PyResult<Self> {
+                Ok(Self {
+                    points: std::cell::RefCell::new(Vec::new()),
+                    indices: std::cell::RefCell::new(Vec::new()),
+                })
+            }
+        }
+
+        #[pyclass(with(Constructor))]
+        impl PyVertexBuf {
+            /// add_point(x, y)：追加 2D 点（z=0）。
+            #[pymethod]
+            fn add_point(&self, x: f64, y: f64) {
+                self.points
+                    .borrow_mut()
+                    .extend([x as f32, y as f32, 0.0f32]);
+            }
+
+            /// add_point3(x, y, z)：追加 3D 点。
+            #[pymethod]
+            fn add_point3(&self, x: f64, y: f64, z: f64) {
+                self.points
+                    .borrow_mut()
+                    .extend([x as f32, y as f32, z as f32]);
+            }
+
+            /// add_points(flat)：扁平一维数组批量追加
+            /// （[x1,y1,z1, x2,y2,z2, ...]——一次 py 调用，Rust 内循环
+            /// 解包，无中间 tuple；int/float 混合收）。长度须为 3 的倍数。
+            #[pymethod]
+            fn add_points(&self, flat: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
+                let vals: Vec<f32> = vm
+                    .extract_elements_with(&flat, |o| {
+                        rustpython_vm::function::ArgIntoFloat::try_from_object(vm, o.clone())
+                            .map(|f| f.into_float() as f32)
+                    })
+                    .map_err(|_| vm.new_type_error("add_points 项须为数字"))?;
+                if vals.len() % 3 != 0 {
+                    return Err(vm.new_value_error(format!(
+                        "add_points 长度须为 3 的倍数（[x,y,z × N]），实际 {}",
+                        vals.len()
+                    )));
+                }
+                self.points.borrow_mut().extend(vals);
+                Ok(())
+            }
+
+            /// extend(data)：bytes 直拷（f32 LE 内存块——struct.pack /
+            /// array / numpy 产出，零解包零转换）。长度须为 12 的倍数
+            /// （每点 3×4B）。
+            #[pymethod]
+            fn extend(&self, data: PyRef<rustpython_vm::builtins::PyBytes>, vm: &VirtualMachine) -> PyResult<()> {
+                let bytes = data.as_bytes();
+                if bytes.len() % 12 != 0 {
+                    return Err(vm.new_value_error(format!(
+                        "extend 长度须为 12 的倍数（每点 3×f32），实际 {}",
+                        bytes.len()
+                    )));
+                }
+                let mut out = self.points.borrow_mut();
+                for chunk in bytes.chunks_exact(4) {
+                    out.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+                }
+                Ok(())
+            }
+
+            /// set_indices(indices)：设置索引（空 = 按拓扑逐组解释）。
+            #[pymethod]
+            fn set_indices(&self, indices: Vec<u16>) {
+                *self.indices.borrow_mut() = indices;
+            }
+
+            /// clear()：清空位置流与索引（跨帧复用容器）。
+            #[pymethod]
+            fn clear(&self) {
+                self.points.borrow_mut().clear();
+                self.indices.borrow_mut().clear();
+            }
+        }
+
+        /// Geometry → VertexBuf（生成器共用：抽 pos 流 + 索引）
+        fn geo_to_buf(g: starfish_gfx::geometry::Geometry) -> PyVertexBuf {
+            let points: Vec<f32> = g
+                .vertices
+                .iter()
+                .flat_map(|v| v.pos.iter().copied())
+                .collect();
+            PyVertexBuf {
+                points: std::cell::RefCell::new(points),
+                indices: std::cell::RefCell::new(g.indices),
+            }
+        }
+
+        /// 生成器 kwargs 助手（segments 等可选 int）
+        fn kw_arg_int(
+            args: &FuncArgs,
+            vm: &VirtualMachine,
+            key: &str,
+            default: u32,
+        ) -> PyResult<u32> {
+            use rustpython_vm::convert::TryFromObject;
+            match args.kwargs.get(key) {
+                Some(o) => u32::try_from_object(vm, o.clone()),
+                None => Ok(default),
+            }
+        }
+
+        /// set_topology(f, mode)：push 流拓扑状态（**sticky**——持续生效
+        /// 直至再设；draw 函数族不经此状态——函数名即拓扑）。mode 取
+        /// "triangles"（默认，顶点按 3 个一组）、"lines"（按 2 个一组）
+        /// 或 "default"（回默认）。
+        #[pyfunction]
+        fn set_topology(f: PyObjectRef, mode: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
+            use starfish_pygame::render::batch::BatchTopology;
+            let mode_str = mode
+                .downcast_ref::<PyStr>()
+                .map(|s| s.to_str().map(|s| s.to_owned()))
+                .ok_or_else(|| vm.new_type_error("topology 须为字符串"))?
+                .ok_or_else(|| vm.new_value_error("topology 含非 UTF-8 字符"))?;
+            let topo = match mode_str.as_str() {
+                "triangles" => Some(Some(BatchTopology::Triangles)),
+                "lines" => Some(Some(BatchTopology::Lines)),
+                "default" => Some(None),
+                other => {
+                    return Err(vm.new_value_error(format!(
+                        "topology 未识别：{other:?}（triangles/lines/default）"
+                    )))
+                }
+            };
+            match route(&f, vm)? {
+                Target::Surf(s) => s.surface.set_topology(topo.unwrap()),
+                Target::Active => bridge::with_session(vm, |t| t.set_topology(topo.unwrap()))?,
+                Target::Targets => {
+                    bridge::with_mrt_session(vm, |t| t.set_topology(topo.unwrap()))?
+                }
+            }
+            Ok(())
+        }
+
+        /// push 参数（data = VertexBuf | bytes | 扁平 list | [(x,y),...]；
+        /// indices 可选——覆盖 VertexBuf 自带索引）
+        #[derive(FromArgs)]
+        struct PushArgs {
+            f: PyObjectRef,
+            data: PyObjectRef,
+            #[pyarg(named, optional)]
+            indices: Option<Vec<u16>>,
+        }
+
+        /// push(f, data, indices=None)：顶点位置流入批——gfxdraw 的统一
+        /// 出口。拓扑/颜色/变换全部按当前状态烘焙（set_topology /
+        /// set_color / set_transform——**sticky**：跨 push 持续，与 draw
+        /// 函数族的 one-shot 不同）。
+        ///
+        /// data 三通道：
+        /// - VertexBuf（生成器产出或手动构造——含自带索引）
+        /// - bytes（f32 LE 内存块，长度 12 的倍数）
+        /// - list：扁平 [x,y,z,...] 数字流或 [(x,y),...] 点列表
+        ///
+        /// 索引语义：indices 参数 > VertexBuf 自带索引 > 按拓扑逐组解释
+        /// （triangles 3 个/组、lines 2 个/组）。
+        #[pyfunction]
+        fn push(args: PushArgs, vm: &VirtualMachine) -> PyResult<()> {
+            use rustpython_vm::convert::TryFromObject;
+            use starfish_pygame::render::batch::BatchTopology;
+
+            // 数据解析（buf → bytes → 扁平 list → 点列表）
+            let (points, mut indices): (Vec<f32>, Vec<u16>) =
+                if let Some(buf) = args.data.downcast_ref::<PyVertexBuf>() {
+                    (
+                        buf.points.borrow().clone(),
+                        buf.indices.borrow().clone(),
+                    )
+                } else if let Some(b) = args.data.downcast_ref::<rustpython_vm::builtins::PyBytes>()
+                {
+                    let bytes = b.as_bytes();
+                    if bytes.len() % 12 != 0 {
+                        return Err(vm.new_value_error(format!(
+                            "push bytes 长度须为 12 的倍数（每点 3×f32），实际 {}",
+                            bytes.len()
+                        )));
+                    }
+                    let pts: Vec<f32> = bytes
+                        .chunks_exact(4)
+                        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                        .collect();
+                    (pts, Vec::new())
+                } else if let Ok(flat) = vm.extract_elements_with(
+                    &args.data,
+                    |o| {
+                        rustpython_vm::function::ArgIntoFloat::try_from_object(vm, o.clone())
+                            .map(|f| f.into_float())
+                    },
+                ) {
+                    // 数字流（int/float 混合扁平 list）
+                    if flat.len() % 3 != 0 {
+                        return Err(vm.new_value_error(format!(
+                            "push 扁平 list 长度须为 3 的倍数（[x,y,z × N]），实际 {}",
+                            flat.len()
+                        )));
+                    }
+                    (
+                        flat.into_iter().map(|v| v as f32).collect(),
+                        Vec::new(),
+                    )
+                } else {
+                    let pts = SfPoints::try_from_object(vm, args.data.clone())?;
+                    let mut flat = Vec::with_capacity(pts.0.len() * 3);
+                    for (x, y) in pts.0 {
+                        flat.extend([x as f32, y as f32, 0.0f32]);
+                    }
+                    (flat, Vec::new())
+                };
+            if let Some(idx) = args.indices {
+                indices = idx; // 显式索引覆盖 VertexBuf 自带
+            }
+
+            // 会话状态读取（色/拓扑）+ 入批（sticky——不触发 one-shot 重置）
+            match route(&args.f, vm)? {
+                Target::Surf(s) => {
+                    let topo = s
+                        .surface
+                        .current_topology()
+                        .unwrap_or(BatchTopology::Triangles);
+                    let color = s.surface.current_draw_color();
+                    s.surface
+                        .push_stream(topo, &points, &indices, color);
+                }
+                Target::Active => bridge::with_session(vm, |t| {
+                    let topo = t
+                        .current_topology()
+                        .unwrap_or(BatchTopology::Triangles);
+                    let color = t.current_draw_color();
+                    t.push_stream(topo, &points, &indices, color);
+                })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
+                    let topo = t
+                        .current_topology()
+                        .unwrap_or(BatchTopology::Triangles);
+                    let color = t.current_draw_color();
+                    t.push_stream(topo, &points, &indices, color);
+                })?,
+            }
+            Ok(())
+        }
+
+        // ── gen_* 生成器族（Rust 内生成位置流——原点中心局部坐标；
+        // 位置由 set_transform 赋予，性能 = 语义函数族同级）────────────
+
+        /// gen_circle(radius, segments=48) -> VertexBuf：填充圆（扇形
+        /// 三角化，原点中心）。
+        #[pyfunction]
+        fn gen_circle(args: FuncArgs, vm: &VirtualMachine) -> PyResult<PyVertexBuf> {
+            use rustpython_vm::function::ArgIntoFloat;
+            let radius = args
+                .args
+                .first()
+                .and_then(|o| ArgIntoFloat::try_from_object(vm, o.clone()).ok())
+                .map(|f| f.into_float() as f32)
+                .ok_or_else(|| vm.new_type_error("gen_circle(radius, segments=48)"))?;
+            let seg = kw_arg_int(&args, vm, "segments", 48)?;
+            let g = starfish_gfx::geometry::shape2d::circle(
+                glam::Vec2::ZERO,
+                radius,
+                seg,
+                [1.0; 4],
+            );
+            Ok(geo_to_buf(g))
+        }
+
+        /// gen_circle_outline(radius, segments=64) -> VertexBuf：圆周线
+        ///（1px，lines 拓扑消费，原点中心）。
+        #[pyfunction]
+        fn gen_circle_outline(args: FuncArgs, vm: &VirtualMachine) -> PyResult<PyVertexBuf> {
+            use rustpython_vm::function::ArgIntoFloat;
+            let radius = args
+                .args
+                .first()
+                .and_then(|o| ArgIntoFloat::try_from_object(vm, o.clone()).ok())
+                .map(|f| f.into_float() as f32)
+                .ok_or_else(|| vm.new_type_error("gen_circle_outline(radius, segments=64)"))?;
+            let seg = kw_arg_int(&args, vm, "segments", 64)?;
+            let g = starfish_gfx::geometry::shape2d::circle_outline(
+                glam::Vec2::ZERO,
+                radius,
+                seg,
+                [1.0; 4],
+            );
+            Ok(geo_to_buf(g))
+        }
+
+        /// gen_rect(w, h) -> VertexBuf：填充矩形（中心原点局部坐标）。
+        #[pyfunction]
+        fn gen_rect(args: FuncArgs, vm: &VirtualMachine) -> PyResult<PyVertexBuf> {
+            use rustpython_vm::function::ArgIntoFloat;
+            let dims = args
+                .args
+                .iter()
+                .map(|o| ArgIntoFloat::try_from_object(vm, o.clone()).map(|f| f.into_float() as f32))
+                .collect::<Result<Vec<f32>, _>>()
+                .map_err(|_| vm.new_type_error("gen_rect(w, h)"))?;
+            if dims.len() < 2 {
+                return Err(vm.new_type_error("gen_rect(w, h)"));
+            }
+            let hw = dims[0] * 0.5;
+            let hh = dims[1] * 0.5;
+            let g = starfish_gfx::geometry::shape2d::rect(
+                glam::vec2(-hw, -hh),
+                glam::vec2(hw, hh),
+                [1.0; 4],
+            );
+            Ok(geo_to_buf(g))
+        }
+
+        /// gen_rect_outline(w, h) -> VertexBuf：矩形周界线（中心原点，
+        /// lines 拓扑消费）。
+        #[pyfunction]
+        fn gen_rect_outline(args: FuncArgs, vm: &VirtualMachine) -> PyResult<PyVertexBuf> {
+            use rustpython_vm::function::ArgIntoFloat;
+            let dims = args
+                .args
+                .iter()
+                .map(|o| ArgIntoFloat::try_from_object(vm, o.clone()).map(|f| f.into_float() as f32))
+                .collect::<Result<Vec<f32>, _>>()
+                .map_err(|_| vm.new_type_error("gen_rect_outline(w, h)"))?;
+            if dims.len() < 2 {
+                return Err(vm.new_type_error("gen_rect_outline(w, h)"));
+            }
+            let hw = dims[0] * 0.5;
+            let hh = dims[1] * 0.5;
+            let g = starfish_gfx::geometry::shape2d::rect_outline(
+                glam::vec2(-hw, -hh),
+                glam::vec2(hw, hh),
+                [1.0; 4],
+            );
+            Ok(geo_to_buf(g))
+        }
+
+        /// gen_polygon(points) -> VertexBuf：多边形（扇化三角化；输入
+        /// 点即局部坐标，按给定位置入流）。
+        #[pyfunction]
+        fn gen_polygon(points: SfPoints, vm: &VirtualMachine) -> PyResult<PyVertexBuf> {
+            if points.0.len() < 3 {
+                return Err(vm.new_value_error("gen_polygon 至少 3 个点"));
+            }
+            let pts: Vec<glam::Vec2> = points
+                .0
+                .iter()
+                .map(|(x, y)| glam::vec2(*x as f32, *y as f32))
+                .collect();
+            let g = starfish_gfx::geometry::shape2d::polygon(&pts, [1.0; 4]);
+            Ok(geo_to_buf(g))
+        }
+
+        /// gen_cube(size) -> VertexBuf：立方体（中心原点，6 面三角化；
+        /// 透视段相机消费，lines/triangles 拓扑均可用）。
+        #[pyfunction]
+        fn gen_cube(args: FuncArgs, vm: &VirtualMachine) -> PyResult<PyVertexBuf> {
+            use rustpython_vm::function::ArgIntoFloat;
+            let size = args
+                .args
+                .first()
+                .and_then(|o| ArgIntoFloat::try_from_object(vm, o.clone()).ok())
+                .map(|f| f.into_float() as f32)
+                .ok_or_else(|| vm.new_type_error("gen_cube(size)"))?;
+            let h = size * 0.5;
+            let g = starfish_gfx::geometry::shape3d::cube(
+                glam::vec3(-h, -h, -h),
+                glam::vec3(h, h, h),
+                [1.0; 4],
+            );
+            Ok(geo_to_buf(g))
         }
 
         /// draw_surface(f, src)：画离屏面（位置/变换由 set_transform 承载）
