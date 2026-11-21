@@ -344,6 +344,11 @@ pub(crate) mod render {
         /// sample_count 建）
         #[pyarg(named, optional)]
         sample_count: Option<u32>,
+        /// 清屏色（归一化 [r,g,b,a]——**内容层填充 quad 可删，pass 数
+        /// 2→1**；缺省 None = 引擎黑。案例：clear_color=[28/255, 34/255,
+        /// 46/255, 1.0]）
+        #[pyarg(named, optional)]
+        clear_color: Option<Vec<f32>>,
         /// 透明合成："pre_multiplied" / "post_multiplied" / "opaque" /
         /// "auto"（默认 None = 引擎定——透明窗口走 TRANSPARENT 旗标
         /// 自动 PreMultiplied，勿手动覆盖）
@@ -400,6 +405,9 @@ pub(crate) mod render {
                     )));
                 }
                 s.sample_count = n;
+            }
+            if let Some(cc) = &args.clear_color {
+                s.clear_color = Some([cc[0] as f32, cc[1] as f32, cc[2] as f32, cc[3] as f32]);
             }
             let parse_format = |name: &str| -> Option<wgpu::TextureFormat> {
                 match name {
