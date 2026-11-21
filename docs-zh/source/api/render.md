@@ -1,36 +1,45 @@
 # pygame.render
 
-底层渲染口——自建 WGSL 管线资源工厂、`raw_render()` / `raw_compute()`
-直绘与计算会话、相机构造与查询。**render 会话 = 纯通道**（不承载绘制
-词汇）——绘制走 `pygame.gfxdraw` / `pygame.font` 模块（renderpass 作
-首参）。
+底层渲染模块——用 WGSL 编写自定义渲染管线，配合 `raw_render()` 直绘
+会话与计算会话使用。
 
-```{note}
-[纯通道定约] render 会话对象（`with screen.render() as f:` 的 `f`）
-只做目标表达与打包——**不承载任何绘制方法**（旧 rect/circle/blit/
-set_camera 等全剔）。绘制接口按管线分域：图元/贴图/状态机 →
-[pygame.gfxdraw](gfxdraw.md)；文字 → [pygame.font](font.md)。
+渲染会话（`with screen.render() as f:` 的会话对象）是**纯通道**——
+本身不承载绘制方法。绘制接口按内容分模块：图形图元与贴图用
+[pygame.gfxdraw](gfxdraw.md)，文字用 [pygame.font](font.md)，自定义
+管线命令用本模块的直绘会话。
 
-[坐标系] **中心原点、y 向上**——`Camera::ortho` 视野 =
-`(-w/2, -h/2) .. (w/2, h/2)`，与 3D 透视相机（看向原点）、物理米制系
-**三方同构**；鼠标/触摸/事件坐标由泵层统一换算到中心系。
+## 坐标系与相机
 
-[域分层定约（v3.1 全显式收敛，2026-11-19）] **一个公式，无例外面**：
-一切图元 = `present_fit × Screen.camera.mvp()`（段 override 优先）；
-**未显式 set_camera = NDC 恒等直通**（裸管线原生域——错位显眼易诊
-断，杜绝隐式域）。像素域也是相机：`screen.set_camera(
-game_camera_ortho(W, H, W, H))` 显式声明（不写 = NDC，不落到像素）。
-世界域文字/UI：会话级 `gfxdraw.set_camera(f, cam)` 切世界域 +
-`clear_camera()` **显式回落像素基线段**（画布正交，clear 的落点语义）
-——同帧"世界名字牌 → 像素 HUD"分段共存。fill 盖满/离屏 Surface =
-结构性像素（恒像素单点，非隐式相机）。
+- **中心原点、y 轴向上**——正交相机的视野为
+  `(-w/2, -h/2) .. (w/2, h/2)`，与 3D 透视相机、物理米制系三方同构；
+  鼠标 / 触摸 / 事件坐标由引擎统一换算到中心系
+- 一切图元的位置 = `present_fit × 相机.mvp()`——相机构造用
+  [game_camera_ortho / game_camera_perspective](#gamcamera-正交与透视相机)
+- 未显式 `screen.set_camera()` 时走 NDC 恒等域——自定义管线顶点直接
+  按 NDC 坐标写（错位显眼，便于诊断）
+- pygame 图元 API（[pygame.gfxdraw](gfxdraw.md)）恒像素域，与相机
+  解耦——HUD / UI 不随游戏相机漂移
+- 自建管线（`raw_render`）**引擎不做相机兜底**——相机 buffer 由脚本
+  全权管理（同帧多个 raw 会话须各持独立 buffer）
 
-[严格精细控制] 自建管线（raw_render）**引擎不做相机兜底**——相机
-buffer 由用户全权管理（同帧多 raw 会话须各持独立 buffer）。
+## 示例
 
-[wgpu 红线] wgpu 裸对象（Device / Queue / Buffer / TextureView）**零出
-Python 界**——一切经本模块句柄类安全收参。
+```python
+import pygame
+
+ac = pygame.render.access()
+cam_buf = ac.buffer(64)
+vert_shader = ac.shader(WGSL_VERT)
+mesh = ac.mesh(["float32x3"], tri_verts)
+
+with screen.raw_render(depth=True) as p:
+    p.set_pipeline(tri_pipe)
+    p.set_bind_group(0, tri_bind)
+    p.draw_mesh(tri_mesh)
 ```
+
+wgpu 裸对象（Device / Queue / Buffer / TextureView）不出 Python 界——
+一切经本模块句柄类安全收参。
 
 ## <span class="c-func">函数</span>
 
@@ -54,15 +63,11 @@ Python 界**——一切经本模块句柄类安全收参。
 
 #### <span class="c-func">present_fit() -> Mat4</span>
 
-呈现拟合矩阵（NDC 域 clip 空间仿射，**画布 → 物理视口 letterbox**，
-两段式定约第二段——2026-11-18 统一）：**独立按（物理视口, 逻辑画布）
-现算，与屏上是否安装 GameCamera 解耦**。消费侧两段组合：
-`present_fit().mul_mat4(cam.mvp())`——cam.mvp() = world→画布（相机
-全权），本矩阵 = 画布→物理（引擎 letterbox）。桌面/全屏恒等，
-Android 窗口化把自绘内容收进居中画布。**显式 GameCamera（
-set_game_camera）安装后本矩阵 = 物理面与构造 pw/ph 的比值**（构造
-入参的 pw/ph = 画布语义，物理面对账由引擎承担——不再取自 installed
-相机的世界拟合，双拟合/拉伸修复）。
+返回**画布 → 物理视口**的 letterbox 拟合矩阵（NDC 域）。桌面与全屏
+下为恒等矩阵；Android 等窗口化平台上，会把自绘内容收进居中画布。
+
+与相机矩阵的组合公式：`present_fit().mul_mat4(cam.mvp())`——相机
+负责世界 → 画布，本矩阵负责画布 → 物理视口。
 
 - :rtype: Mat4
 
@@ -110,11 +115,14 @@ MSAA 样本数。
 
 #### <span class="c-func">write_camera_mvp(buf, cam_mvp=None)</span>
 
-矩阵（列主 16 float）写入 Buffer（`group0/b0 = 64B mat4` 定约）。**两
-段式组合定约（2026-11-18 统一）**：单参 = 全局相机 MVP（present_fit ×
-屏上相机——屏上相机恒 world→画布 基底）；双参 = 自管相机矩阵——引擎
-自动左乘呈现拟合（present_fit，画布→物理 letterbox）收进画布（脚本
-零矩阵知识）。单参/双参/段级 batch/debug/egui 全消费点同一两段组合。
+把相机矩阵（列主 16 float）写入 Buffer——自建管线的相机传递口
+（`group0/b0` 64B mat4 布局）。两种形态：
+
+- **双参** `write_camera_mvp(buf, cam.mvp())` —— 传入自管相机矩阵，
+  引擎自动左乘呈现拟合（letterbox）收进画布，脚本无需关心窗口缩放
+- **单参** `write_camera_mvp(buf)` —— 写入全局相机 MVP
+  （`present_fit × 屏上相机`），与段级绘制 / debug / egui 消费同一
+  组合
 
 #### <span class="c-func">screen_frame_state() -> str</span>
 
@@ -254,7 +262,7 @@ ValueError（index 建立须走 mesh() 的 indices/index_bytes 口）；超
 
 **`depth_mode` 须配 `raw_render(depth=True)`**（深度目标严格配对）。
 
-### 透明对象处理（四层透明面盘点，2026-11-16）
+### 透明对象处理（四个可控层级）
 
 | 层级 | 口 | 语义 |
 |---|---|---|
