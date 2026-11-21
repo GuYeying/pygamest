@@ -1,142 +1,114 @@
 # pygame.event
 
-事件队列与事件对象——主循环 **pull 模型** 的输入面：每帧
-`pygame.event.get()` 排空队列，逐条处理，无回调、无隐藏线程边界。
+事件模块——输入与系统事件的处理入口。游戏主循环每帧调用
+`pygame.event.get()` 排空事件队列，逐条处理。
 
-```{note}
-[差异] 事件类型 `type` 为**字符串标签**（如 `"keydown"`）；真 pygame
-为整数常量。键值常量 `K_*` 全表在 [pygame.key](key.md) ——
-`pygame.event.K_*` 不存在。
-```
-
-## <span class="c-const">常量</span>
-
-事件类型标签（字符串形态）—— `Event.type` 字段的比对值。
-
-| 常量 | 值 | 携带字段 |
-|---|---|---|
-| QUIT | "quit" | — |
-| KEYDOWN / KEYUP | "keydown" / "keyup" | key mod repeat |
-| MOUSEMOTION | "mousemotion" | x y |
-| MOUSEBUTTONDOWN / UP | "mousebuttondown" / "mousebuttonup" | button x y |
-| TEXTINPUT | "textinput" | text |
-| TRAYMENU | "traymenu" | id |
-
-```{note}
-TRAYMENU / TRAYCLICK / TRAYDOUBLECLICK 为**托盘事件词汇**（桌宠形态配套，
-feature `tray` 门控——未启用构建无这些常量与事件）：托盘菜单项点击 =
-`"traymenu"`（`e.id` = 菜单项 id）；托盘图标单击 =
-`"trayclick"`（`e.button` = 1/2/3，`e.x`/`e.y` = 屏幕物理坐标）；图标双击 =
-`"traydoubleclick"`（Windows 专属形态）。托盘见
-[pygame.display](display.md) 桌宠能力位。
-```
-
-| 常量 | 值 | 携带字段 |
-|---|---|---|
-| MOUSEWHEEL | "mousewheel" | x y |
-| RESIZED | "resized" | w h |
-| FOCUSGAINED / FOCUSLOST | "focusgained" / "focuslost" | — |
-| FULLSCREENENTERED / FULLSCREENEXITED | "fullscreenentered" / "fullscreenexited" | — |
-
-**[全屏事件]**（2026-11-12 web 全屏实装配套）——**Web 端**浏览器
-fullscreenchange：进入 / 退出全屏（含**用户 ESC 手动退出**——脚本据此
-同步自身状态）。桌面端 v1 不产生（引擎发起的转换脚本自知）。
+事件对象的 `type` 属性为**字符串标签**（如 `"keydown"`），各事件的
+携带字段见下方事件类型表。键值常量 `K_*` 全表在
+[pygame.key](key.md)。
 
 ```python
-if e.type == pygame.event.FULLSCREENEXITED:
-    ...  # 用户按 ESC 退出了浏览器全屏
+for event in pygame.event.get():
+    if event.type == pygame.event.QUIT:
+        quit_game()
+    elif event.type == pygame.event.KEYDOWN and event.key == pygame.key.K_SPACE:
+        jump()
 ```
 
-## <span class="c-func">函数</span>
+## 事件类型
 
-#### <span class="c-func">get() -> list[Event]</span>
+| 类型标签 | 触发时机 | 携带字段 |
+|---|---|---|
+| QUIT | 窗口被关闭 | — |
+| KEYDOWN / KEYUP | 键盘按下 / 抬起 | key mod repeat |
+| MOUSEMOTION | 鼠标移动 | x y |
+| MOUSEBUTTONDOWN / MOUSEBUTTONUP | 鼠标按下 / 抬起 | button x y |
+| TEXTINPUT | 文本输入 | text |
+| MOUSEWHEEL | 滚轮滚动 | x y |
+| RESIZED | 窗口尺寸变化 | w h |
+| FOCUSGAINED / FOCUSLOST | 窗口获得 / 失去焦点 | — |
+| FULLSCREENENTERED / FULLSCREENEXITED | 进入 / 退出全屏（Web 端含用户 ESC 退出） | — |
+| TRAYMENU / TRAYCLICK / TRAYDOUBLECLICK | 托盘菜单项 / 图标点击 / 图标双击 | id button x y |
 
-排空事件队列，返回**全部**待处理事件（非阻塞）。
+托盘系列事件需要构建时启用 `tray` feature（详见
+[pygame.display](display.md) 桌宠能力位）。
+
+## 函数
+
+### get() -> list[Event]
+
+取走队列中的**全部**待处理事件（非阻塞）。这是游戏主循环的标准
+用法——每帧调用一次：
 
 ```python
-for e in pygame.event.get():
-    if e.type == pygame.event.QUIT:
-        return
+for event in pygame.event.get():
+    if event.type == pygame.event.QUIT:
+        quit_game()
 ```
 
-- :returns: 本帧全部事件
-- :rtype: list[Event]
+### poll() -> Event | None
 
-#### <span class="c-func">poll() -> Event | None</span>
+从队列弹出一条事件（其余保留在队列中）。适合逐条处理：
 
-弹出队首事件（其余留在队列——与 `get()` 的全量排空互补）。
+```python
+event = pygame.event.poll()
+while event.type != pygame.event.QUIT:
+    process(event)
+    event = pygame.event.poll()
+```
 
-- :returns: 队首事件，队列空时 None
-- :rtype: Event | None
-
-#### <span class="c-func">clear()</span>
+### clear()
 
 清空事件队列。
 
-## <span class="c-class">类</span>
+## 自定义事件
 
-### <span class="c-class">Event —— 事件对象</span>
+### custom_code() -> int
 
-`get()` / `poll()` 产物。**[差异]** 由引擎创建，Python 侧无
-`__init__`（不可手工构造）；全保真载荷——`pygame_gui.event(e)`
-等逐条消费者可重建完整原始输入。
+分配一个自定义事件码（进程内唯一，原子递增）——与 `post_user()`
+配对使用。
 
-##### <span class="c-magic">\_\_repr\_\_() -> str</span>
+```python
+MY_EVENT = pygame.event.custom_code()
+```
 
-`<Event keydown key=K_ESCAPE pos=(0, 0) button=0>` 形态的可读字符串。
+### post_user(code)
 
-##### <span class="c-attr">type</span>
+向队列投递一个自定义事件。投递后**下一帧**即可从 `get()` /
+`poll()` 收到（`event.type == "user"` 且 `event.key == code`）；
+未被消费的事件随本帧事件泵结束丢弃。
 
-事件类型标签——字符串形态（`"keydown"` 等），比对上方常量表。
+```python
+code = pygame.event.custom_code()
+pygame.event.post_user(code)
 
-##### <span class="c-attr">key</span>
+# 下一次 get() 时收到：
+for e in pygame.event.get():
+    if e.type == "user" and e.key == code:
+        handle_message()
+```
 
-键盘事件 = `pygame.key.Key` 实例，值语义相等可比对
-（`e.key == pygame.key.K_x` ✓）；非键盘事件 = `int 0`。
+## Event 对象
 
-##### <span class="c-attr">x / y</span>
+`get()` / `poll()` 返回的事件对象。由引擎创建（脚本侧不可构造），
+携带完整原始输入载荷——`pygame_gui.event(e)` 等消费者可重建完整
+输入。
 
-鼠标/触摸坐标（**逻辑中心系**——原点屏幕中心、y 向上；物理点经
-泵层统一换算，HiDPI / letterbox 安全）；非指针事件 = 0。
+属性一览：
 
-##### <span class="c-attr">button</span>
+| 属性 | 语义 | 事件范围 |
+|---|---|---|
+| type | 事件类型标签（字符串） | 全部 |
+| key | 键值（`pygame.key.Key` 实例，值语义可比对） | keydown / keyup |
+| x, y | 鼠标/触摸坐标（逻辑中心系，HiDPI 与 letterbox 已映射） | 指针与触摸事件 |
+| button | 鼠标按键序号 / 托盘图标键 | 鼠标与托盘事件 |
+| mod | 修饰键位集（KMOD 位） | keydown / keyup |
+| repeat | 自动重复标记 | keydown |
+| text | 文本输入内容 | textinput |
+| w, h | 窗口新尺寸 | resized |
+| id | 托盘事件标识 | 托盘事件 |
 
-鼠标按键序号；非鼠标事件 = 0。
+非对应事件的属性取零值（数值 `0`、文本 `""`）。
 
-##### <span class="c-attr">mod</span>
-
-修饰键位集（KMOD 位；仅 keydown/keyup 携带，其余 0）。
-
-##### <span class="c-attr">repeat</span>
-
-自动重复标记（仅 keydown；其余 False）。
-
-##### <span class="c-attr">text</span>
-
-文本输入内容（仅 textinput；其余 `""`）。
-
-##### <span class="c-attr">w / h</span>
-
-窗口新尺寸（仅 resized；其余 0）。
-
-##### <span class="c-attr">id</span>
-
-托盘事件 id（traymenu = 菜单项 id；trayclick/traydoubleclick = 托盘
-图标 id；其余 `""`）。
-
-## <span class="c-func">自定义事件</span>
-
-#### <span class="c-func">custom_code() -> int</span>
-
-自定义事件码分配（原子递增，进程内唯一——`post_user` 的配对键）。
-
-- :rtype: int
-
-#### <span class="c-func">post_user(code)</span>
-
-用户事件入队——下次 `get()` / `poll()` 可收：`e.type == "user"` 且
-`e.key == code`。**保一帧定约**：post 后下一帧可见；再不消费随下帧
-pump 丢弃（与引擎事件同寿命）。
-
-- :param code: `custom_code()` 产物
-- :type code: int
+`repr()` 提供可读形态：
+`<Event keydown key=K_ESCAPE pos=(0, 0) button=0>`。

@@ -1,13 +1,21 @@
 # pygame.display
 
-窗口与显示面——`set_mode()` 开窗（返回 `Screen` 绘制目标）、`flip()`
-换帧收尾。窗口旗标创建期收下、运行时生效（`RESIZABLE` / `FULLSCREEN` /
-`NOFRAME` 即时可切换）。
+窗口与显示模块——创建游戏窗口、控制呈现、管理窗口属性。
 
-## <span class="c-const">常量</span>
+```python
+import pygame
 
-窗口旗标位（`set_mode` 的 `flags` 参数；收 int 位掩码或 `[位, ...]`
-序列两种形态）。
+screen = pygame.display.set_mode((800, 600))
+
+while True:
+    # ...绘制...
+    pygame.display.flip()
+```
+
+## 常量
+
+窗口旗标（`set_mode` 的 `flags` 参数——接受 int 位掩码或
+`[旗标, ...]` 列表两种形式）。
 
 | 旗标 | 语义 |
 |---|---|
@@ -16,23 +24,25 @@
 | NOFRAME | 无边框 |
 | HIDDEN | 创建期隐藏窗口 |
 | ALWAYS_ON_TOP | 置顶（桌宠形态）|
-| TRANSPARENT | 透明窗口（alpha 0 区域透出桌面——DX12 推导自动承载）|
+| TRANSPARENT | 透明窗口（alpha 0 区域透出桌面）|
 
-⚠️ **渲染后端位已剔除（2026-11-16 定约）**：VULKAN/DIRECTX/METAL/
-OPENGLES/OPENGL 常量已删——后端选择走
-[GpuSettings.backends](render.md#gpusettings-gpu-装配配置)。
+注意：渲染后端的选择不在窗口旗标里——通过
+[GpuSettings.backends](render.md) 配置。
 
-## <span class="c-func">函数</span>
+## 函数
 
-#### <span class="c-func">set_mode(size, flags=0, surface_settings=None, gpu_settings=None) -> Screen</span>
+### set_mode(size, flags=0, surface_settings=None, gpu_settings=None) -> Screen
 
-开窗并返回 Screen 绘制目标。
+创建游戏窗口，返回 `Screen` 绘制目标。
 
 ```python
 screen = pygame.display.set_mode((800, 600))
+
+# 全屏 + 可缩放
 screen = pygame.display.set_mode(
     (0, 0), [pygame.display.FULLSCREEN, pygame.display.RESIZABLE])
-# 省内存形态（运存优化——2026-11-16 批次）
+
+# 省内存形态（运存优化）
 gpu = pygame.render.GpuSettings(memory_hints="memory_usage",
                                 power_preference="low_power")
 surf = pygame.render.SurfaceSettings(desired_maximum_frame_latency=1)
@@ -40,206 +50,178 @@ screen = pygame.display.set_mode((800, 600), gpu_settings=gpu,
                                  surface_settings=surf)
 ```
 
-- :param size: 逻辑尺寸
-- :type size: tuple[int, int]
-- :param flags: 旗标位集（纯窗口语义位——渲染后端位已剔除，后端走
-  [GpuSettings.backends](render.md#gpusettings-gpu-装配配置)）
-- :type flags: int | list[int]
-- :param surface_settings: 表面/交换链配置（[pygame.render.SurfaceSettings](render.md#surfacesettings-表面交换链配置)——**仅首次 GPU 装配消费**）
-- :param gpu_settings: GPU 装配配置（[pygame.render.GpuSettings](render.md#gpusettings-gpu-装配配置)——同上）
-- :returns: Screen 绘制目标
-- :rtype: Screen
+- size —— 逻辑尺寸；`(0, 0)` 配 FULLSCREEN 表示使用显示器原始分辨率
+- flags —— 窗口旗标（见常量表）
+- surface_settings —— 表面/交换链配置
+  （[pygame.render.SurfaceSettings](render.md#surfacesettings-表面交换链配置)——
+  仅首次 GPU 装配时消费）
+- gpu_settings —— GPU 装配配置
+  （[pygame.render.GpuSettings](render.md#gpusettings-gpu-装配配置)）
+- 返回 `Screen` 对象
 
-```{note}
-**拆步装配定约（2026-11-16）**：桌面 = **脚本期装配**（本调用真装
-配 GPU——settings kwargs/env 双通道全生效）；**web = 宿主先行装配**
-（无阻塞模型——脚本调用为窗口请求，settings 走 env/pack 构建期面）；
-**android = 嵌入门面先行装配**（attach 后满屏表面 + 缩放铺满）。
-幂等语义：已装配后重复 `set_mode` = 窗口请求重开（不再重装配）。
+**平台装配差异**：桌面端在本调用内完成 GPU 装配；Web 端无阻塞模型，
+本调用只发起窗口请求（配置走构建期通道）；Android 在引擎门面先行
+装配。重复调用 `set_mode` 不会重新装配 GPU，仅按请求调整窗口。
 
-**API 顺序约束**：依赖 GPU 面的调用（`egui.init()` / `render()` /
-`render.access()` …）必须**在 set_mode 之后**——拆步后装配点由脚本
-控制，顺序错误即守卫报错（如 "egui.init() 须在 set_mode 之后调用"）。
+**调用顺序**：依赖 GPU 的调用（`egui.init()`、`render()`、
+`render.access()` 等）必须在 `set_mode` 之后——顺序错误会收到明确的
+运行时错误提示。
 
-**平台查询**：`pygame.get_platform()`（SDL 惯例**函数形态**——防开
-发者覆盖变量；值 = 编译期注入 `PYGST_PLATFORM` env 优先，缺省 cfg
-推导：windows/macos/linux/android/web/harmonyos/ios）。多窗口预判 =
-`pygame.get_platform() == "windows"`（不支持时 create_window 运行
-时抛 RuntimeError）。
-```
+### flip()
 
-## <span class="c-class">多窗口（windows-only，2026-11-16 第二批）</span>
-
-```{warning}
-⚠️ **能力白名单**：multi-window feature 链（we 层 compile_error 编译
-期把关）**仅 windows 目标构建可带**（`--features multi-window`——
-Linux/macOS/移动/Web 白名单外，构建直接失败）；**运行时再判**——
-`create_window` 在不支持构建/平台直接抛 RuntimeError（判定 =
-starfish-pygame 底层基于平台常量的运行时检测）。
-```
-
-#### <span class="c-func">create_window(size=(w,h), flags=0, id="win2") -> Screen</span>
-
-副窗建窗 + per-id GPU 装配（settings 走 env 通道；返回**新 Screen
-绘制终点**——`win.render()` / `win.flip()` 独立会话/present）。约束：
-`"main"` 为主窗保留 id；id 冲突 Err；**gfxdraw 绘制面多窗 v2**（纹理
-usage 冲突挂账——副窗 v1 支持 render/fill/flip/get_size）。
-
-**env 三口**（装配前可读，宿主/脚本两形态通用——与 kwargs 等效）：
-
-| 环境变量 | 取值 | 语义 |
-|---|---|---|
-| `PYGST_MEMORY_HINTS` | `performance`（默认）/ `memory_usage` | wgpu 分配器策略——`memory_usage` 实测空项目 WS **511→269MB（-47%）** |
-| `PYGST_POWER_PREF` | `high_performance`（默认）/ `low_power` / `none` | 适配器偏好 |
-| `PYGST_FRAME_LATENCY` | `1..=8`（默认 2） | 交换链帧数——`1` 更省内存 + 更高撕裂概率 |
-
-## <span class="c-class">Screen —— 绘制终点</span>
-
-`set_mode` 返回的 Screen 对象（真身 = Rust 全局 Screen——宿主壳装配）。
-
-#### <span class="c-func">screen.render()</span>
-
-with 会话入口：进入 = 开启 RenderPass，退出 = finish 打包
-（`with screen.render() as f:`——绘制走 [pygame.gfxdraw](gfxdraw.md) /
-[pygame.font](font.md)，会话对象只做目标表达）。
-
-#### <span class="c-func">screen.set_camera(cam)</span>
-
-**显式设置渲染相机**（域分层 v3.1 全显式——唯一域切换口）。
-`cam` = `pygame.render.game_camera_ortho(lw, lh, pw, ph)` /
-`game_camera_perspective(fov, lw, lh, pw, ph, near, far)` 构造的
-GameCamera（**world→画布 基底**——MVP / 坐标映射同一事实源，详见
-[pygame.render](render.md)）。
-
-**两段式渲染域（2026-11-18 统一；域分层 v3 升级）**：相机恒为
-world→画布（构造基底保持脚本意志，引擎不再 resize 改写）；画布→
-物理视口的 letterbox 由 `pygame.render.present_fit()` 独立现算。
-**一次设置跨会话/resize/换画布缓存**——未显式相机时呈现走 NDC 恒等
-默认域（raw 顶点直通）；pygame 图元 API 恒像素域（与相机解耦——
-HUD/UI 不随游戏相机漂移）。同尺寸事件守卫随显式缓存语义自然消亡。
+将本帧绘制结果呈现到屏幕。主循环每帧末尾调用一次：
 
 ```python
-cam = pygame.render.game_camera_perspective(58.0, 800, 600, 800, 600, 0.1, 300.0)
-screen.set_camera(cam)
+while True:
+    # ...绘制...
+    pygame.display.flip()
 ```
 
-#### <span class="c-func">screen.get_size() -> tuple[int, int]</span>
+### get_init() -> bool
 
-当前逻辑尺寸（Web 响应式 canvas 下跟随页面布局变化——脚本查询用）。
+返回 display 是否已初始化（`set_mode` 是否已调用）。
 
-- :rtype: tuple[int, int]
+### quit()
 
-#### <span class="c-func">screen.raw_render(depth=False) -> RawPass</span>
+关闭显示，回收窗口资源。之后可再次 `set_mode` 重开。
 
-底层直绘会话（**目标级扁平形态**，2026-11-12 从会话摘除；离屏
-Surface 版 = `surface.raw_render()`）——`with screen.raw_render() as
-p:` 记录自定义管线命令，present 收口回放（**恒在本帧 gfxdraw 内容
-之上**；交叉顺序定约见 [pygame.render](render.md)）。帧纪律 = flip
-前任意时点。
+### set_caption(title)
 
-#### <span class="c-func">screen.raw_compute() -> RawCompute</span>
+设置窗口标题文字。
 
-计算会话（compute pipeline 直绘；目标级同上）——present 收口回放，
-独立 compute pass。
+```python
+pygame.display.set_caption("我的游戏")
+```
 
-#### <span class="c-func">flip()</span>
+### set_opacity(opacity)
 
-帧收尾——把本帧绘制结果呈现到屏幕（主循环每帧末尾调用）。
+设置窗口整体不透明度，`0.0`（全透明）到 `1.0`（不透明）。
+与 `TRANSPARENT` 创建旗标正交：后者让 alpha 0 区域透出桌面，
+前者调整整个窗口的不透明度。
 
-#### <span class="c-func">set_opacity(v)</span>
+### set_orientation(orientation)
 
-窗口整体不透明度（`0.0` 透明 .. `1.0` 不透明）——桌宠/悬浮件形态。
-与 `TRANSPARENT` 创建旗标正交：后者让 alpha 0 区域透出桌面，前者调
-窗口整体 alpha。
-
-#### <span class="c-func">set_caption(title)</span>
-
-窗口标题。
-
-#### <span class="c-func">get_init() -> bool</span>
-
-display 初始化态（`set_mode` 是否已调用）。
-
-- :rtype: bool
-
-#### <span class="c-func">quit()</span>
-
-关闭显示（窗口/屏句柄回收——pygame 标准对；`get_init` 归 False，
-可再 `set_mode` 重开）。
-
-#### <span class="c-func">set_orientation(orientation)</span>
-
-请求屏幕方向（2026-11-12 竖屏应用支持）。`orientation` =
-`"portrait"` / `"landscape"` / `"sensor_portrait"` /
-`"sensor_landscape"` / `"sensor"` / `"full_sensor"` / `"unspecified"`
-（Android ActivityInfo 常量同语义）。
-
-- **Android 实装**：Activity 级 `setRequestedOrientation`——运行时
-  即时覆盖 manifest 的 screenOrientation 初始请求（宿主
-  configChanges 含 orientation 时只重表面、不重建 Activity，引擎
-  surfaceResized 自动跟随）
-- **桌面 / Web**：no-op 成功（方向是移动端概念——跨端脚本零分支）
-- **OHOS**：站桩 Err（XComponent 后端建成后接入）
+请求屏幕方向。取值：`"portrait"` / `"landscape"` /
+`"sensor_portrait"` / `"sensor_landscape"` / `"sensor"` /
+`"full_sensor"` / `"unspecified"`（语义同 Android ActivityInfo 常量）。
 
 ```python
 pygame.display.set_orientation("sensor_portrait")   # 竖屏应用
 ```
 
-#### <span class="c-func">map_point(x, y) -> (lx, ly)</span>
+Android 上即时生效（运行时覆盖清单文件的初始方向设置）；
+桌面与 Web 平台为空操作（跨平台脚本无需分支判断）。
 
-物理点 → **逻辑中心系**点（呈现映射逆变换——letterbox 等比缩放 +
-居中 + y 翻转 + 中心原点化）。脚本自处理原始触点/外部坐标时用；
-泵层事件坐标已自动映射（常规事件流无需此口）。display 未就绪 =
-原样透传。
+### map_point(x, y) -> (lx, ly)
 
-- :rtype: tuple[float, float]
+把物理像素坐标转换为逻辑中心系坐标（原点屏幕中心、y 向上）。
+处理原始触点或外部坐标输入时使用——常规事件流中的坐标已自动映射，
+无需调用。
 
-## <span class="c-func">桌宠能力位</span>
+## 多窗口（仅 Windows）
 
-三组窗口系统能力开关（桌宠/悬浮件形态配套）——全部
-**feature 门控**：未启用对应 feature 的构建无这些 API（AttributeError
-= 编译期即知不支持）；启用后不支持的平台运行时 Err（站桩原则）。
+在主窗口之外创建额外的渲染窗口。需要构建时启用 `multi-window`
+feature（Linux / macOS / 移动 / Web 构建不支持）；运行时同样校验，
+不支持时 `create_window` 抛 `RuntimeError`。
 
-| 能力 | feature | Windows | macOS | Linux | web/mobile |
+#### create_window(size, flags=0, id="win2") -> Screen
+
+创建副窗口并返回新的 `Screen` 绘制目标（独立的 `render()` 与
+`flip()` 会话）。
+
+- id —— 窗口标识；`"main"` 为主窗保留，id 冲突抛错
+- 副窗支持 render / fill / flip / get_size
+
+```python
+win2 = pygame.display.create_window((400, 300), id="win2")
+with win2.render() as r:
+    r.fill((30, 30, 40))
+win2.flip()
+```
+
+## Screen 对象
+
+`set_mode` 与 `create_window` 返回的绘制目标。
+
+#### render()
+
+with 会话入口——进入时开启渲染通道，退出时打包提交本帧绘制。
+绘制命令走 [pygame.gfxdraw](gfxdraw.md)、[pygame.font](font.md) 等
+模块：
+
+```python
+with screen.render() as r:
+    r.fill((28, 34, 46))
+    pygame.gfxdraw.box(r, (10, 10, 100, 50))
+```
+
+#### set_camera(cam)
+
+设置渲染相机（世界 → 画布）。相机由
+`pygame.render.game_camera_ortho()` / `game_camera_perspective()`
+构造。一次设置后跨会话与窗口缩放缓存，未显式设置时渲染走默认正交域。
+
+```python
+cam = pygame.render.game_camera_perspective(
+    58.0, 800, 600, 800, 600, 0.1, 300.0)
+screen.set_camera(cam)
+```
+
+#### get_size() -> (width, height)
+
+返回当前逻辑尺寸（Web 响应式画布下跟随页面布局变化）。
+
+#### raw_render(depth=False) -> RawPass
+
+底层直绘会话——`with screen.raw_render() as p:` 记录自定义管线命令
+（[pygame.render](render.md)），帧收尾时回放，绘制在常规内容之上。
+
+```python
+with screen.raw_render(depth=True) as p:
+    p.set_pipeline(voxel_pipe)
+    p.set_bind_group(0, voxel_bind)
+    p.draw_mesh(voxel_mesh)
+```
+
+#### raw_compute() -> RawCompute
+
+计算管线会话（独立 compute pass，帧收尾回放）。
+
+## 桌宠能力位
+
+三组窗口系统能力开关（桌宠 / 悬浮件形态配套）。全部为构建期 feature
+门控：未启用对应 feature 的构建没有这些 API；启用后不支持的平台
+运行时抛错。
+
+| 能力 | feature | Windows | macOS | Linux | web / 移动 |
 |---|---|---|---|---|---|
-| 鼠标穿透 | click-through | ✅ | 站桩 | 站桩 | Err |
-| 任务栏隐藏 | skip-taskbar | ✅ | ✅ Dock 级 | 站桩 | Err |
-| 系统托盘 | tray | ✅ | ✅ | ✅ ksni | Err |
+| 鼠标穿透 | click-through | ✅ | 空操作 | 空操作 | 抛错 |
+| 任务栏隐藏 | skip-taskbar | ✅ | ✅ Dock 级 | 空操作 | 抛错 |
+| 系统托盘 | tray | ✅ | ✅ | ✅ ksni | 抛错 |
 
-#### <span class="c-func">set_click_through(enable)</span>
+#### set_click_through(enable)
 
-鼠标事件穿透开关（点击落到下层窗口）。⚠️ 穿透后窗口收不到任何
-鼠标事件——恢复须脚本逻辑/外部通道，防自锁。
+鼠标事件穿透开关——开启后点击落到下层窗口。注意：穿透后本窗口收
+不到任何鼠标事件，恢复需要脚本逻辑或外部通道。
 
-- :param enable: True = 穿透开
-- :type enable: bool
+#### get_click_through() -> bool
 
-#### <span class="c-func">get_click_through() -> bool</span>
+返回当前是否处于鼠标穿透状态。
 
-窗口当前是否鼠标穿透（OS 位读回）。
+#### set_skip_taskbar(enable)
 
-#### <span class="c-func">set_skip_taskbar(enable)</span>
+任务栏 / Dock 隐藏开关。Windows 切换工具窗位（Alt+Tab 一并隐藏）；
+macOS 使用 Dock 级策略切换。
 
-任务栏（Dock）隐藏开关。Windows = `WS_EX_TOOLWINDOW` 位切换
-（⚠️ Alt+Tab 一并隐藏——工具窗语义，桌宠通常正合预期）；macOS =
-Dock 级 `setActivationPolicy(.accessory/.regular)`（app 整体隐藏/
-恢复 Dock 图标——macOS 无 per-window 任务栏概念）；Linux =
-Wayland 标准协议不控制任务栏（站桩 Err）。
+#### get_skip_taskbar() -> bool
 
-- :param enable: True = 任务栏隐藏
-- :type enable: bool
+返回当前是否任务栏隐藏。
 
-#### <span class="c-func">get_skip_taskbar() -> bool</span>
+#### set_tray(icon, tooltip="", menu=None)
 
-窗口当前是否任务栏隐藏（OS 状态读回）。
-
-#### <span class="c-func">set_tray(icon, tooltip="", menu=None)</span>
-
-安装（或替换）系统托盘图标：RGBA 图标 + 悬停提示 + 平铺菜单。
-交互经事件上浮：左键点图标 = `trayclick`、右键 = 弹菜单、菜单项
-点击 = `traymenu`（见 [pygame.event](event.md)）；托盘图标双击 =
-`traydoubleclick`（Windows）。Linux 后端 = ksni 纯 D-Bus（Ubuntu
-自带 AppIndicator 扩展可显示；其他 GNOME 需装扩展）。
+安装（或替换）系统托盘图标。交互事件经事件系统上浮：左键点击图标 =
+`trayclick`、右键 = 弹出菜单、菜单项点击 = `traymenu`、双击 =
+`traydoubleclick`（Windows）。
 
 ```python
 icon = pygame.Surface((64, 64))
@@ -249,10 +231,10 @@ pygame.display.set_tray(icon, "我的桌宠",
                         [("show", "显示"), ("quit", "退出")])
 ```
 
-- :param icon: 离屏 Surface（**Screen 背板不可作图标**——不回读）
-- :param tooltip: 悬停提示（缺省无）
-- :param menu: `[(id, label), ...]` 平铺菜单（缺省/空表 = 纯图标）
+- icon —— 离屏 Surface 图标
+- tooltip —— 悬停提示文字（缺省无）
+- menu —— `[(id, label), ...]` 平铺菜单（缺省或空表 = 纯图标）
 
-#### <span class="c-func">remove_tray()</span>
+#### remove_tray()
 
-移除托盘图标（未安装时空操作）。
+移除托盘图标。未安装时为空操作。
