@@ -1146,6 +1146,148 @@ use std::cell::Cell;
             Ok(())
         }
 
+        // ── 3D 形状（starfish-gfx shape3d 对接——2026-11-12；透视相机
+        // 走 gfxdraw.set_camera + render_depth 深度会话配套）────────────
+
+        /// cube(f, min, max)：立方体（填充）——min/max = [x, y, z] 对角。
+        #[pyfunction]
+        fn cube(
+            f: PyObjectRef,
+            min: Vec<f32>,
+            max: Vec<f32>,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            let mn = [min[0], min[1], min[2]];
+            let mx = [max[0], max[1], max[2]];
+            match route(&f, vm)? {
+                Target::Surf(s) => starfish_pygame::draw::cube(&*s.surface, mn, mx),
+                Target::Active => bridge::with_session(vm, |t| starfish_pygame::draw::cube(t, mn, mx))?,
+                Target::Targets => {
+                    bridge::with_mrt_session(vm, |t| starfish_pygame::draw::cube(t, mn, mx))?
+                }
+            };
+            Ok(())
+        }
+
+        /// sphere(f, center, radius, segments_u=16, segments_v=12)：球（填充）。
+        #[pyfunction]
+        fn sphere(
+            f: PyObjectRef,
+            center: Vec<f32>,
+            radius: f32,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            let c = [center[0], center[1], center[2]];
+            match route(&f, vm)? {
+                Target::Surf(s) => {
+                    starfish_pygame::draw::sphere(&*s.surface, c, radius, 16, 12)
+                }
+                Target::Active => bridge::with_session(vm, |t| {
+                    starfish_pygame::draw::sphere(t, c, radius, 16, 12)
+                })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
+                    starfish_pygame::draw::sphere(t, c, radius, 16, 12)
+                })?,
+            };
+            Ok(())
+        }
+
+        /// plane(f, center, right, up, size)：平面（填充）——center +
+        /// right/up 基（size = [宽, 高] 沿基向量）。
+        #[pyfunction]
+        fn plane(
+            f: PyObjectRef,
+            center: Vec<f32>,
+            right: Vec<f32>,
+            up: Vec<f32>,
+            size: Vec<f32>,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            let (c, r, u, sz) = (
+                [center[0], center[1], center[2]],
+                [right[0], right[1], right[2]],
+                [up[0], up[1], up[2]],
+                [size[0], size[1]],
+            );
+            match route(&f, vm)? {
+                Target::Surf(s) => {
+                    starfish_pygame::draw::plane(&*s.surface, c, r, u, sz)
+                }
+                Target::Active => {
+                    bridge::with_session(vm, |t| starfish_pygame::draw::plane(t, c, r, u, sz))?
+                }
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
+                    starfish_pygame::draw::plane(t, c, r, u, sz)
+                })?,
+            };
+            Ok(())
+        }
+
+        /// cylinder(f, base_center, radius, height, segments=24)：圆柱（填充）
+        /// ——base_center 起沿 +y 挤出 height。
+        #[pyfunction]
+        fn cylinder(
+            f: PyObjectRef,
+            base_center: Vec<f32>,
+            radius: f32,
+            height: f32,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            let c = [base_center[0], base_center[1], base_center[2]];
+            match route(&f, vm)? {
+                Target::Surf(s) => {
+                    starfish_pygame::draw::cylinder(&*s.surface, c, radius, height, 24)
+                }
+                Target::Active => bridge::with_session(vm, |t| {
+                    starfish_pygame::draw::cylinder(t, c, radius, height, 24)
+                })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
+                    starfish_pygame::draw::cylinder(t, c, radius, height, 24)
+                })?,
+            };
+            Ok(())
+        }
+
+        /// cone(f, base_center, radius, height, segments=24)：圆锥（填充）
+        /// ——base_center 起沿 +y 顶点高 height。
+        #[pyfunction]
+        fn cone(
+            f: PyObjectRef,
+            base_center: Vec<f32>,
+            radius: f32,
+            height: f32,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            let c = [base_center[0], base_center[1], base_center[2]];
+            match route(&f, vm)? {
+                Target::Surf(s) => starfish_pygame::draw::cone(&*s.surface, c, radius, height, 24),
+                Target::Active => bridge::with_session(vm, |t| {
+                    starfish_pygame::draw::cone(t, c, radius, height, 24)
+                })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
+                    starfish_pygame::draw::cone(t, c, radius, height, 24)
+                })?,
+            };
+            Ok(())
+        }
+
+        /// polygon3d(f, points)：平面多边形 3D（填充）——共面点列
+        /// flat [x, y, z, ...]（len % 3 == 0；Newell 法平面基三角化）。
+        /// 透视相机 + 深度会话配套。
+        #[pyfunction]
+        fn polygon3d(f: PyObjectRef, points: Vec<f32>, vm: &VirtualMachine) -> PyResult<()> {
+            match route(&f, vm)? {
+                Target::Surf(s) => starfish_pygame::draw::polygon_3d(&*s.surface, &points),
+                Target::Active => bridge::with_session(vm, |t| {
+                    starfish_pygame::draw::polygon_3d(t, &points)
+                })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
+                    starfish_pygame::draw::polygon_3d(t, &points)
+                })?,
+            };
+            Ok(())
+        }
+
     }
     // ── mask：位面（碰撞检测/像素级遮挡；pygame.mask 语义）────────
     // 构建 = from_surface（影子快路径三端同步零回读；GPU 出生面原生
