@@ -414,6 +414,31 @@ Python 触达 Rust 的分层链（自上而下，单向）：
 - 卓易通日志通道不可靠，可信序：hilog `ANCO CREATE/DIED` 进程寿命 → 模拟器
   logcat（逻辑层）→ 屏幕阶段色 → TCP（需同网段）→ 文件。
 
+### 渲染域关键坑（v3.1 全显式收敛后）
+
+- **全屏 logical 回填物理分辨率**：`set_mode((800,600), FULLSCREEN)` 是
+  "请求"语义——引擎 `handle_resized` 会把 logical **回填为显示器物理
+  分辨率**（桌面 2560×1600 实测）。`screen.get_size()` 返回 logical，
+  全屏下 ≠ 请求尺寸；窗口化下两者一致（请求即实际）。
+- **三域同源但各走各口，相机声明是唯一枢纽**（v3.1 定约）：
+  - 输入域：`mouse.get_pos()` / MOUSEMOTION 坐标 = `map_point` 映射后
+    的 **logical 域**（中心原点、y 向上）；
+  - 图元域：gfxdraw/draw/blit 顶点 = `present_fit × Screen.camera.mvp()`
+    ——**像素域由显式像素正交相机声明**（`set_camera(game_camera_ortho(
+    lw, lh, lw, lh))`），不再有内置像素隐式默认；
+  - 呈现域：`present_fit` 按 logical×physical 现算 letterbox，全屏
+    （logical==physical）恒等。
+- **典型坑 = "中心对、离中心越远偏移越大"**（egui_test 红球实案
+  2026-11-21）：案例用 **set_mode 请求尺寸**声明相机（800×600），而
+  logical 实为 2560×1600 → 输入域与图元域**同中心、尺度差 3.2×**
+  （线性放大偏移，中心恰好重合所以原点看着是对的）。不是 fit 没乘
+  ——全屏下 fit 恒等，错在相机参数来源。
+- **规则：像素正交相机的参数一律 `lw, lh = screen.get_size()`**
+  （set_mode **之后**取实测值），不沿用请求值；同族同步点 = HUD 布局
+  尺寸/game_state（egui 例外——State logical 每帧自动跟
+  screen.logical_size，无需手跟）。诊断口：全屏跑打印 `get_size()`
+  即可秒判（域冲突必现 请求值 ≠ 实测值）。
+
 ## 文档指引
 
 - 本仓库 `reference/`：`三端构建与运行指南.md`（**pygamest 一站式构建入口**）、

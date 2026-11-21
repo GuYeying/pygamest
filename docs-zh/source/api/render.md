@@ -48,11 +48,23 @@ wgpu 裸对象（Device / Queue / Buffer / TextureView）不出 Python 界——
 2D 正交 GameCamera（**letterbox 内聚**——逻辑画布 → 物理视口的等比
 适配在相机内部结算，MVP/坐标映射/裁剪同一事实源）。
 
-- :param lw: 逻辑画布宽（set_mode 语义尺寸）
+- :param lw: 逻辑画布宽
 - :param lh: 逻辑画布高
 - :param pw: 物理视口宽（窗口实际像素）
 - :param ph: 物理视口高
 - :rtype: GameCamera
+
+⚠️ **全屏案例须用实测值声明**：`set_mode((800,600), FULLSCREEN)` 的
+800×600 是请求语义——全屏下引擎把逻辑画布回填为显示器物理分辨率，
+`screen.get_size()` 返回的才是实际值。相机参数沿用请求值会和鼠标
+坐标域脱钩（症状：指针标记在屏幕中心准确、离中心越远偏移越大）。
+正确写法：
+
+```python
+screen = pygame.display.set_mode((800, 600), pygame.display.FULLSCREEN)
+lw, lh = screen.get_size()
+screen.set_camera(pygame.render.game_camera_ortho(lw, lh, lw, lh))
+```
 
 #### <span class="c-func">game_camera_perspective(fov_deg, lw, lh, pw, ph, near, far) -> GameCamera</span>
 
