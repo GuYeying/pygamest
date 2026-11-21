@@ -37,8 +37,8 @@ drawable 完整支持）→ 产物 = 全透明底人物图 →
 
 #### <span class="c-func">load_model(path) -> Live2DModel</span>
 
-`.model3.json` 入口（moc3/纹理相对路径按其目录解析）。缺文件/坏内容
-= ValueError（不崩溃——严格模式同理，Live2D 面无静默兜底定约）。
+`.model3.json` 入口（moc3 / 纹理按其所在目录解析相对路径）。文件缺失
+或内容损坏时抛 `ValueError`——Live2D 面无静默兜底。
 
 #### <span class="c-func">load_runtime(path) -> Live2DRuntime</span>
 
@@ -98,10 +98,10 @@ drawable 网格数。
 
 ##### <span class="c-func">draw(surface, x=0.0, y=0.0, scale=0.9)</span>
 
-**全管线自理渲染**——蒙版/masked/整模型三段落 `surface`（产物=全透明
-底人物图）。坐标定约（与 pygamest 中心系同构，全 0-1 相对产物面）：
-`x`/`y` = 人物内容中心位置（0=面中心，±1=±半幅，y 向上）；
-`scale` = 人物内容高/面高（>1 溢出裁边=特写）。
+**全管线自理渲染**——蒙版 / masked / 整模型三段绘制到 `surface`
+（产物为全透明底人物图）。坐标系与 pygamest 中心系同构，全部为
+0-1 相对值：`x` / `y` = 人物内容中心位置（0 = 面中心，±1 = ±半幅，
+y 向上）；`scale` = 人物内容高度 / 面高（大于 1 时溢出裁边 = 特写）。
 
 - :param surface: 用户创建的产物面（每次 draw 传入——同一 runtime
   可画任意尺寸/多个面）

@@ -31,6 +31,42 @@ v1 为数据出口（脚本可经 raw_render 自绘或先行消费数据）。
 即可跑通绑定全链。
 ```
 
+## 典型使用流程
+
+```python
+import pygame_spine
+import pygame
+
+# 加载（文件读取由 pygame.io 供数——spine 不自行导入依赖文件）
+data = pygame_spine.load_json(
+    pygame.io.read_text("assets/spine/hero.json"))
+
+# 实例化 + 皮肤
+skeleton = pygame_spine.Skeleton(data)
+skeleton.set_skin("default")
+
+# 动画状态机
+state = pygame_spine.AnimationState()
+anim = data.find_animation("walk")
+state.set_animation(anim, looping=True)
+
+while True:
+    dt = clock.tick(60) / 1000.0
+    state.update(dt)
+    state.apply(skeleton)
+    skeleton.update_world_transform()
+
+    for name, time, iv, fv, sv in skeleton.drain_animation_events():
+        if name == "footstep":
+            play_footstep_sound()
+
+    with screen.render() as f:
+        pages = load_atlas_pages()
+        pygame.gfxdraw.draw_spine(f, skeleton, pages)
+    await pygame.next_frame()
+```
+
+
 ## <span class="c-func">函数</span>
 
 ```{note}

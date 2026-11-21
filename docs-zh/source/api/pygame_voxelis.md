@@ -13,22 +13,20 @@
 Python 模块**（`import pygame_voxelis` 直达）。
 
 ```{note}
-[分工定约] 本模块只供数不包渲染/物理——渲染走 `pygame.render` 的
-mesh/pipeline 面（generate_mesh() 出口直接喂 mesh_builder），物理/
-射线走 `pygame_physics` 的 physics3d 面（cuboid per 体素 + cast_ray）。
+**模块分工**：本模块只提供数据，不包含渲染与物理——渲染走
+`pygame.render` 的 mesh / pipeline（`generate_mesh()` 出口直接喂
+mesh_builder），物理与射线走 `pygame_physics` 的 physics3d 面
+（每体素 cuboid + cast_ray）。
 
-[坐标定约] 全局体素坐标（整数格）直接编辑——chunk 定位
-（div_euclid）+ chunk 内局部坐标（rem_euclid）绑定层封装，Python 零
-octree 概念；负坐标支持（MC 无限平面语义）。体素世界尺寸 =
-chunk_world_size / 2^max_depth。
+**坐标系**：全局体素坐标（整数格）直接编辑——chunk 定位与 chunk 内
+局部坐标在绑定层封装，Python 侧无八叉树概念；支持负坐标（MC 无限
+平面语义）。体素世界尺寸 = chunk_world_size / 2^max_depth。
 
-[air 语义] 体素值 0 = 空（上游 `voxel != T::default()` 分支证明
-set(pos, 0) 即删除并 prune 空节点）；非 0 值 = 放置/改色（interner
-去重存储）。get_voxel 对空格返回 None。
+**空格语义**：体素值 0 = 空（`set(pos, 0)` 即删除并清理空节点）；
+非 0 值 = 放置或改色。`get_voxel()` 对空格返回 None。
 
-[渲染出口] generate_mesh() 面剔除不在上游能力内（tree 遍历跳空块，
-被遮挡内面照画）——案例级规模直接可用；大规模玩法建议 v2 增量
-remesh/面剔除。
+**网格出口**：`generate_mesh()` 不做面剔除（被遮挡的内面照画）——
+案例级规模直接可用；大规模玩法建议后续版本做增量 remesh 与面剔除。
 ```
 
 ## <span class="c-class">类</span>

@@ -14,18 +14,19 @@ blanket impl 接 `starfish_pygame::sfx::read_block`——TMX/外部 TSX/
 定零 fs 直访。**独立顶层 Python 模块**（`import pygame_tilemap` 直达）。
 
 ```{note}
-[分工定约] 本模块只供数不包渲染——per-layer 渲染数组出口接
-`pygame.render` mesh/pipeline；**着色器渲染层次拓展 = 每层一 mesh
-一 pipeline 按层序 draw**（视差/光照/水波等层专属 shader 分层叠加，
-case：`tilemap_layers_test.py` 三层三 shader 样张）。
+**模块分工**：本模块只负责数据解析，不包含渲染——每层的渲染数组出口
+对接 `pygame.render` 的 mesh / pipeline。着色器渲染分层扩展：每层
+一个 mesh 一个 pipeline，按层序绘制（视差 / 光照 / 水波等层专属
+shader 分层叠加）——样张见 `tilemap_layers_test.py`（三层三 shader）。
 
-[坐标定约] 层格 (x, y) → 像素 (x*tile_width, y*tile_height)（Tiled
-y-down 顶格对齐，世界原点 = 层左上）；UV = 图集归一域（flip 三向的
-UV 序列变换绑定层处理——py 零感知）。
+**坐标系**：层格 (x, y) 对应像素 `(x * tile_width, y * tile_height)`
+（Tiled y 向下、顶格对齐，世界原点为层左上）；UV 为图集归一化域
+（翻转的 UV 序列变换在绑定层处理，Python 侧零感知）。
 
-[v1 限制] 有限 tile 层专属（无限层/对象层/图片层只回 layer_info 类
-别）；图集 tileset 专属（image-collection tileset 跳过）；对象层
-绑定面 v2。
+**当前限制**：仅支持有限 tile 层（无限层 / 对象层 / 图片层只返回
+layer_info 类别）；图集 tileset 支持（image-collection tileset 跳过）；
+对象层绑定面待 v2。
+```
 ```
 
 ## <span class="c-class">类</span>

@@ -2,9 +2,10 @@
 
 rapier 米制物理——刚体 / 碰撞体 / 固定步长积分 / 射线查询 / 碰撞事件，
 附 GPU 调试线渲染套件。**独立顶层模块**（`import pygame_physics`）。
-接口定约"第三方库等价物，不 pygame 化"——rapier 0.36 词汇，builder
-配置全走**构造 kwargs**（原生链式 builder 在这里是
-`RigidBodyBuilder("dynamic", translation=...)`）。
+
+接口保持 rapier 0.36 原生词汇（第三方库等价物，不做 pygame 化）——
+配置全部走构造 kwargs（如 `RigidBodyBuilder("dynamic",
+translation=...)`）。
 
 ```{note}
 [双维度] 单模块双维度：2D 类**无后缀**（`PhysicsWorld` 等，随
@@ -398,7 +399,7 @@ DFSPH 步进（调度器 fluid 关闭 = 直返）。**solid 给定 = rapier 耦�
 ::DynamicContactSampling 硬投影——侵入粒子每步推出表面 + 法向速度
 消除；旋转 collider 每步按位姿重采样，斜面等旋转静态刚体开箱即用；
 非动态刚体力回传由 salva 自动关闭；任意 collider 形状支持）。
-**这是冲击场景的唯一稳定边界**（见 add_boundary_cuboid 定约）。
+**这是冲击场景的唯一稳定边界**（见 `add_boundary_cuboid`）。
 
 #### <span class="c-func">fluid_particles(handle) -> (positions, velocities)</span>
 
@@ -434,7 +435,7 @@ salva3d 0.11 为 crates.io 两个独立 crate，同一 src 的 dim2/dim3 编
 2D 粒子流体世界——与 FluidWorld（3D）**API 全同型**，仅维度差异
 （gravity 二元 / corner+dims 二元 / 粒子出口 [x,y,...]）。耦合走
 `physics2d` 刚体轴（`step(dt, solid)` 的 solid 收 `PhysicsWorld`）。
-XSPH 粘性默认挂载（fluid 2.0 / boundary 1.0）、DC 投影耦合边界定约
+XSPH 粘性默认挂载（fluid 2.0 / boundary 1.0）、DC 投影耦合边界（同下）
 同 3D（冲击场景一律走耦合）。
 
 #### <span class="c-func">FluidWorld2D(particle_radius=0.2, smoothing_factor=2.0)</span>
@@ -448,7 +449,7 @@ XSPH 粘性默认挂载（fluid 2.0 / boundary 1.0）、DC 投影耦合边界定
 
 #### <span class="c-func">add_boundary_cuboid(corner, dims, spacing=None) -> int</span>
 
-容器边界粒子（体填充）。⚠️ 同 3D 边界定约：冲击场景一律走
+容器边界粒子（体填充）。⚠️ 同 3D 边界行为：冲击场景一律走
 `step(dt, solid)` 耦合。
 
 #### <span class="c-func">step(dt, solid=None)</span>
