@@ -84,6 +84,23 @@ RustPython 解释器 + pygame 绑定面。引擎本体在**同级目录** `../st
   - **instance 移除定约**：CPU 烘焙模型下 GPU 实例化（vertex-step
     需管线变体扩散 / SSBO WebGL2 不支持）风险配不上收益——v1 不做；
     VertexBuf 局部坐标数据模型已为未来留位，等真实批量热点再议；
+  - **图元函数族剔除（2026-11-21 P2/P3，用户定夺）**：SDL_gfx 风格
+    直接绘制口 32 个（pixel/hline/vline/line/aaline/circle/aacircle/
+    filled_circle/ellipse/aaellipse/filled_ellipse/arc/trigon 三件/
+    polygon 三件/capsule 两件/polyline/regular_polygon/cube/sphere/
+    plane/cylinder/cone/polygon3d/rectangle/box/rounded 两件）**py 口
+    全删**——形状统一 `gen_*`（15 件生成器：补 line/arc/ellipse/
+    polygon_outline/sphere/plane 全参/cylinder/cone/polygon3d/
+    gen_box）+ `push`。**color 选型 = 等价 draw 逻辑（set_color 状态
+    烘焙）**——VertexBuf 不带色（双色源冲突 + 数据面 ×3 破坏位置流
+    最小模型）。**迁移要点实证**：box(x,y,w,h) ≡ transform 中心
+    (x+w/2, y+h/2) + push(gen_rect(w,h))——draw 族 one-shot 重置会吃
+    掉为 push 准备的色（迁移时 set_color 须紧邻 push）；保留口 =
+    状态机 + push 体系 + draw_surface 系 + mesh + 动画插座三件 +
+    gen_*（~30 口）。案例迁移 ~80 处 / 20+ 文件；顺手修三处既有
+    欠账（center_origin `*` 矩阵乘 → mul_mat4 / blit_transform 与
+    camera_kit 的 camera_mvp 退役残留 / rsdev_kit 旧相机构造 →
+    game_camera_* + leak_i 字符串字面量伪相机恢复真构造）；
   - **sprite pyclass 桥**：Sprite = 配置对象（at/tag/z/rotation/scale/
     alpha/visible 链式 + 多帧动画 set_fps），Group.add 物化配置并
     **回写世代 id 进 Python 对象**（Copy 纯值跨 GC 零负担）/remove/

@@ -843,6 +843,227 @@ use std::cell::Cell;
             Ok(geo_to_buf(g))
         }
 
+        /// gen_line(x1, y1, x2, y2) -> VertexBuf：线段（lines 拓扑消费；
+        /// 输入点即局部坐标）。
+        #[pyfunction]
+        fn gen_line(args: FuncArgs, vm: &VirtualMachine) -> PyResult<PyVertexBuf> {
+            use rustpython_vm::function::ArgIntoFloat;
+            let p: Vec<f32> = args
+                .args
+                .iter()
+                .map(|o| {
+                    ArgIntoFloat::try_from_object(vm, o.clone()).map(|f| f.into_float() as f32)
+                })
+                .collect::<Result<Vec<f32>, _>>()
+                .map_err(|_| vm.new_type_error("gen_line(x1, y1, x2, y2)"))?;
+            if p.len() < 4 {
+                return Err(vm.new_type_error("gen_line(x1, y1, x2, y2)"));
+            }
+            let g = starfish_gfx::geometry::shape2d::line(
+                glam::vec2(p[0], p[1]),
+                glam::vec2(p[2], p[3]),
+                [1.0; 4],
+            );
+            Ok(geo_to_buf(g))
+        }
+
+        /// gen_arc(radius, start_deg, stop_deg, segments=48) -> VertexBuf：
+        /// 圆弧线（中心原点，度数制起止角，0° = +x 方向逆时针；lines
+        /// 拓扑消费）。
+        #[pyfunction]
+        fn gen_arc(args: FuncArgs, vm: &VirtualMachine) -> PyResult<PyVertexBuf> {
+            use rustpython_vm::function::ArgIntoFloat;
+            let p: Vec<f32> = args
+                .args
+                .iter()
+                .map(|o| {
+                    ArgIntoFloat::try_from_object(vm, o.clone()).map(|f| f.into_float() as f32)
+                })
+                .collect::<Result<Vec<f32>, _>>()
+                .map_err(|_| vm.new_type_error("gen_arc(radius, start_deg, stop_deg, segments=48)"))?;
+            if p.len() < 3 {
+                return Err(vm.new_type_error("gen_arc(radius, start_deg, stop_deg, segments=48)"));
+            }
+            let seg = kw_arg_int(&args, vm, "segments", 48)?.max(2);
+            let (r, a0, a1) = (p[0], p[1].to_radians(), p[2].to_radians());
+            let mut g = starfish_gfx::geometry::Geometry::default();
+            for i in 0..=seg {
+                let a = a0 + (a1 - a0) * i as f32 / seg as f32;
+                g.push([r * a.cos(), r * a.sin(), 0.0], [1.0; 4]);
+            }
+            Ok(geo_to_buf(g))
+        }
+
+        /// gen_ellipse(rx, ry, segments=48) -> VertexBuf：填充椭圆（扇形
+        /// 三角化，原点中心）。
+        #[pyfunction]
+        fn gen_ellipse(args: FuncArgs, vm: &VirtualMachine) -> PyResult<PyVertexBuf> {
+            use rustpython_vm::function::ArgIntoFloat;
+            let p: Vec<f32> = args
+                .args
+                .iter()
+                .map(|o| {
+                    ArgIntoFloat::try_from_object(vm, o.clone()).map(|f| f.into_float() as f32)
+                })
+                .collect::<Result<Vec<f32>, _>>()
+                .map_err(|_| vm.new_type_error("gen_ellipse(rx, ry, segments=48)"))?;
+            if p.len() < 2 {
+                return Err(vm.new_type_error("gen_ellipse(rx, ry, segments=48)"));
+            }
+            let seg = kw_arg_int(&args, vm, "segments", 48)?;
+            let g = starfish_gfx::geometry::shape2d::ellipse(
+                glam::Vec2::ZERO,
+                glam::vec2(p[0], p[1]),
+                seg,
+                [1.0; 4],
+            );
+            Ok(geo_to_buf(g))
+        }
+
+        /// gen_polygon_outline(points) -> VertexBuf：多边形周界线（闭合
+        /// 折线，lines 拓扑消费；输入点即局部坐标）。
+        #[pyfunction]
+        fn gen_polygon_outline(points: SfPoints, vm: &VirtualMachine) -> PyResult<PyVertexBuf> {
+            if points.0.len() < 3 {
+                return Err(vm.new_value_error("gen_polygon_outline 至少 3 个点"));
+            }
+            let pts: Vec<glam::Vec2> = points
+                .0
+                .iter()
+                .map(|(x, y)| glam::vec2(*x as f32, *y as f32))
+                .collect();
+            let g = starfish_gfx::geometry::shape2d::polyline(&pts, true, [1.0; 4]);
+            Ok(geo_to_buf(g))
+        }
+
+        /// gen_sphere(radius, segments_u=16, segments_v=12) -> VertexBuf：
+        /// 球体（中心原点；透视段相机消费）。
+        #[pyfunction]
+        fn gen_sphere(args: FuncArgs, vm: &VirtualMachine) -> PyResult<PyVertexBuf> {
+            use rustpython_vm::function::ArgIntoFloat;
+            let radius = args
+                .args
+                .first()
+                .and_then(|o| ArgIntoFloat::try_from_object(vm, o.clone()).ok())
+                .map(|f| f.into_float() as f32)
+                .ok_or_else(|| vm.new_type_error("gen_sphere(radius, segments_u=16, segments_v=12)"))?;
+            let su = kw_arg_int(&args, vm, "segments_u", 16)?;
+            let sv = kw_arg_int(&args, vm, "segments_v", 12)?;
+            let g = starfish_gfx::geometry::shape3d::sphere(
+                glam::Vec3::ZERO,
+                radius,
+                su,
+                sv,
+                [1.0; 4],
+            );
+            Ok(geo_to_buf(g))
+        }
+
+        /// gen_plane(center, right, up, size) -> VertexBuf：任意朝向面片
+        ///（center=[x,y,z]；right/up 朝向向量；size=[w,h]；透视段相机
+        /// 消费）。
+        #[pyfunction]
+        fn gen_plane(center: Vec<f32>, right: Vec<f32>, up: Vec<f32>, size: Vec<f32>, vm: &VirtualMachine) -> PyResult<PyVertexBuf> {
+            if center.len() < 3 || right.len() < 3 || up.len() < 3 || size.len() < 2 {
+                return Err(vm.new_type_error("gen_plane(center[3], right[3], up[3], size[2])"));
+            }
+            let g = starfish_gfx::geometry::shape3d::plane(
+                glam::vec3(center[0], center[1], center[2]),
+                glam::vec3(right[0], right[1], right[2]),
+                glam::vec3(up[0], up[1], up[2]),
+                glam::vec2(size[0], size[1]),
+                [1.0; 4],
+            );
+            Ok(geo_to_buf(g))
+        }
+
+        /// gen_box(min, max) -> VertexBuf：轴对齐盒（min=[x,y,z] / max=
+        /// [x,y,z] 对角点；透视段相机消费）。
+        #[pyfunction]
+        fn gen_box(min: Vec<f32>, max: Vec<f32>, vm: &VirtualMachine) -> PyResult<PyVertexBuf> {
+            if min.len() < 3 || max.len() < 3 {
+                return Err(vm.new_type_error("gen_box(min[3], max[3])"));
+            }
+            let g = starfish_gfx::geometry::shape3d::cube(
+                glam::vec3(min[0], min[1], min[2]),
+                glam::vec3(max[0], max[1], max[2]),
+                [1.0; 4],
+            );
+            Ok(geo_to_buf(g))
+        }
+
+        /// gen_polygon3d(points) -> VertexBuf：3D 多边形板（扁平
+        /// [x,y,z × N]；Newell 法稳健基三角化；透视段相机消费）。
+        #[pyfunction]
+        fn gen_polygon3d(points: Vec<f32>, vm: &VirtualMachine) -> PyResult<PyVertexBuf> {
+            if points.len() % 3 != 0 || points.len() < 9 {
+                return Err(vm.new_value_error(format!(
+                    "gen_polygon3d 扁平长度须为 3 的倍数且至少 3 点，实际 {}",
+                    points.len()
+                )));
+            }
+            let pts: Vec<glam::Vec3> = points
+                .chunks_exact(3)
+                .map(|c| glam::vec3(c[0], c[1], c[2]))
+                .collect();
+            let g = starfish_gfx::geometry::shape3d::polygon_3d(&pts, [1.0; 4]);
+            Ok(geo_to_buf(g))
+        }
+
+        /// gen_cylinder(radius, height, segments=24) -> VertexBuf：圆柱
+        ///（中心原点 = 柱高中点；透视段相机消费）。
+        #[pyfunction]
+        fn gen_cylinder(args: FuncArgs, vm: &VirtualMachine) -> PyResult<PyVertexBuf> {
+            use rustpython_vm::function::ArgIntoFloat;
+            let p: Vec<f32> = args
+                .args
+                .iter()
+                .map(|o| {
+                    ArgIntoFloat::try_from_object(vm, o.clone()).map(|f| f.into_float() as f32)
+                })
+                .collect::<Result<Vec<f32>, _>>()
+                .map_err(|_| vm.new_type_error("gen_cylinder(radius, height, segments=24)"))?;
+            if p.len() < 2 {
+                return Err(vm.new_type_error("gen_cylinder(radius, height, segments=24)"));
+            }
+            let seg = kw_arg_int(&args, vm, "segments", 24)?;
+            let g = starfish_gfx::geometry::shape3d::cylinder(
+                glam::vec3(0.0, -p[1] * 0.5, 0.0),
+                p[0],
+                p[1],
+                seg,
+                [1.0; 4],
+            );
+            Ok(geo_to_buf(g))
+        }
+
+        /// gen_cone(radius, height, segments=24) -> VertexBuf：圆锥（中心
+        /// 原点 = 柱高中点；透视段相机消费）。
+        #[pyfunction]
+        fn gen_cone(args: FuncArgs, vm: &VirtualMachine) -> PyResult<PyVertexBuf> {
+            use rustpython_vm::function::ArgIntoFloat;
+            let p: Vec<f32> = args
+                .args
+                .iter()
+                .map(|o| {
+                    ArgIntoFloat::try_from_object(vm, o.clone()).map(|f| f.into_float() as f32)
+                })
+                .collect::<Result<Vec<f32>, _>>()
+                .map_err(|_| vm.new_type_error("gen_cone(radius, height, segments=24)"))?;
+            if p.len() < 2 {
+                return Err(vm.new_type_error("gen_cone(radius, height, segments=24)"));
+            }
+            let seg = kw_arg_int(&args, vm, "segments", 24)?;
+            let g = starfish_gfx::geometry::shape3d::cone(
+                glam::vec3(0.0, -p[1] * 0.5, 0.0),
+                p[0],
+                p[1],
+                seg,
+                [1.0; 4],
+            );
+            Ok(geo_to_buf(g))
+        }
+
         /// draw_surface(f, src)：画离屏面（位置/变换由 set_transform 承载）
         #[pyfunction]
         fn draw_surface(f: PyObjectRef, src: PyRef<PySurface>, vm: &VirtualMachine) -> PyResult<()> {
@@ -925,634 +1146,7 @@ use std::cell::Cell;
             Ok(())
         }
 
-        /// pixel(f, x, y)
-        #[pyfunction]
-        fn pixel(f: PyObjectRef, x: i32, y: i32, vm: &VirtualMachine) -> PyResult<()> {
-                match route(&f, vm)? {
-                Target::Surf(s) => {
-                    starfish_pygame::draw::rect(&*s.surface,
-                        [x, y, 1, 1], 0)
-                }
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::rect(t,
-                        [x, y, 1, 1], 0)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::rect(t,
-                        [x, y, 1, 1], 0)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// hline(f, x1, x2, y)
-        #[pyfunction]
-        fn hline(
-            f: PyObjectRef,
-            x1: i32,
-            x2: i32,
-            y: i32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            line(f, x1, y, x2, y, vm)
-        }
-
-        /// vline(f, x, y1, y2)
-        #[pyfunction]
-        fn vline(
-            f: PyObjectRef,
-            x: i32,
-            y1: i32,
-            y2: i32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            line(f, x, y1, x, y2, vm)
-        }
-
-        /// line(f, x1, y1, x2, y2)
-        #[pyfunction]
-        fn line(
-            f: PyObjectRef,
-            x1: i32,
-            y1: i32,
-            x2: i32,
-            y2: i32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-                match route(&f, vm)? {
-                Target::Surf(s) => starfish_pygame::draw::line(&*s.surface, (x1, y1), (x2, y2), 1),
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::line(t, (x1, y1), (x2, y2), 1)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::line(t, (x1, y1), (x2, y2), 1)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// aaline(f, x1, y1, x2, y2)：抗锯齿线 = 兼容别名
-        ///（AA 由 wgpu 线性采样承载，同实现）。
-        #[pyfunction]
-        fn aaline(
-            f: PyObjectRef,
-            x1: i32,
-            y1: i32,
-            x2: i32,
-            y2: i32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            line(f, x1, y1, x2, y2, vm)
-        }
-
-        /// circle(f, x, y, radius)：1px 描边圆。
-        #[pyfunction]
-        fn circle(
-            f: PyObjectRef,
-            x: i32,
-            y: i32,
-            radius: i32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-                let r = radius.max(0) as u32;
-            match route(&f, vm)? {
-                Target::Surf(s) => starfish_pygame::draw::circle(&*s.surface, (x, y), r, 1),
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::circle(t, (x, y), r, 1)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::circle(t, (x, y), r, 1)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// aacircle(f, x, y, radius)：抗锯齿圆 = 兼容别名。
-        #[pyfunction]
-        fn aacircle(
-            f: PyObjectRef,
-            x: i32,
-            y: i32,
-            radius: i32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            circle(f, x, y, radius, vm)
-        }
-
-        /// filled_circle(f, x, y, radius)：填充圆。
-        #[pyfunction]
-        fn filled_circle(
-            f: PyObjectRef,
-            x: i32,
-            y: i32,
-            radius: i32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-                let r = radius.max(0) as u32;
-            match route(&f, vm)? {
-                Target::Surf(s) => starfish_pygame::draw::circle(&*s.surface, (x, y), r, 0),
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::circle(t, (x, y), r, 0)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::circle(t, (x, y), r, 0)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// ellipse(f, x, y, rx, ry)：1px 描边椭圆（中心 + 半径轴）。
-        #[pyfunction]
-        fn ellipse(
-            f: PyObjectRef,
-            x: i32,
-            y: i32,
-            rx: i32,
-            ry: i32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-                let rect = [x - rx, y - ry, rx.max(0) * 2, ry.max(0) * 2];
-            match route(&f, vm)? {
-                Target::Surf(s) => starfish_pygame::draw::ellipse(&*s.surface, rect, 1),
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::ellipse(t, rect, 1)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::ellipse(t, rect, 1)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// aaellipse(f, x, y, rx, ry)：抗锯齿椭圆 = 兼容别名。
-        #[pyfunction]
-        fn aaellipse(
-            f: PyObjectRef,
-            x: i32,
-            y: i32,
-            rx: i32,
-            ry: i32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            ellipse(f, x, y, rx, ry, vm)
-        }
-
-        /// filled_ellipse(f, x, y, rx, ry)：填充椭圆。
-        #[pyfunction]
-        fn filled_ellipse(
-            f: PyObjectRef,
-            x: i32,
-            y: i32,
-            rx: i32,
-            ry: i32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-                let rect = [x - rx, y - ry, rx.max(0) * 2, ry.max(0) * 2];
-            match route(&f, vm)? {
-                Target::Surf(s) => starfish_pygame::draw::ellipse(&*s.surface, rect, 0),
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::ellipse(t, rect, 0)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::ellipse(t, rect, 0)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// arc(f, x, y, radius, start_angle, stop_angle)：椭圆弧
-        ///（**度数制**——SDL_gfx 惯例；1px 描边，v1 简化）。
-        #[pyfunction]
-        fn arc(
-            f: PyObjectRef,
-            x: i32,
-            y: i32,
-            radius: i32,
-            start_angle: i32,
-            stop_angle: i32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-                let rect = [x - radius, y - radius, radius.max(0) * 2, radius.max(0) * 2];
-            let (s, e) = (
-                (start_angle as f32).to_radians(),
-                (stop_angle as f32).to_radians(),
-            );
-            match route(&f, vm)? {
-                Target::Surf(sfc) => starfish_pygame::draw::arc(&*sfc.surface, rect, s, e, 1),
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::arc(t, rect, s, e, 1)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::arc(t, rect, s, e, 1)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// trigon 坐标组（9 参超 RP 原生函数实现上限——FromArgs 结构体
-        /// 按声明序扁平展开，Python 签名不变）
-        #[derive(rustpython_derive::FromArgs)]
-        pub(crate) struct TrigonArgs {
-            #[pyarg(any)]
-            pub(crate) x1: i32,
-            #[pyarg(any)]
-            pub(crate) y1: i32,
-            #[pyarg(any)]
-            pub(crate) x2: i32,
-            #[pyarg(any)]
-            pub(crate) y2: i32,
-            #[pyarg(any)]
-            pub(crate) x3: i32,
-            #[pyarg(any)]
-            pub(crate) y3: i32,
-        }
-
-        /// trigon(f, x1, y1, x2, y2, x3, y3)：1px 描边三角。
-        #[pyfunction]
-        fn trigon(f: PyObjectRef, args: TrigonArgs, vm: &VirtualMachine) -> PyResult<()> {
-            filled_polygon3(&f, args.x1, args.y1, args.x2, args.y2, args.x3, args.y3, vm)?;
-            // 描边三角 = 填充 + 1px 轮廓（gfxdraw trigon 语义）
-            polygon3(&f, args.x1, args.y1, args.x2, args.y2, args.x3, args.y3, vm)
-        }
-
-        /// aatrigon(...)：抗锯齿三角 = 兼容别名（同 trigon 组合）。
-        #[pyfunction]
-        fn aatrigon(f: PyObjectRef, args: TrigonArgs, vm: &VirtualMachine) -> PyResult<()> {
-            trigon(f, args, vm)
-        }
-
-        /// filled_trigon(f, x1, y1, x2, y2, x3, y3)：填充三角。
-        #[pyfunction]
-        fn filled_trigon(f: PyObjectRef, args: TrigonArgs, vm: &VirtualMachine) -> PyResult<()> {
-            filled_polygon3(&f, args.x1, args.y1, args.x2, args.y2, args.x3, args.y3, vm)
-        }
-
-        #[allow(clippy::too_many_arguments)]
-        fn filled_polygon3(
-            f: &PyObjectRef,
-            x1: i32,
-            y1: i32,
-            x2: i32,
-            y2: i32,
-            x3: i32,
-            y3: i32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-                let pts = SfPoints(vec![(x1, y1), (x2, y2), (x3, y3)]);
-            match route(f, vm)? {
-                Target::Surf(s) => starfish_pygame::draw::polygon(&*s.surface, &pts.0, 0),
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::polygon(t, &pts.0, 0)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::polygon(t, &pts.0, 0)
-                })?,
-            };
-            Ok(())
-        }
-
-        #[allow(clippy::too_many_arguments)]
-        fn polygon3(
-            f: &PyObjectRef,
-            x1: i32,
-            y1: i32,
-            x2: i32,
-            y2: i32,
-            x3: i32,
-            y3: i32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-                let pts = SfPoints(vec![(x1, y1), (x2, y2), (x3, y3)]);
-            match route(f, vm)? {
-                Target::Surf(s) => starfish_pygame::draw::polygon(&*s.surface, &pts.0, 1),
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::polygon(t, &pts.0, 1)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::polygon(t, &pts.0, 1)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// polygon(f, points)：1px 描边多边形（points = [(x, y), ...]）。
-        #[pyfunction]
-        fn polygon(f: PyObjectRef, points: SfPoints, vm: &VirtualMachine) -> PyResult<()> {
-                match route(&f, vm)? {
-                Target::Surf(s) => starfish_pygame::draw::polygon(&*s.surface, &points.0, 1),
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::polygon(t, &points.0, 1)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::polygon(t, &points.0, 1)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// aapolygon(f, points)：抗锯齿多边形 = 兼容别名。
-        #[pyfunction]
-        fn aapolygon(f: PyObjectRef, points: SfPoints, vm: &VirtualMachine) -> PyResult<()> {
-            polygon(f, points, vm)
-        }
-
-        /// filled_polygon(f, points)：填充多边形。
-        #[pyfunction]
-        fn filled_polygon(
-            f: PyObjectRef,
-            points: SfPoints,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-                match route(&f, vm)? {
-                Target::Surf(s) => starfish_pygame::draw::polygon(&*s.surface, &points.0, 0),
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::polygon(t, &points.0, 0)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::polygon(t, &points.0, 0)
-                })?,
-            };
-            Ok(())
-        }
-
-        // ── 2D 补缺（starfish-gfx shape2d 对接收尾——2026-11-12）────
-
-        /// capsule(f, ax, ay, bx, by, radius, segments=32)：胶囊（填充）
-        /// ——线段 ab 两端圆心的凸包（物理胶囊碰撞体可视化）。
-        #[pyfunction]
-        fn capsule(
-            f: PyObjectRef,
-            ax: f32,
-            ay: f32,
-            bx: f32,
-            by: f32,
-            radius: f32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            capsule_seg(f, ax, ay, bx, by, radius, 32, vm)
-        }
-
-        #[pyfunction]
-        fn capsule_seg(
-            f: PyObjectRef,
-            ax: f32,
-            ay: f32,
-            bx: f32,
-            by: f32,
-            radius: f32,
-            segments: u32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            match route(&f, vm)? {
-                Target::Surf(s) => {
-                    starfish_pygame::draw::capsule(&*s.surface, [ax, ay], [bx, by], radius, segments)
-                }
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::capsule(t, [ax, ay], [bx, by], radius, segments)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::capsule(t, [ax, ay], [bx, by], radius, segments)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// polyline(f, points, closed=False)：折线（1px；closed = 闭合轮廓）。
-        #[pyfunction]
-        fn polyline(
-            f: PyObjectRef,
-            points: Vec<Vec<f32>>,
-            closed: bool,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            let pts: Vec<[f32; 2]> = points.iter().map(|p| [p[0], p[1]]).collect();
-            match route(&f, vm)? {
-                Target::Surf(s) => starfish_pygame::draw::polyline(&*s.surface, &pts, closed),
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::polyline(t, &pts, closed)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::polyline(t, &pts, closed)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// regular_polygon(f, cx, cy, radius, sides, rotation=0.0)：正多边形（填充）。
-        #[pyfunction]
-        fn regular_polygon(
-            f: PyObjectRef,
-            cx: f32,
-            cy: f32,
-            radius: f32,
-            sides: u32,
-            rotation: f32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            match route(&f, vm)? {
-                Target::Surf(s) => starfish_pygame::draw::regular_polygon(
-                    &*s.surface, [cx, cy], radius, sides, rotation,
-                ),
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::regular_polygon(t, [cx, cy], radius, sides, rotation)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::regular_polygon(t, [cx, cy], radius, sides, rotation)
-                })?,
-            };
-            Ok(())
-        }
-
-        // ── 3D 形状（starfish-gfx shape3d 对接——2026-11-12；透视相机
-        // 走 gfxdraw.set_camera + render_depth 深度会话配套）────────────
-
-        /// cube(f, min, max)：立方体（填充）——min/max = [x, y, z] 对角。
-        #[pyfunction]
-        fn cube(
-            f: PyObjectRef,
-            min: Vec<f32>,
-            max: Vec<f32>,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            let mn = [min[0], min[1], min[2]];
-            let mx = [max[0], max[1], max[2]];
-            match route(&f, vm)? {
-                Target::Surf(s) => starfish_pygame::draw::cube(&*s.surface, mn, mx),
-                Target::Active => bridge::with_session(vm, |t| starfish_pygame::draw::cube(t, mn, mx))?,
-                Target::Targets => {
-                    bridge::with_mrt_session(vm, |t| starfish_pygame::draw::cube(t, mn, mx))?
-                }
-            };
-            Ok(())
-        }
-
-        /// sphere(f, center, radius, segments_u=16, segments_v=12)：球（填充）。
-        #[pyfunction]
-        fn sphere(
-            f: PyObjectRef,
-            center: Vec<f32>,
-            radius: f32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            let c = [center[0], center[1], center[2]];
-            match route(&f, vm)? {
-                Target::Surf(s) => {
-                    starfish_pygame::draw::sphere(&*s.surface, c, radius, 16, 12)
-                }
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::sphere(t, c, radius, 16, 12)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::sphere(t, c, radius, 16, 12)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// plane(f, center, right, up, size)：平面（填充）——center +
-        /// right/up 基（size = [宽, 高] 沿基向量）。
-        #[pyfunction]
-        fn plane(
-            f: PyObjectRef,
-            center: Vec<f32>,
-            right: Vec<f32>,
-            up: Vec<f32>,
-            size: Vec<f32>,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            let (c, r, u, sz) = (
-                [center[0], center[1], center[2]],
-                [right[0], right[1], right[2]],
-                [up[0], up[1], up[2]],
-                [size[0], size[1]],
-            );
-            match route(&f, vm)? {
-                Target::Surf(s) => {
-                    starfish_pygame::draw::plane(&*s.surface, c, r, u, sz)
-                }
-                Target::Active => {
-                    bridge::with_session(vm, |t| starfish_pygame::draw::plane(t, c, r, u, sz))?
-                }
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::plane(t, c, r, u, sz)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// cylinder(f, base_center, radius, height, segments=24)：圆柱（填充）
-        /// ——base_center 起沿 +y 挤出 height。
-        #[pyfunction]
-        fn cylinder(
-            f: PyObjectRef,
-            base_center: Vec<f32>,
-            radius: f32,
-            height: f32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            let c = [base_center[0], base_center[1], base_center[2]];
-            match route(&f, vm)? {
-                Target::Surf(s) => {
-                    starfish_pygame::draw::cylinder(&*s.surface, c, radius, height, 24)
-                }
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::cylinder(t, c, radius, height, 24)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::cylinder(t, c, radius, height, 24)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// cone(f, base_center, radius, height, segments=24)：圆锥（填充）
-        /// ——base_center 起沿 +y 顶点高 height。
-        #[pyfunction]
-        fn cone(
-            f: PyObjectRef,
-            base_center: Vec<f32>,
-            radius: f32,
-            height: f32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            let c = [base_center[0], base_center[1], base_center[2]];
-            match route(&f, vm)? {
-                Target::Surf(s) => starfish_pygame::draw::cone(&*s.surface, c, radius, height, 24),
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::cone(t, c, radius, height, 24)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::cone(t, c, radius, height, 24)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// polygon3d(f, points)：平面多边形 3D（填充）——共面点列
-        /// flat [x, y, z, ...]（len % 3 == 0；Newell 法平面基三角化）。
-        /// 透视相机 + 深度会话配套。
-        #[pyfunction]
-        fn polygon3d(f: PyObjectRef, points: Vec<f32>, vm: &VirtualMachine) -> PyResult<()> {
-            match route(&f, vm)? {
-                Target::Surf(s) => starfish_pygame::draw::polygon_3d(&*s.surface, &points),
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::polygon_3d(t, &points)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::polygon_3d(t, &points)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// rectangle(f, rect)：1px 描边矩形（rect = (left, top, w, h)）。
-        #[pyfunction]
-        fn rectangle(f: PyObjectRef, rect: SfRect, vm: &VirtualMachine) -> PyResult<()> {
-                let r = [rect.x, rect.y, rect.w, rect.h];
-            match route(&f, vm)? {
-                Target::Surf(s) => starfish_pygame::draw::rect(&*s.surface, r, 1),
-                Target::Active => bridge::with_session(vm, |t| starfish_pygame::draw::rect(t, r, 1))?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| starfish_pygame::draw::rect(t, r, 1))?,
-            };
-            Ok(())
-        }
-
-        /// box(f, rect)：填充矩形。
-        #[pyfunction(name = "box")]
-        fn box_(f: PyObjectRef, rect: SfRect, vm: &VirtualMachine) -> PyResult<()> {
-                let r = [rect.x, rect.y, rect.w, rect.h];
-            match route(&f, vm)? {
-                Target::Surf(s) => starfish_pygame::draw::rect(&*s.surface, r, 0),
-                Target::Active => bridge::with_session(vm, |t| starfish_pygame::draw::rect(t, r, 0))?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| starfish_pygame::draw::rect(t, r, 0))?,
-            };
-            Ok(())
-        }
-
-        /// rounded_rectangle(f, rect, radius)：垫底——圆角语义
-        /// v1 未建（glam 无 SDF 圆角管线），降级为直角描边矩形。
-        #[pyfunction]
-        fn rounded_rectangle(
-            f: PyObjectRef,
-            rect: SfRect,
-            _radius: i32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            rectangle(f, rect, vm)
-        }
-
-        /// rounded_box(f, rect, radius)：垫底——降级为填充矩形。
-        #[pyfunction]
-        fn rounded_box(
-            f: PyObjectRef,
-            rect: SfRect,
-            _radius: i32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            box_(f, rect, vm)
-        }
     }
-
     // ── mask：位面（碰撞检测/像素级遮挡；pygame.mask 语义）────────
     // 构建 = from_surface（影子快路径三端同步零回读；GPU 出生面原生
     // 走一次性回读，Web 侧同步面对 GPU 出生面不提供——from_surface_async

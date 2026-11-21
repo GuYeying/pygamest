@@ -13,8 +13,13 @@ SDL_gfx 风格图元 + **渲染统一 draw 面**——图元函数**只收 rende
 [坐标系] **中心原点、y 向上**——`(0, 0)` = 屏幕/画布中心，`+y` 向上
 （与 3D 透视 / 物理米制系三方同构）。
 
-[颜色状态机] 图元函数**不收颜色参数**——颜色经 `set_color(f, color)`
-单独设置（one-shot）；不设 = **默认紫色**（调试可辨——忘了设色一眼看出）；draw 后自动重置回紫色。
+[颜色状态机] 图元**不收颜色参数**——颜色经 `set_color(f, color)` 单独
+设置。**双语义分立**：push 流 = sticky（色/拓扑/变换跨 push 持续）；
+不设 = **默认紫色**（调试可辨）。
+
+[图元函数族退役] SDL_gfx 风格图元函数（`filled_circle` / `box` /
+`line` / `rectangle` 等直接绘制口）已全部剔除——形状统一走
+`gen_*` 生成器 + `push` 统一口（数据面收敛，见下节）。
 
 [线框状态机] `set_wireframe(f)` 开启三角网格边线渲染（one-shot）——
 呈现原始三角化的**边**（圆的扇形边、耳切对角线都直接可见），
@@ -80,28 +85,39 @@ push 流拓扑状态（sticky）。`mode` 取 `"triangles"`（默认）、`"line
 
 #### 生成器族（gen_*）
 
-Rust 内生成位置流，返回 `VertexBuf`——性能与图元函数族同级（生成
-全程不落地 Python）。产出为**原点中心局部坐标**，位置由
-`set_transform` 赋予：
+Rust 内生成位置流，返回 `VertexBuf`——性能与生成全程不落地 Python
+一致。2D 形状产出为**原点中心局部坐标**（`gen_line`/`gen_polygon`
+系例外——输入点即局部坐标），位置由 `set_transform` 赋予：
 
 | 生成器 | 产出 |
 |---|---|
 | `gen_circle(radius, segments=48)` | 填充圆（扇形三角化） |
 | `gen_circle_outline(radius, segments=64)` | 圆周线（1px） |
 | `gen_rect(w, h)` / `gen_rect_outline(w, h)` | 矩形 / 周界线 |
-| `gen_polygon(points)` | 多边形（耳切三角化，输入点即局部坐标） |
-| `gen_cube(size)` | 立方体（透视段相机消费） |
+| `gen_ellipse(rx, ry, segments=48)` | 填充椭圆 |
+| `gen_arc(radius, start_deg, stop_deg, segments=48)` | 圆弧线（度数制） |
+| `gen_line(x1, y1, x2, y2)` | 线段 |
+| `gen_polygon(points)` / `gen_polygon_outline(points)` | 多边形填充 / 周界线 |
+| `gen_cube(size)` / `gen_box(min, max)` | 立方体 / 轴对齐盒（3D） |
+| `gen_sphere(radius, su=16, sv=12)` | 球体（3D） |
+| `gen_plane(center, right, up, size)` | 任意朝向面片（3D） |
+| `gen_cylinder(radius, height, segments=24)` / `gen_cone(radius, height, segments=24)` | 圆柱 / 圆锥（3D，中心 = 柱高中点） |
+| `gen_polygon3d(points)` | 3D 多边形板（Newell 稳健三角化） |
 
 ## <span class="c-func">状态机</span>
 
 #### <span class="c-func">set_color(f, color)</span>
 
-**one-shot 绘制色**——下一次图元 draw 用此色，随后自动重置回默认紫色。
+**绘制色状态**——后续 push / 图元绘制用此色。push 流 = **sticky**
+（跨 push 持续直到再次设置）；不设 = **默认紫色**（调试可辨——忘了
+设色一眼看出）。
 
 ```python
 pygame.gfxdraw.set_color(f, (255, 0, 0))
-pygame.gfxdraw.filled_circle(f, 0, 0, 50)     # → 红色
-pygame.gfxdraw.filled_circle(f, 100, 0, 50)   # → 紫色（默认）
+pygame.gfxdraw.set_transform(f, pygame.math.mat4_translation(0, 0, 0))
+pygame.gfxdraw.push(f, pygame.gfxdraw.gen_circle(50))      # → 红色
+pygame.gfxdraw.set_transform(f, pygame.math.mat4_translation(100, 0, 0))
+pygame.gfxdraw.push(f, pygame.gfxdraw.gen_circle(50))      # → 仍红色（sticky）
 ```
 
 - :param f: 渲染会话
@@ -165,102 +181,11 @@ pygame.gfxdraw.filled_circle(f, 100, 0, 50)  # → 填充面（默认）
 
 显式矩阵画面（mat 全权，不复合会话 transform）。
 
-## <span class="c-func">图元（纯几何参数，无色参）</span>
+## <span class="c-func">动画与外接管线插座</span>
 
-### 点 / 线
-
-#### <span class="c-func">pixel(f, x, y)</span>
-#### <span class="c-func">hline(f, x1, x2, y)</span>
-#### <span class="c-func">vline(f, x, y1, y2)</span>
-#### <span class="c-func">line(f, x1, y1, x2, y2)</span>
-#### <span class="c-func">aaline(f, x1, y1, x2, y2)</span>
-
-= `line` 兼容别名。
-
-### 圆 / 椭圆
-
-#### <span class="c-func">circle(f, x, y, radius)</span>
-#### <span class="c-func">aacircle(f, x, y, radius)</span>
-
-= `circle` 兼容别名。
-
-#### <span class="c-func">filled_circle(f, x, y, radius)</span>
-
-**注意**：半径为 i32 整数世界单位——透视空间小物体用 `draw_surface`。
-
-#### <span class="c-func">ellipse(f, x, y, rx, ry)</span>
-#### <span class="c-func">aaellipse(f, x, y, rx, ry)</span>
-#### <span class="c-func">filled_ellipse(f, x, y, rx, ry)</span>
-
-### 弧
-
-#### <span class="c-func">arc(f, x, y, radius, start_angle, stop_angle)</span>
-
-度数制（SDL_gfx 惯例）；v1 仅圆弧。
-
-### 三角 / 多边形
-
-#### <span class="c-func">trigon(f, x1, y1, x2, y2, x3, y3)</span>
-#### <span class="c-func">aatrigon(f, x1, y1, x2, y2, x3, y3)</span>
-#### <span class="c-func">filled_trigon(f, x1, y1, x2, y2, x3, y3)</span>
-#### <span class="c-func">polygon(f, points)</span>
-#### <span class="c-func">aapolygon(f, points)</span>
-#### <span class="c-func">filled_polygon(f, points)</span>
-
-#### <span class="c-func">polyline(f, points, closed=False)</span>
-
-折线（1px；closed = 闭合轮廓）——points = [[x, y], ...]（f32）。
-
-#### <span class="c-func">regular_polygon(f, cx, cy, radius, sides, rotation=0.0)</span>
-
-正多边形（填充）。
-
-#### <span class="c-func">capsule(f, ax, ay, bx, by, radius, segments=32)</span>
-
-胶囊（填充）——线段 ab 两端圆心的凸包（物理胶囊碰撞体可视化）。
-
-### 矩形
-
-#### <span class="c-func">rectangle(f, rect)</span>
-#### <span class="c-func">box(f, rect)</span>
-#### <span class="c-func">rounded_rectangle(f, rect, radius)</span>
-
-圆角当前未实现——降级为直角矩形。
-
-#### <span class="c-func">rounded_box(f, rect, radius)</span>
-
-同上（圆角降级为直角）。
-
-### 3D 形状（starfish-gfx shape3d 对接——2026-11-12）
-
-透视相机（`set_camera` + `game_camera_perspective`）+ `render_depth` 深度
-会话配套；顶点 z 真实参与（深度测试管线）。完整案例 `gfx3d_demo.py`，
-教程见 [gfxdraw 3D 词汇](../tutorials/gfx-3d.md)。
-
-#### <span class="c-func">cube(f, min, max)</span>
-
-立方体（填充）——min/max = [x, y, z] 对角点。
-
-#### <span class="c-func">sphere(f, center, radius, segments_u=16, segments_v=12)</span>
-
-球（填充）——经纬分段。
-
-#### <span class="c-func">plane(f, center, right, up, size)</span>
-
-平面（填充）——center + right/up 基向量（size = [宽, 高] 沿基）。
-
-#### <span class="c-func">cylinder(f, base_center, radius, height, segments=24)</span>
-
-圆柱（填充）——base_center 起沿 +y 挤出。
-
-#### <span class="c-func">cone(f, base_center, radius, height, segments=24)</span>
-
-圆锥（填充）——base_center 起沿 +y 顶点高 height。
-
-#### <span class="c-func">polygon3d(f, points)</span>
-
-平面多边形 3D（填充）——共面点列 flat [x, y, z, ...]（Newell 法平面基
-三角化；退化输入返回空）。
+`mesh(f, surface, positions, uvs, indices, color)`：带贴图三角网格
+通用口（外部数据流消费）。`draw_spine` / `draw_ozz_quads` /
+`draw_ozz_bones`：动画运行时插座（spine / ozz 适配库自持管线）。
 
 ### 相机状态（clear_camera）
 
