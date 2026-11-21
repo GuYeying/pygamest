@@ -859,29 +859,6 @@ pub mod pygame {
     fn int_of(o: &PyObjectRef, vm: &VirtualMachine) -> i32 {
         i32::try_from_object(vm, o.clone()).unwrap_or(0)
     }
-    /// 经典全量语义占位：引擎初始化由宿主壳完成，返回 (0, 0)。
-    /// dim=2|3（默认 2，kwargs 可选）：渲染愿望简写（= pygame.render.
-    /// init(dim=) 同源——3 = Auto3d 透视默认相机）。双时点生效：
-    /// set_mode 前定型；GPU 已就绪（宿主壳预置形态）时相机维即时切换。
-    #[pyfunction]
-    fn init(args: FuncArgs, vm: &VirtualMachine) -> (usize, usize) {
-        if let Some(d) = args
-            .kwargs
-            .get("dim")
-            .and_then(|o| {
-                use rustpython_vm::convert::TryFromBorrowedObject;
-                i64::try_from_borrowed_object(vm, o).ok()
-            })
-        {
-            let mut wish = starfish_pygame::render::current_wish();
-            wish.dim3d = d == 3;
-            starfish_pygame::render::store_wish(wish);
-            // Auto 相机种类由 store_wish 内部同步（即时生效——旧
-            // reset_camera 全局口退役）
-        }
-        (0, 0)
-    }
-
     /// 占位（引擎收口由宿主壳完成）。
     #[pyfunction]
     fn quit() {}

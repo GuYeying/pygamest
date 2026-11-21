@@ -129,13 +129,14 @@ fn inject_cjk(ctx: &egui::Context, bytes: Vec<u8>) {
 
 // ── 模块函数本体（mods/egui.rs 的 #[pymodule] 面委托目标）──────────
 
-/// init()：建 Context/输入桥/绘制端（幂等；须在 set_mode 之后——Renderer
-/// 创建期依赖 GPU 与交换链格式）。事件输入走**逐条显式喂**（`egui.event(e)`)，
-/// init 不做任何隐式挂接。
+/// init()：建 Context/输入桥/绘制端（幂等）——**由 set_mode(gui=True)
+/// 自动调用**（旧 pygame.egui.init() 口已退役；Renderer 创建期依赖
+/// GPU 与交换链格式，故时序上须在 display 装配之后）。事件输入走
+/// **逐条显式喂**（`egui.event(e)`)，不做任何隐式挂接。
 pub(crate) fn init(vm: &VirtualMachine) -> PyResult<()> {
     if !starfish_pygame::display::get_init() {
         return Err(vm
-            .new_runtime_error("pygame.egui.init() 须在 pygame.display.set_mode 之后调用"));
+            .new_runtime_error("egui 装配时序异常：display 未就绪（set_mode(gui=True) 内部时序错误）"));
     }
     if EGUI.with(|c| c.borrow().is_some()) {
         return Ok(()); // 幂等

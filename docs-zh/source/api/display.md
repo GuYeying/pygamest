@@ -57,15 +57,18 @@ screen = pygame.display.set_mode((800, 600), gpu_settings=gpu,
   仅首次 GPU 装配时消费）
 - gpu_settings —— GPU 装配配置
   （[pygame.render.GpuSettings](render.md#gpusettings-gpu-装配配置)）
+- gui —— 传 `True` 时装配后自动初始化 pygame.egui 界面系统
+  （[pygame.egui](pygame_gui.md#快速上手)）；不传即无 gui，不用界面
+  的脚本零额外启动开销。默认 `False`
 - 返回 `Screen` 对象
 
 **平台装配差异**：桌面端在本调用内完成 GPU 装配；Web 端无阻塞模型，
 本调用只发起窗口请求（配置走构建期通道）；Android 在引擎门面先行
 装配。重复调用 `set_mode` 不会重新装配 GPU，仅按请求调整窗口。
 
-**调用顺序**：依赖 GPU 的调用（`egui.init()`、`render()`、
-`render.access()` 等）必须在 `set_mode` 之后——顺序错误会收到明确的
-运行时错误提示。
+**调用顺序**：依赖 GPU 的调用（`render()`、`render.access()` 等）
+必须在 `set_mode` 之后——顺序错误会收到明确的运行时错误提示。egui
+界面由 `set_mode(..., gui=True)` 自动装配，不再单独初始化。
 
 ### flip()
 
@@ -76,10 +79,6 @@ while True:
     # ...绘制...
     pygame.display.flip()
 ```
-
-### get_init() -> bool
-
-返回 display 是否已初始化（`set_mode` 是否已调用）。
 
 ### quit()
 

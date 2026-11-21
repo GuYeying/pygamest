@@ -1,4 +1,6 @@
-//! pygame.render 绑定：渲染配置口（render.init 愿望）+ 显式相机
+//! pygame.render 绑定：渲染运行时状态口（set_blend_mode /
+//! set_cull_mode——图元内容层混合/剔除）+ SurfaceSettings（set_mode
+//! 创建期愿望：present_mode / clear_color / MSAA / 格式）+ 显式相机
 //!（game_camera_* 构造族 + screen.set_camera——域分层 v3）+ **底层资源
 //! 两入口**（ResourceAccess 建资源 + 主屏 RenderSurface 查询）与
 //! raw_render 直绘会话。
@@ -7,9 +9,9 @@
 //! 相机类型（PyCamera/双类型并存退役）；screen.set_camera 一次设置
 //! 跨会话/resize/换画布缓存；未显式 = NDC 恒等默认域。pygame 图元
 //! API 恒像素域（pack None 段内置换算，不读相机）；raw 段顶点 NDC
-//! 直通。render.init = set_mode 前愿望（dim / fov / 剔除 / 混合
-//! 细粒度；后设优先，Gpu 装配时消费一次）——**不再喂 Auto 相机**
-//!（3D 须显式 set_camera）。
+//! 直通。**render.init 已退役**：创建期愿望走 SurfaceSettings（传
+//! set_mode 的 surface_settings=），运行期内容层状态走
+//! set_blend_mode / set_cull_mode（3D 须显式 set_camera）。
 //!
 //! 批次 C/D（暴露面收缩定约）：**wgpu 裸对象（Device/Queue/Buffer/
 //! TextureView）零出 Python 界**——自建管线走 ResourceAccess 包装
@@ -475,73 +477,26 @@ pub(crate) mod render {
         .into_ref(&vm.ctx)
     }
 
-    // ── render.init：渲染愿望（set_mode 前配置，Gpu 装配消费一次）──
-
-    /// init(dim=None, fov=None, near=None, far=None, cull=None,
-    /// blend=None)：渲染管线细粒度愿望——**部分覆盖**（未传保留现值，
-    /// 后设优先）。
-    /// - dim：2 | 3（3 = Auto3d 透视默认相机；默认 2）
-    /// - fov/near/far：Auto3d 相机参数（fov 度数制）
-    /// - cull："none" | "back" | "front"（默认 none——镜像矩阵绕序
-    ///   天然安全；开剔除后镜像 quad 背面消失属物理正确）
-    /// - blend："alpha" | "opaque" | "premultiplied"（默认 alpha）
+    /// set_blend_mode(mode)：设置图元内容层（blit / fill / draw 画的
+    /// 东西）的混合方式。mode 取 "alpha"（默认——常规半透明贴图）、
+    /// "opaque"（不混合，直接覆盖底色）或 "premultiplied"（预乘 alpha）。
+    /// 设置后一直生效，直到再次调用；未知值抛 ValueError。
+    /// 示例：pygame.render.set_blend_mode("opaque")
     #[pyfunction]
-    fn init(
-        args: rustpython_vm::function::FuncArgs,
-        vm: &VirtualMachine,
-    ) -> PyResult<()> {
-        let dim = kw_int(&args, vm, "dim");
-        let fov = kw_f64(&args, vm, "fov");
-        let near = kw_f64(&args, vm, "near");
-        let far = kw_f64(&args, vm, "far");
-        let cull = kw_str(&args, vm, "cull");
-        let blend = kw_str(&args, vm, "blend");
-        let mut wish = sf::current_wish();
-        if let Some(d) = dim {
-            if d != 2 && d != 3 {
-                return Err(vm.new_value_error(format!("dim 须为 2 或 3，实际 {d}")));
-            }
-            wish.dim3d = d == 3;
-        }
-        if let Some(v) = fov {
-            wish.fov_deg = v as f32;
-        }
-        if let Some(v) = near {
-            wish.near = v as f32;
-        }
-        if let Some(v) = far {
-            wish.far = v as f32;
-        }
-        if let Some(c) = &cull {
-            wish.cull = match c.as_str() {
-                "none" => CullMode::None,
-                "back" => CullMode::Back,
-                "front" => CullMode::Front,
-                other => {
-                    return Err(vm.new_value_error(format!(
-                        "cull 须为 none/back/front，实际 {other:?}"
-                    )))
-                }
-            };
-        }
-        if let Some(b) = &blend {
-            wish.blend = match b.as_str() {
-                "alpha" => sf::SpriteBlend::Alpha,
-                "opaque" => sf::SpriteBlend::Opaque,
-                "premultiplied" => sf::SpriteBlend::Premultiplied,
-                other => {
-                    return Err(vm.new_value_error(format!(
-                        "blend 须为 alpha/opaque/premultiplied，实际 {other:?}"
-                    )))
-                }
-            };
-        }
-        sf::store_wish(wish);
-        // GPU 槽已建立且相机维被改：store_wish 内部已同步更新 Auto 相机
-        // 种类（即时生效——旧 reset_camera 全局口退役）。cull/blend 为
-        // 管线编译期定型，不追溯（下次 set_mode 生效）。
-        Ok(())
+    fn set_blend_mode(mode: String, vm: &VirtualMachine) -> PyResult<()> {
+        sf::set_blend_mode(&mode).map_err(|e| vm.new_value_error(e))
     }
+
+    /// set_cull_mode(mode)：设置图元内容层的面剔除方式。mode 取
+    /// "none"（默认——不剔除）、"back"（剔除背面）或 "front"（剔除
+    /// 正面）。默认 none 保证镜像 blit（水平翻转贴图）正常显示，2D
+    /// 场景一般不需要改；3D 场景建议在 raw 自绘管线里单独设置 cull。
+    /// 未知值抛 ValueError。示例：pygame.render.set_cull_mode("back")
+    #[pyfunction]
+    fn set_cull_mode(mode: String, vm: &VirtualMachine) -> PyResult<()> {
+        sf::set_cull_mode(&mode).map_err(|e| vm.new_value_error(e))
+    }
+
 
     // ══════════════════════════════════════════════════════════════
     // 批次 C：底层资源两入口（ResourceAccess 建资源 + 主屏查询）

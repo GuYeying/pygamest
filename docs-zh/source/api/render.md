@@ -71,14 +71,35 @@ wgpu 裸对象（Device / Queue / Buffer / TextureView）不出 Python 界——
 
 - :rtype: Mat4
 
-#### <span class="c-func">init(dim=None, fov=None, near=None, far=None, cull=None, blend=None)</span>
+#### <span class="c-func">set_blend_mode(mode)</span>
 
-渲染管线愿望（`set_mode` **前**设置；部分覆盖——未传保留现值，后设
-优先）。`dim`: 2 / 3（Gpu 装配消费——**不再喂隐式相机**，域分层 v3
-后 3D 须显式 `screen.set_camera(game_camera_perspective(...))`）；
-`cull`: `"none"`（默认）/ `"back"` / `"front"`（管线编译期定型，
-下次 set_mode 生效）；`blend`: `"alpha"`（默认）/ `"opaque"` /
-`"premultiplied"`。
+设置图元内容层（`blit` / `fill` / `draw` 画的东西）的混合方式。
+`mode` 取值：
+
+| 值 | 行为 |
+|---|---|
+| `"alpha"` | 常规半透明贴图（默认） |
+| `"opaque"` | 不混合，直接覆盖底色 |
+| `"premultiplied"` | 预乘 alpha 混合 |
+
+设置后一直生效，直到再次调用。未知值抛 `ValueError`。
+
+```python
+pygame.render.set_blend_mode("opaque")
+```
+
+#### <span class="c-func">set_cull_mode(mode)</span>
+
+设置图元内容层的面剔除方式。`mode` 取 `"none"`（默认——不剔除）、
+`"back"`（剔除背面）或 `"front"`（剔除正面）。
+
+默认 `none` 保证镜像 blit（水平翻转贴图）正常显示，2D 场景一般
+不需要改；3D 场景建议在 raw 自绘管线里单独设置 cull。未知值抛
+`ValueError`。
+
+```python
+pygame.render.set_cull_mode("back")
+```
 
 #### <span class="c-func">access(offscreen=False) -> ResourceAccess</span>
 

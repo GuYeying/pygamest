@@ -53,13 +53,6 @@ pub(crate) mod runtime;
             }
         }
 
-        /// init()：建 Context/输入桥/绘制端（幂等；须在 set_mode 之后）。
-        /// **不自动捕获事件**——需要输入显式 `egui.capture()`。
-        #[pyfunction]
-        fn init(vm: &VirtualMachine) -> PyResult<()> {
-            crate::rpy::pygame_gui::runtime::init(vm)
-        }
-
         /// UiBase 基类源码（**Python 层定义**——RP 子类化零障碍、
         /// 子类构造器任意形态；Rust pyclass 做基类会被 Constructor
         /// Args 形态卡死，故走 exec 注入）

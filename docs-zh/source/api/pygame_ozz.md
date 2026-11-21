@@ -53,21 +53,39 @@ playback 测试资产直构（零资产测试链）。
 
 ##### <span class="c-func">sample(ratio)</span>
 
-采样（0..1 归一动画时间）→ 模型矩阵重建。
+采样动画（`ratio` 为 0..1 的归一化动画时间），重建全部关节的模型
+矩阵——每帧绘制前调用一次：
+
+```python
+player.sample(t / player.duration())
+```
 
 ##### <span class="c-func">model_matrices() -> list[float]</span>
 
-模型矩阵流（每关节 16 f32 列主——上一次 sample 的缓存）。
+返回模型矩阵流（每关节 16 个 f32，列主序——上一次 `sample()` 的
+缓存）。
 
-## <span class="c-func">渲染集成 —— gfxdraw.draw_ozz_bones</span>
+##### <span class="c-func">joint_positions_xy() -> list[float]</span>
 
-#### <span class="c-func">pygame.gfxdraw.draw_ozz_bones(f, player, scale=1.0, cx=0.0, cy=0.0)</span>
+返回全部关节的世界坐标（x, y 交替平铺）——自投影或自绘用。
 
-ozz 骨架骨骼线渲染——父子关节世界位 xy × scale + 中心偏移（Auto2d
-中心系直入；ozz y 向上与引擎同构零翻转）。蒙皮 mesh 面落地前的骨骼
-可视化形态；sample(ratio) 每帧先行。
+##### <span class="c-func">joint_parents() -> list[int]</span>
 
-- :param f: 渲染会话
-- :param player: OzzPlayer（sample 后调用）
-- 另有 `joint_positions_xy()` / `joint_parents()` 数据口（自投影 /
-  自绘用）。demo：`pygame-rs-dev/examples/ozz_render_demo.py`
+返回每个关节的父关节序号（根关节为 -1）——骨架拓扑遍历用。
+
+## 渲染集成
+
+`pygame.gfxdraw.draw_ozz_bones()` 直接绘制骨架骨骼线（父子关节连线
+× 缩放 + 中心偏移；ozz 的 y 向上与引擎同构，零翻转）——蒙皮网格
+落地前的可视化形态：
+
+```python
+while True:
+    player.sample((pygame.time.get_ticks() % dur_ms) / dur_ms)
+    with screen.render() as f:
+        pygame.gfxdraw.draw_ozz_bones(f, player, scale=80.0, cx=0, cy=0)
+    await pygame.next_frame()
+```
+
+数据口 `joint_positions_xy()` / `joint_parents()` 支持自投影与自绘。
+完整演示见 `pygame-rs-dev/examples/ozz_render_demo.py`。

@@ -41,12 +41,14 @@ use std::cell::Cell;
         // TRANSPARENT 位（DX12 推导自动承载）
 
         /// set_mode(size, flags=0, surface_settings=None,
-        /// gpu_settings=None) → Screen 占位（真身由宿主壳先行装配，
-        /// 此处记录需求；flags 批次 O 落地——位集/序列翻译到运行时窗口
-        /// 旗标（apply_window_flags：RESIZABLE/FULLSCREEN/NOFRAME 即时
-        /// 生效，创建期旗标垫底收下）；settings = pygame.render 的
-        /// SurfaceSettings/GpuSettings 对象——**仅首次 GPU 装配消费**
-        /// （交换链重开不吃新配置），None = 平台默认。
+        /// gpu_settings=None, gui=False) → Screen 占位（真身由宿主壳
+        /// 先行装配，此处记录需求；flags 批次 O 落地——位集/序列翻译到
+        /// 运行时窗口旗标（apply_window_flags：RESIZABLE/FULLSCREEN/
+        /// NOFRAME 即时生效，创建期旗标垫底收下）；settings = pygame.
+        /// render 的 SurfaceSettings/GpuSettings 对象——**仅首次 GPU
+        /// 装配消费**（交换链重开不吃新配置），None = 平台默认；
+        /// gui=True = 装配后自动初始化 pygame.egui（旧 egui.init 口
+        /// 退役——不传即无 gui，非 gui 案例启动零成本）。
         #[derive(FromArgs)]
         struct SetModeArgs {
             #[pyarg(any)]
@@ -57,6 +59,8 @@ use std::cell::Cell;
             surface_settings: Option<PyObjectRef>,
             #[pyarg(named, optional)]
             gpu_settings: Option<PyObjectRef>,
+            #[pyarg(named, optional)]
+            gui: Option<bool>,
         }
 
         /// flags 实参 → 位集（int 位掩码或 [位, ...] 序列，pygame 两形态）
@@ -133,6 +137,20 @@ use std::cell::Cell;
             {
                 starfish_pygame::display::set_pending_settings(surface, gpu);
                 starfish_pygame::display::apply_window_request(size, bits);
+            }
+            // gui=True = 装配后自动初始化 pygame.egui（旧 egui.init 口
+            // 退役——幂等可重复 set_mode；未请求 = 零成本跳过）
+            if args.gui.unwrap_or(false) {
+                #[cfg(feature = "gui")]
+                {
+                    crate::rpy::pygame_gui::runtime::init(vm)?;
+                }
+                #[cfg(not(feature = "gui"))]
+                {
+                    return Err(vm.new_runtime_error(
+                        "set_mode(gui=True) 需 gui feature 构建（cargo build --features gui）",
+                    ));
+                }
             }
             bridge::devlog(&format!(
                 "[set_mode] 落地 {}ms",
@@ -346,12 +364,6 @@ use std::cell::Cell;
         #[pyfunction]
         fn remove_tray(vm: &VirtualMachine) -> PyResult<()> {
             starfish_pygame::display::remove_tray().map_err(|e| vm.new_runtime_error(e))
-        }
-
-        /// get_init() -> bool：set_mode 是否已调用（display 初始化态）。
-        #[pyfunction]
-        fn get_init(_vm: &VirtualMachine) -> bool {
-            starfish_pygame::display::get_init()
         }
 
         /// quit()：关闭显示（清窗口/屏句柄；pygame 标准对——可与 init 态

@@ -25,8 +25,7 @@ pygame.gfxdraw.cube(t, [-1, -1, -1], [1, 1, 1])
 
 | 层级 | 入口 | 说明 |
 |---|---|---|
-| 全局 Auto | `pygame.render.init(dim=3, fov=...)` → `set_mode` | wish 驱动，letterbox 内聚 |
-| 全局显式 | `screen.set_camera(GameCamera)` | 覆盖 Auto；物理面对账（跨设备可移植） |
+| 全局显式 | `screen.set_camera(GameCamera)` | 全局唯一相机；物理面对账（跨设备可移植） |
 | 段级 | `pygame.gfxdraw.set_camera(f, Camera)` | 会话内分段；`clear_camera` 清除 |
 
 `screen.set_camera` 收 `GameCamera`（letterbox 内聚——MVP / 坐标映射 /

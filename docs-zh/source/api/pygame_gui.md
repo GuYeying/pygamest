@@ -18,8 +18,7 @@ class HUD(pygame_gui.UiBase):
         self.hp = ui.slider_f32("HP", self.hp, 0, 100)
 
 def main():
-    pygame.display.set_mode((800, 600))
-    pygame_gui.init()
+    screen = pygame.display.set_mode((800, 600), gui=True)
     hud = HUD()
     while True:
         for e in pygame.event.get():
@@ -31,14 +30,13 @@ def main():
         ...
 ```
 
-## <span class="c-func">函数</span>
+## <span class="c-func">初始化</span>
 
-#### <span class="c-func">init()</span>
+egui 随 `pygame.display.set_mode(..., gui=True)` 自动装配——建
+Context / 输入桥 / 绘制端，无独立 init 函数。不传 `gui=True` 即
+无 gui，不用界面的脚本零额外启动开销。
 
-建 egui Context / 输入桥 / 绘制端。**须在 `pygame.display.set_mode`
-之后调用**（幂等；未满足报 RuntimeError）。
-
-init **不自动捕获事件**——输入需 `event(e)` 逐条显式喂
+装配 **不自动捕获事件**——输入需 `event(e)` 逐条显式喂
 （捕获行为在数据流层完全可见）。CJK 字体自动注入（Windows msyh /
 Web cjk.ttf / Android 系统候选链，miss 回退系统探测——仅桌面）。
 

@@ -64,8 +64,10 @@ RustPython 解释器 + pygame 绑定面。引擎本体在**同级目录** `../st
     会话 `set_clip`；**`pygame.targets([a, b])`** MRT 会话（§3.1 预言
     形态——引擎侧 `render_targets_arc` 'static 收口 + bridge 目标
     Arc 保活表，本 crate 外唯一引擎增补）；
-  - **既有补面**：event poll/clear、display set_caption/get_init、
-    io write_text、KMOD_* 常量；
+  - **既有补面**：event poll/clear、display set_caption、
+    io write_text、KMOD_* 常量（display get_init 已随 init 剔除批次
+    退役——pygame.init/display.get_init/render.init/egui.init 四口
+    全清，gui 走 set_mode(gui=True) 自动装配）；
   - **sprite pyclass 桥**：Sprite = 配置对象（at/tag/z/rotation/scale/
     alpha/visible 链式 + 多帧动画 set_fps），Group.add 物化配置并
     **回写世代 id 进 Python 对象**（Copy 纯值跨 GC 零负担）/remove/
@@ -740,7 +742,10 @@ Python 触达 Rust 的分层链（自上而下，单向）：
     + `init(dim,fov,near,far,cull,blend)`（愿望槽**部分覆盖**：set_mode
     前定型；GPU 已就绪[宿主壳预置形态]时相机维即时切换，cull/blend
     编译期定型不追溯）；`pygame.init(dim=2|3)` = render.init(dim=)
-    引擎级简写（同款双时点生效）；
+    引擎级简写（同款双时点生效）；**init 剔除批次（2026-11-21）：
+    render.init / pygame.init py 口全删**（dim 消费者已死——Auto 相机
+    退役；cull/blend 转运行时 `set_blend_mode/set_cull_mode`——
+    gfxdraw 内容层状态机，管线变体并入缓存键惰性编译）；
   - **SpriteMaterial 正名**（原 Material）：定位改写为"pygame 固定
     渲染管线的状态材质"（内嵌 sprite shader + 变体缓存 + cull/blend
     创建期愿望），类型全 pub(crate) 内部化不暴露（定制管线走后续
