@@ -152,6 +152,13 @@ pygame-rs-dev/       # 开发解释器 pygamest-dev + examples/（78 案例）+ 
   （flat_id = chunk_id×512 + 格内序），`hit.feature` 只是该 voxel AABB 的面
   id——`voxel_at_flat_id(hit.subshape)` 解码格键；`set_voxel` 原位编辑经
   `ColliderSet::get_mut` 脏标记 → 下步自动刷 broadphase（零刚体插拔）。
+- **video wasm（WebCodecs，2026-11-21 接线）**：异步 open 拆两半——
+  `_open_start`（spawn_local 驱动 VideoModule::open：fetch+demux+WebCodecs）
+  + thread_local 交互盒 + `_poll` 轮询 / `_open_take` 经 `Video::from_base`
+  包装。**同步口 VideoSystem.open 恒站桩**（Web 无阻塞 IO 架构性限制）。
+  帧交付 = VideoFrame GPU 直拷纹理（copy_external_image_to_texture）。
+  ⚠️ 跨 SSH/会话启动的 GUI 进程会被 job object 连坐杀——远端测试用
+  计划任务或让用户本地启动。
 
 **平台/发布**：
 
@@ -163,6 +170,10 @@ pygame-rs-dev/       # 开发解释器 pygamest-dev + examples/（78 案例）+ 
 - **debug 构建的物理/渲染数值代码慢 10-50 倍**（rapier 求解器/wgpu 上传
   无内联）——性能验收用 `target/release/python.exe`；"30 刚体就卡"类
   报障先问构建形态（dev 日常 = debug）。
+- **wasm 控制台的日志级别过滤**：starfish-debug 的 wasm 输出器**只落
+  INFO 及以上**——`log_debug!` 在 wasm console 不可见（桌面可见）——
+  wasm 取证一律 `log_info!`（2026-11-21 video 排查：取证行 DEBUG 级
+  全被吞 = 链路"看似没执行"的误报源）。
 - wasm 同步 XHR 禁 `responseType`（InvalidAccessError）——二进制走
   `x-user-defined` 字节映射；XHR API = `open/send/set_request_header/
   override_mime_type`（无 set_method）。
