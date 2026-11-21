@@ -1,55 +1,55 @@
 # pygame.time
 
-帧时钟与计时——`get_ticks()` 毫秒计时、`Clock` 帧节流。
+时间模块——毫秒计时器、延时、帧时钟（帧率上限与帧距度量）。
 
-## <span class="c-func">函数</span>
+## 函数
 
-#### <span class="c-func">get_ticks() -> int</span>
+### get_ticks() -> int
 
-引擎启动以来的毫秒数。
+返回引擎启动以来的毫秒数。
 
-- :rtype: int
+```python
+start = pygame.time.get_ticks()
+```
 
-#### <span class="c-func">delay(ms)</span>
+### delay(ms)
 
-阻塞延时。**[差异]** Web 上 no-op（无阻塞模型，rAF 节流承载帧距）。
+阻塞延时 `ms` 毫秒。
 
-## <span class="c-class">类</span>
+注意：**Web 平台上为空操作**——浏览器由 requestAnimationFrame 控制帧
+距，延时无法生效。
 
-### <span class="c-class">Clock —— 帧时钟</span>
+## 类
 
-上限节流语义：`tick(fps)` 推进一帧并补睡到目标帧距；vsync 已把帧距
-拉到 ≥ 目标时不再补睡（三端同语义，无双重节流）。**[差异]** Web 上
-睡眠 no-op，`tick()` 只作度量。
+### Clock()
 
-#### <span class="c-func">Clock()</span>
-
-构造帧时钟。
+帧时钟对象——提供帧率上限节流与帧距度量。每个游戏循环配一个即可：
 
 ```python
 clock = pygame.time.Clock()
 while True:
-    dt = clock.tick(60)   # 毫秒
+    dt = clock.tick(60)   # 限制帧率 60，返回距上帧的毫秒数
     ...
 ```
 
-#### <span class="c-func">tick(fps=0) -> float</span>
+#### tick(fps=0) -> float
 
-推进一帧 + 上限节流，返回本帧真实间隔（**毫秒**，pygame 语义）。
+推进一帧，并将帧率限制在 `fps` 上限（引擎补睡到目标帧距）。返回本帧
+的真实间隔（毫秒）——可直接用作物理步长：
 
-- :param fps: 目标帧率上限（0 = 不节流）
-- :type fps: int
-- :returns: 本帧间隔毫秒
-- :rtype: float
+```python
+dt = clock.tick(60) / 1000.0   # 换算为秒
+world.step_frame(dt)
+```
 
-#### <span class="c-func">get_time() -> float</span>
+- fps —— 目标帧率上限；`0` 表示不限制
+- 当垂直同步已把帧距拉到超过目标值时，引擎不会再额外补睡（避免双重节流）
+- Web 平台上补睡为空操作，`tick()` 仅作帧距度量
 
-本帧真实间隔（毫秒，同 `tick()` 返回值，不节流）。
+#### get_time() -> float
 
-- :rtype: float
+返回本帧的真实间隔（毫秒）——与 `tick()` 的返回值相同，但不受节流影响。
 
-#### <span class="c-func">get_fps() -> float</span>
+#### get_fps() -> float
 
-EMA 平滑帧率。
-
-- :rtype: float
+返回平滑处理后的帧率（指数移动平均）。

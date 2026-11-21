@@ -1,21 +1,25 @@
 # pygame.key
 
-键盘输入的键值面：**K_* 键值常量全表**、修饰键位 `KMOD_*`、按下态查询
-`get_pressed()`。与 `pygame.event` 配对——事件推（`Event.key` 携带
-`Key`），这里查（按下态 / 修饰键位 / 键名）。
+键盘模块——键值常量、修饰键、按下态查询、文本输入控制。
 
-```{note}
-[差异] 键值是**类型化 `Key` 对象**（真 pygame 为整数键码）：比较恒用
-值相等——`e.key == pygame.key.K_a` ✓。`name()` 返回 W3C
-`KeyboardEvent.code` 命名（`name(K_a) == "KeyA"`）。
+与 `pygame.event` 配对使用：键盘事件由事件系统推送（`KEYDOWN` /
+`KEYUP`，事件的 `key` 属性携带键值），本模块负责查询即时按下状态。
+
+键值是**类型化的 `Key` 对象**（非整数键码）：比较使用值相等——
+`e.key == pygame.key.K_a`。
+
+```python
+for event in pygame.event.get():
+    if event.type == pygame.event.KEYDOWN and event.key == pygame.key.K_SPACE:
+        jump()
 ```
 
-## <span class="c-const">常量</span>
+## 常量
 
-### <span class="c-const">键值 K_*（108 键全表）</span>
+### 键值 K_*（108 键全表）
 
-typed `Key` 常量——`pygame.key.K_a` 直接取用。SHIFT / CTRL / ALT / META
-为左键别名，右键位另有 `K_R*` 全名。
+`pygame.key.K_x` 形式的键值常量。SHIFT / CTRL / ALT / META 为左键
+别名，右键另有 `K_R*` 全名。
 
 | 分组 | 常量 |
 |---|---|
@@ -29,22 +33,22 @@ typed `Key` 常量——`pygame.key.K_a` 直接取用。SHIFT / CTRL / ALT / MET
 | 小键盘 | K_KP0 … K_KP9 K_KP_PLUS K_KP_MINUS K_KP_MULTIPLY K_KP_DIVIDE K_KP_ENTER K_KP_PERIOD |
 | 其他 | K_PRINT K_SCROLLLOCK K_PAUSE K_NUMLOCK |
 
-### <span class="c-const">修饰键位 KMOD_*</span>
+### 修饰键位 KMOD_*
 
-`Event.mod` / `get_mods()` 的位集。
+`event.mod` 与 `get_mods()` 返回的位集。
 
-| 常量 | 位语义 |
+| 常量 | 语义 |
 |---|---|
 | KMOD_SHIFT | Shift |
 | KMOD_CTRL | Ctrl |
 | KMOD_ALT | Alt |
 | KMOD_META | Meta（Win / ⌘）|
 
-## <span class="c-func">函数</span>
+## 函数
 
-#### <span class="c-func">get_pressed() -> Pressed</span>
+### get_pressed() -> Pressed
 
-取当前按下态视图（非阻塞；每帧取一次即可）。
+返回当前按下态视图。每帧调用一次，配合方向键类连续输入：
 
 ```python
 keys = pygame.key.get_pressed()
@@ -52,91 +56,76 @@ if keys.get(pygame.key.K_LEFT):
     player.x -= 4
 ```
 
-- :returns: 按下态视图（见下方 `Pressed` 类）
-- :rtype: Pressed
+### get_mods() -> int
 
-#### <span class="c-func">get_mods() -> int</span>
+返回当前修饰键位集（KMOD_* 按位或）。
 
-当前修饰键位集（KMOD 位按位或）。
+```python
+if pygame.key.get_mods() & pygame.key.KMOD_CTRL:
+    save()
+```
 
-- :returns: KMOD 位集
-- :rtype: int
+### name(key) -> str
 
-#### <span class="c-func">name(key) -> str</span>
-
-键名——W3C `KeyboardEvent.code` 命名。
+返回键的名称（W3C `KeyboardEvent.code` 命名）。
 
 ```python
 pygame.key.name(pygame.key.K_a)     # "KeyA"
 pygame.key.name(pygame.key.K_UP)    # "ArrowUp"
 ```
 
-- :returns: 键名字符串
-- :rtype: str
+### get_focused() -> bool
 
-#### <span class="c-func">get_focused() -> bool</span>
+返回窗口是否拥有键盘聚焦。失焦期间按下态查询不可靠——多窗口与全屏
+切换场景可用此判断。
 
-窗口键盘聚焦态。失焦时按下态不可靠——全屏切换、多窗口场景用此判断。
+### start_text_input()
 
-- :rtype: bool
-
-#### <span class="c-func">set_repeat(delay, interval)</span>
-
-键重复软件合成。**[垫底]** 收下不生效——自动重复由 OS repeat 标记承载
-（keydown 的 `Event.repeat`）。
-
-#### <span class="c-func">get_repeat() -> tuple[int, int]</span>
-
-键重复配置查询。**[垫底]** 恒返回 `(0, 0)` = 未启用软件重复。
-
-- :rtype: tuple[int, int]
-
-## <span class="c-class">类</span>
-
-### <span class="c-class">Key —— 类型化键值</span>
-
-`Event.key` 的载体、`K_*` 常量的类型。**[差异]** 不可哈希
-（不能作 dict / set 键）——值比较走 `==`。
-
-##### <span class="c-magic">\_\_eq\_\_() -> bool</span>
-
-值语义相等比对：`e.key == pygame.key.K_x` ✓；与 `int` 比对恒 False
-（真 pygame 的整数键码在这里不存在）。
-
-### <span class="c-class">Pressed —— 按下态视图</span>
-
-`get_pressed()` 的返回物——按键 → 按下态的只读查询视图。
-
-##### <span class="c-func">get(key) -> bool</span>
-
-查询某键当前是否按下。
+启动文本输入（移动端呼出软键盘）。桌面平台为空操作。
 
 ```python
-if pygame.key.get_pressed().get(pygame.key.K_ESCAPE):
-    return
+pygame.key.start_text_input()
 ```
 
-- :param key: `K_*` 常量
-- :type key: Key
-- :returns: 该键是否按下
-- :rtype: bool
+注意：使用 egui（`draw_ui`）绘制 UI 的脚本**不要调用**——键盘生命
+周期由 egui 焦点状态自动驱动；显式口只用于非 egui 的自绘文本框。
 
-### <span class="c-func">start_text_input()</span> / <span class="c-func">stop_text_input()</span>
+### stop_text_input()
 
-软键盘生命周期**显式口**（对齐真 pygame 同名接口）——Android 呼出/收起
-软键盘；桌面 no-op（硬件键盘恒可用，文本事件恒流动）。
+停止文本输入（移动端收起软键盘）。桌面平台为空操作。
+
+### set_repeat(delay, interval)
+
+键重复软件合成设置。当前实现收下参数但不生效——按键自动重复由操作
+系统的重复标记承载（`KEYDOWN` 事件的 `repeat` 属性）。
+
+### get_repeat() -> (delay, interval)
+
+返回键重复配置。当前恒为 `(0, 0)`。
+
+## 类
+
+### Key
+
+类型化键值对象——`event.key` 的载体、`K_*` 常量的类型。
+
+注意：`Key` 对象**不可哈希**（不能作为 dict 或 set 的键）；比较一律
+使用值相等：
 
 ```python
-pygame.key.start_text_input()   # Android = showSoftInput；桌面 no-op
-pygame.key.stop_text_input()    # Android = hideSoftInput；桌面 no-op
+event.key == pygame.key.K_a    # 值相等比对
 ```
 
-**定约**：用 egui（`draw_ui`）的脚本**不要调用**——键盘生命周期由
-egui 焦点状态隐式驱动（`egui_wants_keyboard_input` 变化自动跟随，
-零调用），混用会被每场首帧的隐式复位打断。显式口只给**非 egui 自绘
-文本框**的脚本用（Surface 手绘输入框等场景）。
+### Pressed
 
-**[差异]** 真 pygame 的同名接口桌面端也生效（控制 TEXTINPUT 事件是否
-产生）；本实现桌面端恒 no-op——跨平台脚本零感知。
+`get_pressed()` 返回的按下态视图。
 
-- :returns: None
+#### get(key) -> bool
+
+查询指定键当前是否按下：
+
+```python
+pressed = pygame.key.get_pressed()
+if pressed.get(pygame.key.K_ESCAPE):
+    quit_game()
+```

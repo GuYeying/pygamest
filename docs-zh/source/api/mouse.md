@@ -1,53 +1,80 @@
 # pygame.mouse
 
-鼠标查询面——位置、按键态、相对位移、光标可见性。与 `pygame.event`
-配对：事件推（MOUSEMOTION / MOUSEBUTTONDOWN），这里查（轮询即时态）。
+鼠标模块——查询光标位置与按键状态、控制光标可见性、锁定光标。
 
-## <span class="c-func">函数</span>
+位置坐标为**逻辑中心系**：原点在屏幕中心、y 轴向上。与 `pygame.event`
+配对使用：事件负责推送（MOUSEMOTION / MOUSEBUTTONDOWN），这里负责查询
+即时状态。
 
-#### <span class="c-func">get_pos() -> tuple[int, int]</span>
+## 函数
 
-光标位置（**逻辑中心系**——原点屏幕中心、y 向上；事件泵前为 `(0, 0)`）。
+### get_pos() -> (x, y)
 
-- :rtype: tuple[int, int]
-
-#### <span class="c-func">get_pressed() -> tuple[bool, bool, bool]</span>
-
-左 / 中 / 右三键按下态（pygame 惯例序）。
+返回光标当前位置 `(x, y)`。事件泵启动前为 `(0, 0)`。
 
 ```python
-left, mid, right = pygame.mouse.get_pressed()
+x, y = pygame.mouse.get_pos()
 ```
 
-- :rtype: tuple[bool, bool, bool]
+### get_pressed() -> (left, middle, right)
 
-#### <span class="c-func">get_rel() -> tuple[int, int]</span>
+返回左、中、右三键的按下状态。
 
-相对位移（自上次 `get_rel()` 调用起；连续调用逐段累加）——FPS 相机
-视角用。
+```python
+left, middle, right = pygame.mouse.get_pressed()
+if left:
+    shoot()
+```
 
-- :rtype: tuple[int, int]
+### get_rel() -> (dx, dy)
 
-#### <span class="c-func">set_visible(visible)</span>
+返回自上次调用本函数以来的光标位移。连续调用时逐段累加，
+适合实现鼠标视角控制：
 
-光标可见态切换（移动端无光标语义，收下无副作用）。
+```python
+dx, dy = pygame.mouse.get_rel()
+yaw += dx * 0.3
+pitch += dy * 0.3
+```
 
-#### <span class="c-func">get_visible() -> bool</span>
+### set_visible(visible)
 
-光标可见态查询。
+设置光标是否可见。
 
-- :rtype: bool
+```python
+pygame.mouse.set_visible(False)   # 隐藏光标
+```
 
-#### <span class="c-func">get_focused() -> bool</span>
+### get_visible() -> bool
 
-窗口鼠标聚焦态（与键盘聚焦同源）。
+返回光标当前是否可见。
 
-- :rtype: bool
+### set_grab(grabbed)
 
-#### <span class="c-func">set_pos(pos)</span>
+锁定光标到窗口客户区内——光标无法移出窗口，配合
+`set_visible(False)` 实现 FPS 类游戏的沉浸式鼠标控制。
 
-warp 光标到指定位置。**[垫底]** 仅更新状态表——不扭曲真实光标、
-无合成事件（starfish-window v1 无光标扭曲能力）。
+```python
+pygame.mouse.set_grab(True)        # 锁定
+pygame.mouse.set_visible(False)    # 隐藏光标
+# ...游戏进行中...
+pygame.mouse.set_grab(False)       # 释放
+pygame.mouse.set_visible(True)
+```
 
-- :param pos: 目标位置
-- :type pos: tuple[int, int]
+### get_grab() -> bool
+
+返回光标当前是否被锁定。
+
+### get_focused() -> bool
+
+返回窗口是否拥有鼠标聚焦。
+
+### set_pos(pos)
+
+将光标状态表更新到指定位置。注意：仅更新内部状态表，不移动真实
+光标、也不产生合成移动事件。
+
+```python
+pygame.mouse.set_pos((400, 300))
+```
