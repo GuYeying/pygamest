@@ -30,10 +30,10 @@ async def main():
         with screen.render() as t:
             t.fill((30, 30, 46))
         pygame.display.flip()
-        await pygame.next_frame()
+        await pygame.tasks.yield_now()
 ```
 
 四个要素：`set_mode` 开窗 → `with screen.render()` 会话（绘制词汇按
 管线分域：图元 [pygame.gfxdraw](../api/gfxdraw.md)、文字
 [pygame.font](../api/font.md)）→ `flip()` 落屏 → `await
-pygame.next_frame()` 帧拍。
+pygame.tasks.yield_now()` 帧拍。

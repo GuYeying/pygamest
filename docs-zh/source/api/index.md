@@ -24,6 +24,7 @@ API 页的成员标题按类别**着色 + 同色淡调底线**；标题缩进即
 :maxdepth: 1
 
 pygame <pygame>
+pygame_tasks <pygame_tasks>
 pygame_gui <pygame_gui>
 pygame_physics <pygame_physics>
 pygame_spine <pygame_spine>

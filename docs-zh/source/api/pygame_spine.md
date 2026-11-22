@@ -63,7 +63,7 @@ while True:
     with screen.render() as f:
         pages = load_atlas_pages()
         pygame.gfxdraw.draw_spine(f, skeleton, pages)
-    await pygame.next_frame()
+    await pygame.tasks.yield_now()
 ```
 
 

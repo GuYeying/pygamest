@@ -81,13 +81,13 @@ pygame-rs-dev/       # 开发解释器 pygamest-dev + examples/（78 案例）+ 
 | `await io.fetch(path)` | 帧首排空队列异步读→入表 | spawn_local 真 fetch→入表（**网络层流式不卡帧**） |
 
 分块流式加载正典（native）：`io_size` → 每帧 `io_read_chunk` 一块（≤8MB）+
-`await next_frame()`；wasm：`io_size is None` → `await io.fetch(path)` +
+`await pygame.tasks.yield_now()`；wasm：`io_size is None` → `await io.fetch(path)` +
 `io_take(path)`（参考 `examples/async_io_test.py`）。
 
 ## 5. tasks v1（协作式微调度器）
 
 `pygame.tasks.{spawn, gather, sleep_frames, sleep, wait_for, Queue}`；
-`await pygame.next_frame()` 交出控制权一帧（主循环协程内）。
+`await pygame.tasks.yield_now()` 交出控制权一帧（主循环协程内）。
 
 - `t = tasks.spawn(coro, name=...)` → `t.done / t.failed() / t.exception() /
   t.name / t.cancel() / await t.wait()`；`wait()` 返回 `_TaskWait`（恒先 yield
@@ -105,7 +105,7 @@ pygame-rs-dev/       # 开发解释器 pygamest-dev + examples/（78 案例）+ 
 2. **裸 generator 不可 await**：`'generator' object can't be awaited`——可等待体
    必须实现 `__await__`（`_TaskWait`/`_SleepFrames`/`_IoFetch` 均为此而生）。
 3. **async gen（async def 内裸 yield）驱动有病态**——用纯 coroutine +
-   `await next_frame()` 或协议 yield 元组（普通 gen）形态。
+   `await pygame.tasks.yield_now()` 或协议 yield 元组（普通 gen）形态。
 4. **属性遮蔽方法**：实例属性与同名方法共存时方法不可达（exception 属性遮蔽
    exception() 事故）——属性命名避开方法名。
 

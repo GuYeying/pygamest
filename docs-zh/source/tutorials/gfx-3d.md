@@ -32,7 +32,7 @@ async def main():
             # ...2D HUD（正交像素坐标直用）...
 
         pygame.display.flip()
-        await pygame.next_frame()
+        await pygame.tasks.yield_now()
 ```
 
 ## 词汇一览

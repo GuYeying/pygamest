@@ -21,7 +21,7 @@ while True:
     if frame is not None:
         with screen.render() as r:
             pygame.gfxdraw.draw_surface(r, frame)
-    await pygame.next_frame()
+    await pygame.tasks.yield_now()
 ```
 
 ## 类

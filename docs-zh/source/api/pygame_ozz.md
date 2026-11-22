@@ -84,7 +84,7 @@ while True:
     player.sample((pygame.time.get_ticks() % dur_ms) / dur_ms)
     with screen.render() as f:
         pygame.gfxdraw.draw_ozz_bones(f, player, scale=80.0, cx=0, cy=0)
-    await pygame.next_frame()
+    await pygame.tasks.yield_now()
 ```
 
 数据口 `joint_positions_xy()` / `joint_parents()` 支持自投影与自绘。

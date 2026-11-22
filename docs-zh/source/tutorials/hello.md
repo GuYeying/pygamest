@@ -15,7 +15,7 @@ async def main():
         with screen.render() as t:
             t.fill((30, 30, 46))
         pygame.display.flip()
-        await pygame.next_frame()
+        await pygame.tasks.yield_now()
 ```
 
 ## 四要素
@@ -27,7 +27,7 @@ async def main():
 3. **`with screen.render() as t:`**——本帧主渲染通道。会话对象只表达
    "画到哪"；绘制词汇按管线分域：图元 → `pygame.gfxdraw`（renderpass
    作首参），文字 → `pygame.font`。
-4. **`flip()` + `await pygame.next_frame()`**——落屏 + 帧拍（事件泵
+4. **`flip()` + `await pygame.tasks.yield_now()`**——落屏 + 帧拍（事件泵
    与渲染节拍的统一入口）。
 
 ## 加一点内容
