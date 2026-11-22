@@ -58,6 +58,21 @@ class _AsyncTask:
             self.io_path = None
         try:
             req = self.coro.send(None)
+            # **双 send 完成 while 体**（RP 的 await gen 委派两拍语义——
+            # 第一 send 恢复到 gen 的 yield 挂起，第二 send 完成 await
+            # 表达式让 while 体跑完到下一挂起点；单 send = 任务帧率减半，
+            # 2026-11-22 泵帧取证实证 pump_frame=120 时 frame=60）
+            if type(req) is str and req == "frame":
+                try:
+                    self.coro.send(None)
+                except StopIteration as e2:
+                    self.done = True
+                    self.result = e2.value
+                    return
+                except BaseException as e2:
+                    self.done = True
+                    self.exc = e2
+                    return
             if type(req) is tuple and req[0] == "io_read":
                 # 任务挂起等 io：压队（Rust 帧首排空发起 fetch）→
                 # 下一 tick 起查就绪，就绪帧恢复取数
