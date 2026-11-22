@@ -1052,6 +1052,21 @@ Python 触达 Rust 的分层链（自上而下，单向）：
     ——纯 Python 层桥零 Rust async 桥接）；主循环双驱动（coroutine
     send(None) / generator __next__，对宿主等价——yield 或 await 帧桥
     挂起即本帧完成）；
+  - **任务 tick 双 send（2026-11-22 修复 4a8e658）**：RP 的 await
+    gen 委派是**两拍语义**——第一 send 恢复到 gen 的 yield 挂起、
+    第二 send 完成 await 表达式。单 send = 任务帧率减半（泵帧取证
+    实锤 pump 120 时 frame 60——所有 async 案例帧率曾减半，MC 的
+    31fps 即受害者）。tick 现双 send = 每 tick 完成一个 while 体；
+  - **多协程案例双定约（2026-11-22，voxel_mc_async 实战教训）**：
+    ①**挂起点数量 = 恰好 1**——双 send 下 0 个 = 任务跑至 done
+    静默死亡、2 个 = 每 tick 两轮体（step_frame 双跑 = 物理 2 倍速，
+    get_time 帧间隔被消费两次）；②**嵌套协程内写外层局部必须
+    nonlocal 全列**（cam/yaw/pitch/vox_mesh/tri_count/_last_ms——
+    漏声明 = UnboundLocalError 静默死任务 + cam_buf 零矩阵全裁
+    假象）；③**退出链 = 全局旗标**（running list 原位改，三方 while
+    同查——logic 的 ESC return 只杀自己，双协程下 main/render
+    不知情窗口残留）；④**spawn 返回值 = 取证口**（failed()/
+    exception() 抓协程死因——调度器异常静默存档，死因排查首选）。
   - **入口文件可配置**：toml `[app] entry = "main.py"`（缺省）；
     build_windows 拷入口为 dist/<entry> + 写 dist/game.toml 运行清单；
     runner 读 game.toml 的 entry 先加载（路径 absolutize 先于 cwd
