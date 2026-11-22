@@ -30,9 +30,7 @@ class _FrameAwait:
         # 任务 tick → send → 任务内再 await → pump → 嵌套 send = RP
         # "coroutine already executing" 重入，2026-11-19 实测）
         yield "frame"
-_next_frame_state = _FrameAwait()
-def next_frame():
-    return _next_frame_state
+_next_frame_state = _FrameAwait()   # tasks.yield_now 的 awaitable（next_frame 顶层挂载已退役，2026-11-22）
 
 # ── 帧泵驱动的协作式微调度器 ──
 class _AsyncTask:
@@ -220,6 +218,12 @@ _async_ns.sleep = _async_sleep
 _async_ns.wait_for = _async_wait_for
 _async_ns.Queue = _Queue
 _async_ns.frame = lambda: _async_frame
+
+def _async_yield_now():
+    # 协作式让出原语的规范名（定约 2026-11-21：next_frame → tasks.yield_now
+    # ——"frame" 词根易被误读为帧率控制；yield_now = 协程让出到帧边界）
+    return _next_frame_state
+_async_ns.yield_now = _async_yield_now
 
 # ── 异步 IO 桥（两拍模式，**单层委派构型**——与 next_frame 同构）──
 # yield ("io_read", path) → Rust 完成（按路径完成表）→ send(None) 恢复
@@ -859,10 +863,11 @@ pub async fn run(script: &str, tag: &str, transparent: bool) -> Result<(), Box<d
             if let Ok(pump) = scope.globals.get_item("_async_pump", vm) {
                 *pump_cell.borrow_mut() = Some(pump);
             }
-            // pygame.next_frame / pygame.tasks 挂载（帧桥 → pygame 模块属性）。
-            // modload **可选**（_sf_loader 存在才挂——web 形态 module_root/
-            // embedded_scripts 双 None 时模块表不装配，帧桥照常供帧；
-            // 2026-11-02 web 实测：四件套一票否决 = next_frame 缺失）
+            // pygame.tasks 挂载（帧桥 → pygame 模块属性）。modload **可选**
+            //（_sf_loader 存在才挂——web 形态 module_root/embedded_scripts
+            // 双 None 时模块表不装配，帧桥照常供帧；2026-11-02 web 实测：
+            // 三件套一票否决 = tasks 缺失）。next_frame 顶层挂载已退役
+            //（2026-11-22 用户定夺：让出原语规范名 = tasks.yield_now）
             let sf_loader = vm
                 .sys_module
                 .get_attr("modules", vm)
@@ -870,12 +875,10 @@ pub async fn run(script: &str, tag: &str, transparent: bool) -> Result<(), Box<d
                 .and_then(|mods| mods.get_item("_sf_loader", vm).ok());
             match (
                 vm.import("pygame", 0),
-                scope.globals.get_item("next_frame", vm),
                 scope.globals.get_item("_async_ns", vm),
                 scope.globals.get_item("_io_ns", vm),
             ) {
-                (Ok(pg), Ok(nf), Ok(an), Ok(io_ns)) => {
-                    let mounted_nf = pg.set_attr("next_frame", nf, vm);
+                (Ok(pg), Ok(an), Ok(io_ns)) => {
                     let mounted_tasks = pg.set_attr("tasks", an, vm);
                     let mounted_ml = sf_loader
                         .and_then(|ml| pg.set_attr("modload", ml, vm).ok());
@@ -883,7 +886,7 @@ pub async fn run(script: &str, tag: &str, transparent: bool) -> Result<(), Box<d
                     mount_unified_io(tag, &pg, &scope, &io_ns, vm);
                     let mounted_io = ();
                     starfish_debug::log_debug!(format!(
-                        "[bridge-run] next_frame: {mounted_nf:?} / tasks: {mounted_tasks:?} / modload: {mounted_ml:?} / io: {mounted_io:?}"
+                        "[bridge-run] tasks: {mounted_tasks:?} / modload: {mounted_ml:?} / io: {mounted_io:?}"
                     ));
                 }
                 _ => {
@@ -1045,15 +1048,14 @@ pub async fn run_script_in(
                 .get_attr("modules", vm)
                 .ok()
                 .and_then(|mods| mods.get_item("_sf_loader", vm).ok());
-            // modload 可选（web 双 None 形态模块表不装配——见 bridge-run 侧定约）
+            // modload 可选（web 双 None 形态模块表不装配——见 bridge-run 侧定约）。
+            // next_frame 顶层挂载已退役（2026-11-22：让出原语规范名 = tasks.yield_now）
             match (
                 vm.import("pygame", 0),
-                scope.globals.get_item("next_frame", vm),
                 scope.globals.get_item("_async_ns", vm),
                 scope.globals.get_item("_io_ns", vm),
             ) {
-                (Ok(pg), Ok(nf), Ok(an), Ok(io_ns)) => {
-                    let mounted_nf = pg.set_attr("next_frame", nf, vm);
+                (Ok(pg), Ok(an), Ok(io_ns)) => {
                     let mounted_tasks = pg.set_attr("tasks", an, vm);
                     let mounted_ml = sf_loader
                         .and_then(|ml| pg.set_attr("modload", ml, vm).ok());
@@ -1061,12 +1063,12 @@ pub async fn run_script_in(
                     mount_unified_io("pygamest-dev", &pg, &scope, &io_ns, vm);
                     let mounted_io = ();
                     starfish_debug::log_debug!(format!(
-                        "[bridge] next_frame: {mounted_nf:?} / tasks: {mounted_tasks:?} / modload: {mounted_ml:?} / io: {mounted_io:?}"
+                        "[bridge] tasks: {mounted_tasks:?} / modload: {mounted_ml:?} / io: {mounted_io:?}"
                     ));
                 }
                 _ => {
                     starfish_debug::log_error!(
-                        "[bridge] 挂载失败（pygame/next_frame/tasks 任一缺失）"
+                        "[bridge] 挂载失败（pygame/tasks 任一缺失）"
                     );
                 }
             }
