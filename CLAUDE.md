@@ -1042,11 +1042,13 @@ Python 触达 Rust 的分层链（自上而下，单向）：
 - **批次 59（2026-10-25，用户定夺两轮）：入口严格化 + 协程形态**：
   - **严格 `main()` 入口**（弃自动探测/顶层直写）：脚本必须定义
     `def main():`（生成器，帧体 yield）**或 `async def main():`（协程，
-    帧体 `await pygame.next_frame()`）**——Web rAF 硬约束下的跨平台
+    帧体 `await pygame.tasks.yield_now()`；旧 `await pygame.next_frame`
+    已退役——2026-11-22 定名批次，规范名 = tasks.yield_now，顶层
+    挂载移除）**——Web rAF 硬约束下的跨平台
     统一形态；存量 13 案例的 `def game():` 全量迁移 `def main():`；
   - **协程驱动**（async main——为将来 `await` 网络 IO 不卡帧铺路；
     net 已备非阻塞轮询，真 awaitable 后续接入）：testhost 帧桥注入
-    （`pygame.next_frame()` 返回 _FrameAwait，`__await__` yield "frame"
+    （`pygame.tasks.yield_now()` 返回 _FrameAwait，`__await__` yield "frame"
     ——纯 Python 层桥零 Rust async 桥接）；主循环双驱动（coroutine
     send(None) / generator __next__，对宿主等价——yield 或 await 帧桥
     挂起即本帧完成）；
