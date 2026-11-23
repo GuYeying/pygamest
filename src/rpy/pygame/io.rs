@@ -58,21 +58,29 @@ use std::cell::Cell;
             }
         }
 
-        /// write(path, data)：覆盖写（bytes 或 str——str 按 UTF-8 编码）
+        /// write(path, data)：覆盖写（bytes 或 str——str 按 UTF-8 编码）。
+        /// wasm = **同步 XHR POST**（2026-11-23 修复——曾 Err：Rust web
+        /// 层 write 早已实现（fetch POST），py 层未接；与 read/exists
+        /// 同款"同步口退化承载而非 Err"定约补齐）
         #[pyfunction]
         fn write(path: PyStrRef, data: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
+            let bytes: Vec<u8> = if let Some(s) =
+                data.downcast_ref::<rustpython_vm::builtins::PyStr>()
+            {
+                s.to_str()
+                    .ok_or_else(|| vm.new_value_error("内容含非 UTF-8 字符"))?
+                    .as_bytes()
+                    .to_vec()
+            } else {
+                data.try_bytes_like(vm, |b| b.to_vec())?
+            };
             #[cfg(target_arch = "wasm32")]
-            return Err(vm.new_value_error(
-                "pygame.io: Web 端 v1 不提供同步 io（宿主预加载/异步资源装载承载）",
-            ));
+            {
+                starfish_io::write_sync(path_str(&path, vm)?, bytes)
+                    .map_err(|e| vm.new_value_error(format!("io 写入失败: {e}")))
+            }
             #[cfg(not(target_arch = "wasm32"))]
             {
-                let bytes: Vec<u8> = if let Some(s) = data.downcast_ref::<rustpython_vm::builtins::PyStr>()
-                {
-                    s.to_str().ok_or_else(|| vm.new_value_error("内容含非 UTF-8 字符"))?.as_bytes().to_vec()
-                } else {
-                    data.try_bytes_like(vm, |b| b.to_vec())?
-                };
                 pollster::block_on(starfish_io::write(path_str(&path, vm)?, bytes))
                     .map_err(|e| vm.new_value_error(format!("io 写入失败: {e}")))
             }
@@ -167,18 +175,20 @@ use std::cell::Cell;
                 .map_err(|e| vm.new_value_error(format!("io exists 失败: {e}")))
         }
 
-        /// write_text(path, text)：覆盖写文本（UTF-8）
+        /// write_text(path, text)：覆盖写文本（UTF-8）——wasm 同步 XHR
+        /// POST（write 同款 2026-11-23 修复）
         #[pyfunction]
         fn write_text(path: PyStrRef, text: PyStrRef, vm: &VirtualMachine) -> PyResult<()> {
+            let t = text
+                .to_str()
+                .ok_or_else(|| vm.new_value_error("内容含非 UTF-8 字符"))?;
             #[cfg(target_arch = "wasm32")]
-            return Err(vm.new_value_error(
-                "pygame.io: Web 端 v1 不提供同步 io（宿主预加载/异步资源装载承载）",
-            ));
+            {
+                starfish_io::write_sync(path_str(&path, vm)?, t.as_bytes().to_vec())
+                    .map_err(|e| vm.new_value_error(format!("io 写入失败: {e}")))
+            }
             #[cfg(not(target_arch = "wasm32"))]
             {
-                let t = text
-                    .to_str()
-                    .ok_or_else(|| vm.new_value_error("内容含非 UTF-8 字符"))?;
                 pollster::block_on(starfish_io::write_text(path_str(&path, vm)?, t))
                     .map_err(|e| vm.new_value_error(format!("io 写入失败: {e}")))
             }

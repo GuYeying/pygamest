@@ -33,11 +33,20 @@ text = pygame.io.read_text("assets/story.txt")
 
 覆盖写入。`data` 为 bytes 时原样写入，为 str 时按 UTF-8 编码。
 
-注意：**Web 平台不可用**。
+注意：**Web 平台上走同步 XHR POST**（2026-11-23 修复——曾直接报错；
+Rust 层 fetch POST 早已实现，绑定层补齐"同步口退化承载"定约）。
+POST 到目标地址的保存端点，`Content-Type: application/octet-stream`，
+服务端负责落盘——部署服务端须提供 POST 保存能力（与
+`pygame.image.save` 的 Web 保存链同端点契约）；Web 写入为裸写
+（无 `.sfx` 加密封装语义）。
+
+```python
+pygame.io.write("saves/save1.json", data)
+```
 
 ### write_text(path, text)
 
-覆盖写入文本（UTF-8 编码）。注意：**Web 平台不可用**。
+覆盖写入文本（UTF-8 编码）。Web 平台同 `write()`（同步 XHR POST）。
 
 ### exists(path) -> bool
 
@@ -81,7 +90,8 @@ async def main():
 
 | 接口 | 桌面 / 移动 | Web |
 |---|---|---|
-| read / read_text / exists / write / write_text | 本地文件系统 | 同步 XHR 全量（write 系不可用） |
+| read / read_text / exists | 本地文件系统 | 同步 XHR 全量（裸读/裸探测） |
+| write / write_text | 本地文件系统（覆盖写） | 同步 XHR POST（保存端点，裸写） |
 | io_read_chunk（分块流式） | 帧级区间读取 | 不可用（fetch 全量承载） |
 | io_size | 文件元数据 | 返回 None |
 | fetch / 资源加载三线口 | 后台线程分块 | 浏览器异步全量 |
