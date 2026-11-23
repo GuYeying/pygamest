@@ -193,9 +193,26 @@ pygame-rs-dev/       # 开发解释器 pygamest-dev + examples/（78 案例）+ 
   着色。编码窗收窄到场景深度带（全视锥编码 8bit = 15 级量化假法线）。
   合成不能 raw 在主屏（回放盖一切）——第二离屏面 + `gfxdraw` 像素段
   `draw_surface` blit 贴主屏（与线框/HUD 同序）。
+- **heightfield 水面正典** = water_pool（GPU compute 波场，2026-11-23
+  取证定案四象限）——**compute 数据链可用，但有四个必须绕开的坑**：
+  ①**1D dispatch**：引擎 compute pass 丢 y 维 workgroup（dispatch(8,8)
+  实测只跑 2/8 行组，gid.y 上限 16）——恒用 `workgroup_size(64,1,1)` +
+  `dispatch(n²/64, 1, 1)` + `i = gid.x` 一维索引；
+  ②**ping-pong = 两条独立 `raw_compute` 会话**（同会话两次
+  `set_bind_group` 被引擎自动排 0/1，shader 只认 group(0) = 第二
+  dispatch 复用第一组 = ping-pong 断裂；两会话各 auto-index 0 ✓）；
+  ③**uniform 结构 = 4×f32 精确 16B**（vec3 成员触发 16 对齐膨胀 →
+  min_binding_size 失配 = 管线创建验证失败全黑，`ac.compute_pipeline`
+  报 "min_binding_size" 错——查结构体尺寸 vs buffer 尺寸）；
+  ④wake **零均值注入**（py 逐帧交替正负 amp——纯正向 = 平均水位泵升
+  淹没波纹）。链路取证口 = `compute_chain_probe.py`（单变量色彩计 +
+  覆盖图法：**写 gid 原值进 buffer 用 FS 热图显示** = coverage 一眼
+  全见）。早前 bisect"uniform 读零/全链恒零"全部由此四坑复合伪证。
 - **debug 构建的物理/渲染数值代码慢 10-50 倍**（rapier 求解器/wgpu 上传
   无内联）——性能验收用 `target/release/python.exe`；"30 刚体就卡"类
-  报障先问构建形态（dev 日常 = debug）。
+  报障先问构建形态（dev 日常 = debug）。**py 侧逐格循环（RP ≈0.1μs/
+  op）是跨构建共同热点**——64² 双 substep = 14ms/帧：仿真类数据链
+  （波场/粒子）要么 GPU compute 要么引擎级 Rust 状态类，别用 py 循环。
 - **wasm 控制台的日志级别过滤**：starfish-debug 的 wasm 输出器**只落
   INFO 及以上**——`log_debug!` 在 wasm console 不可见（桌面可见）——
   wasm 取证一律 `log_info!`（2026-11-21 video 排查：取证行 DEBUG 级
