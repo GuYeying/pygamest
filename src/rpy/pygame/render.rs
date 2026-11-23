@@ -588,6 +588,15 @@ pub(crate) mod render {
         format: Option<String>,
     }
 
+    /// wave_field(n, cell) 收参——heightfield 波场（Rust 状态持有）
+    #[derive(FromArgs)]
+    pub(crate) struct WaveFieldArgs {
+        #[pyarg(any)]
+        n: u32,
+        #[pyarg(any)]
+        cell: f64,
+    }
+
     /// mesh_builder(layout, vertices, ...) 收参——layout = 格式名列表
     #[derive(FromArgs)]
     pub(crate) struct MeshBuilderArgs {
@@ -973,6 +982,34 @@ pub(crate) mod render {
             }
             let m = b.build(args.label.as_deref(), None);
             Ok(PyMesh { inner: m }.into_ref(&vm.ctx))
+        }
+
+        /// wave_field(n, cell) -> WaveField：**heightfield 波场**（Rust
+        /// 持有状态——step/wake/displace_mesh 全内部计算，零逐格 py
+        /// 编组；water_pool 的 RP 逐格循环实测 14ms/帧热点引擎化）。
+        #[pymethod]
+        fn wave_field(
+            &self,
+            args: WaveFieldArgs,
+            vm: &VirtualMachine,
+        ) -> PyResult<PyRef<PyWaveField>> {
+            let n = args.n as usize;
+            if n < 4 {
+                return Err(vm.new_value_error("波场 n ≥ 4"));
+            }
+            let area = n * n;
+            Ok(PyWaveField {
+                access: self.access.clone(),
+                n,
+                cell: args.cell as f32,
+                state: std::cell::RefCell::new(WaveState {
+                    hf: vec![0.0; area],
+                    vf: vec![0.0; area],
+                    hf2: vec![0.0; area],
+                    vf2: vec![0.0; area],
+                }),
+            }
+            .into_ref(&vm.ctx))
         }
 
         /// bind_group(bindings, label=None) -> BindGroup：bindings =
@@ -1539,6 +1576,172 @@ pub(crate) mod render {
         #[pymethod]
         fn vertex_buffer_size(&self) -> u64 {
             self.inner.vertex_buffer().size()
+        }
+    }
+
+    /// WaveField（access.wave_field 产物）：heightfield 波场状态——
+    /// step/wake/displace_mesh 全 Rust 内部计算（零逐格 py 编组）。
+    #[derive(PyPayload)]
+    #[pyattr]
+    #[pyclass(module = "pygame.render", name = "WaveField", unhashable = true)]
+    pub(crate) struct PyWaveField {
+        access: Arc<RenderResourceAccess>,
+        n: usize,
+        cell: f32,
+        state: std::cell::RefCell<WaveState>,
+    }
+
+    /// 波场状态（内部可变——引擎 pymethod 恒 &self 定约）
+    struct WaveState {
+        hf: Vec<f32>,
+        vf: Vec<f32>,
+        hf2: Vec<f32>,
+        vf2: Vec<f32>,
+    }
+
+    impl std::fmt::Debug for PyWaveField {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "WaveField(<{}×{}>)", self.n, self.n)
+        }
+    }
+
+    #[pyclass]
+    impl PyWaveField {
+        /// step(substeps)：双缓冲 leapfrog 波方程（c=0.42 稳定域；阻尼
+        /// 0.9965；边界一圈强吸收 0.95/0.80；场值钳制 ±0.15——爆炸/饱
+        /// 和不传染。**双缓冲定约**：原位更新 = 邻格 laplacian 半新半旧
+        /// 混扫，数值不稳——water_pool CPU 版实证）
+        #[pymethod]
+        fn step(&self, substeps: i64) {
+            let n = self.n;
+            let area = n * n;
+            let mut st = self.state.borrow_mut();
+            for _ in 0..substeps.max(0) {
+                for z in 1..n - 1 {
+                    let row = z * n;
+                    for x in 1..n - 1 {
+                        let i = row + x;
+                        let lap = st.hf[row - n + x]
+                            + st.hf[row + n + x]
+                            + st.hf[i - 1]
+                            + st.hf[i + 1]
+                            - 4.0 * st.hf[i];
+                        let v = (st.vf[i] + lap * 0.42) * 0.9965;
+                        st.hf2[i] = st.hf[i] + v;
+                        st.vf2[i] = v;
+                    }
+                }
+                // 边界一圈强吸收（池壁消波——不吸收则全反射驻波堆积）
+                for x in 0..n {
+                    for z in [0usize, n - 1] {
+                        let i = z * n + x;
+                        st.hf2[i] = st.hf[i] * 0.95;
+                        st.vf2[i] = st.vf[i] * 0.80;
+                        let j = x * n + z;
+                        st.hf2[j] = st.hf[j] * 0.95;
+                        st.vf2[j] = st.vf[j] * 0.80;
+                    }
+                }
+                // 一次性解构双缓冲（同 RefMut 双可变借用需拆字段）
+                let WaveState { hf, vf, hf2, vf2 } = &mut *st;
+                std::mem::swap(hf, hf2);
+                std::mem::swap(vf, vf2);
+                // 保险钳制（数值爆炸不传染）
+                for i in 0..area {
+                    st.hf[i] = st.hf[i].clamp(-0.15, 0.15);
+                    st.vf[i] = st.vf[i].clamp(-0.15, 0.15);
+                }
+            }
+        }
+
+        /// wake(gx, gz, amp)：二次平滑核注入（max(0,1-d²/9)²——d≥3 格
+        /// 恒 0；泰勒 exp 截断发散教训见 water_pool 史）
+        #[pymethod]
+        fn wake(&self, gx: f64, gz: f64, amp: f64) {
+            let n = self.n;
+            let (gx, gz) = (gx as f32, gz as f32);
+            let amp = amp as f32;
+            let mut st = self.state.borrow_mut();
+            for z in (gz as i64 - 3)..=(gz as i64 + 3) {
+                if z < 1 || z >= n as i64 - 1 {
+                    continue;
+                }
+                for x in (gx as i64 - 3)..=(gx as i64 + 3) {
+                    if x < 1 || x >= n as i64 - 1 {
+                        continue;
+                    }
+                    let dx = x as f32 - gx;
+                    let dz = z as f32 - gz;
+                    let d2 = dx * dx + dz * dz;
+                    let t = 1.0 - d2 / 9.0;
+                    if t > 0.0 {
+                        st.vf[z as usize * n + x as usize] += amp * t * t;
+                    }
+                }
+            }
+        }
+
+        /// displace_mesh(mesh, base_x, base_z)：顶点 y=波高 + 法线=场梯
+        /// 度（**pos3+nrm3 布局守卫 + 顶点数守卫**；queue.write_buffer
+        /// 直写——零 py 编组；base_* = 网格世界原点，x/z 与建时一致）
+        #[pymethod]
+        fn displace_mesh(
+            &self,
+            mesh: PyRef<PyMesh>,
+            base_x: f64,
+            base_z: f64,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            let vb = mesh.inner.vertex_buffer();
+            let size = vb.size();
+            const STRIDE: u64 = 24; // pos3 + nrm3 f32
+            if size % STRIDE != 0 {
+                return Err(vm.new_value_error(format!(
+                    "wave 位移仅支持 pos3+nrm3 顶点布局（stride {STRIDE}B），实际容量 {size}B"
+                )));
+            }
+            let count = (size / STRIDE) as usize;
+            if count != self.n * self.n {
+                return Err(vm.new_value_error(format!(
+                    "mesh 顶点数 {count} ≠ 波场 {}×{}",
+                    self.n, self.n
+                )));
+            }
+            let n = self.n;
+            let cell = self.cell;
+            let (bx, bz) = (base_x as f32, base_z as f32);
+            let st = self.state.borrow();
+            let mut bytes = Vec::with_capacity(count * 24);
+            for i in 0..count {
+                let xi = i % n;
+                let zi = i / n;
+                let xl = if xi > 0 { xi - 1 } else { xi };
+                let xr = if xi < n - 1 { xi + 1 } else { xi };
+                let zl = if zi > 0 { zi - 1 } else { zi };
+                let zr = if zi < n - 1 { zi + 1 } else { zi };
+                let hx0 = st.hf[zi * n + xl];
+                let hx1 = st.hf[zi * n + xr];
+                let hz0 = st.hf[zl * n + xi];
+                let hz1 = st.hf[zr * n + xi];
+                let nx = -(hx1 - hx0) / (2.0 * cell);
+                let nz = (hz1 - hz0) / (2.0 * cell);
+                bytes.extend((bx + xi as f32 * cell).to_le_bytes());
+                bytes.extend(st.hf[i].to_le_bytes());
+                bytes.extend((bz + zi as f32 * cell).to_le_bytes());
+                bytes.extend(nx.to_le_bytes());
+                bytes.extend(1.0f32.to_le_bytes());
+                bytes.extend(nz.to_le_bytes());
+            }
+            self.access.write_buffer(vb, 0, &bytes);
+            Ok(())
+        }
+
+        /// clear()：全场归零
+        #[pymethod]
+        fn clear(&self) {
+            let mut st = self.state.borrow_mut();
+            st.hf.fill(0.0);
+            st.vf.fill(0.0);
         }
     }
 
