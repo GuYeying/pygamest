@@ -233,6 +233,28 @@ pub(crate) mod scheduler;
                 Ok(())
             }
 
+            /// clamp_velocity(max_speed)：全流体粒子速度钳制（**数值伪影
+            /// 闸**，opt-in——DFSPH 冲击压力尖峰可把粒子速度瞬时推到
+            /// 15-20 m/s，半步位移超过薄壁厚度 = 单步整穿、DC 投影无法
+            /// 回收（fluid3d_game 2026-11-23 用户实测残余穿透）；正常
+            /// 流动 5-8 m/s 不受影响。每帧 step 后调用，上限建议 ≥
+            /// 12 m/s（0.12m 壁厚 × 半步 1/120 = 穿越阈值 14.4））
+            #[cfg(feature = "fluid")]
+            #[pymethod]
+            fn clamp_velocity(&self, max_speed: f64) -> PyResult<()> {
+                let max = max_speed.max(0.0) as f32;
+                let mut pw = self.pipeline.borrow_mut();
+                for f in pw.liquid_world.fluids_mut().values_mut() {
+                    for v in &mut f.velocities {
+                        let sp = v.norm();
+                        if sp > max {
+                            *v = *v * (max / sp);
+                        }
+                    }
+                }
+                Ok(())
+            }
+
             /// step(dt)：DFSPH 压力求解步进（fluid-only 形态——physics3d
             /// 未启用，无 solid 耦合；调度器 fluid 关闭 = 直返）。
             #[cfg(all(feature = "fluid", not(feature = "physics3d")))]
@@ -528,6 +550,24 @@ pub(crate) mod scheduler;
                     .borrow_mut()
                     .liquid_world
                     .step(dt.max(1e-6) as f32, &gravity);
+                Ok(())
+            }
+
+            /// clamp_velocity(max_speed)：全流体粒子速度钳制（3D 同款
+            /// 镜像——DFSPH 冲击压力尖峰数值伪影闸，opt-in 每步后调）
+            #[cfg(feature = "fluid2d")]
+            #[pymethod]
+            fn clamp_velocity(&self, max_speed: f64) -> PyResult<()> {
+                let max = max_speed.max(0.0) as f32;
+                let mut pw = self.pipeline.borrow_mut();
+                for f in pw.liquid_world.fluids_mut().values_mut() {
+                    for v in &mut f.velocities {
+                        let sp = v.norm();
+                        if sp > max {
+                            *v = *v * (max / sp);
+                        }
+                    }
+                }
                 Ok(())
             }
 
