@@ -73,8 +73,8 @@ pygame-rs-dev/       # 开发解释器 pygamest-dev + examples/（78 案例）+ 
 | 接口 | native/Android | wasm |
 |---|---|---|
 | `io.read/read_text` | block_on fs（**走 sfx 加密面**） | 同步 XHR 全量（裸读**不走加密面**——加密资产 wasm 同步读不支持） |
-| `io.write/write_text` | fs 覆盖写 | **Err**（宿主预加载/异步面承载） |
-| `io.exists` | fs metadata | 同步 XHR HEAD |
+| `io.write/write_text` | fs 覆盖写 | **同步 XHR POST**（2026-11-23 修复——曾 Err；POST 保存端点，服务端须支持落盘；裸写无加密） |
+| `io.exists` | fs metadata | 同步 XHR HEAD（**py 面三平台恒同步**——异步 exists 仅 Rust 层） |
 | `io.io_size` | fs metadata | **None**（调用方据此退化全量） |
 | `io.io_read_chunk(path,off,n)` | seek+read（**分块流式帧级口**，明文） | **Err**（fetch 全量承载） |
 | `io.io_take/io_ready/io_take_chunk` | 完成表（路径键 / `path#off` 分块键） | 同左 |
@@ -97,6 +97,13 @@ pygame-rs-dev/       # 开发解释器 pygamest-dev + examples/（78 案例）+ 
 - **视频/音乐流式**：task 只负责"找资源不卡帧"（`await video.open_async(path)` /
   `await mixer.music_load_async`），解码/播流 = 平台解码器自治，task 不碰内部加载。
 - gather/wait_for 失败重抛：`raise t.exc`（引擎内部已修）。
+- **泵双 send 语义（2026-11-23 实锤）**：单挂起体（while 体恰 1 个
+  yield_now）**每泵 tick 实跑两轮体**（send1 完成上轮挂起+跑完一轮，
+  send2 再完成一轮）——`clock.tick(120)` 下 game.frame 计数每 tick
+  +2、physics accumulator 吃真实 dt 恒正确。陷阱：`frame % N` 取证
+  块**同帧双触发**（第二轮看到的是第一轮已编辑后的状态 = 假
+  FAIL）——帧号守卫 `last_edit_frame != game.frame` 单次放行
+  （voxel_mc_async 数学自验同款）。
 
 **RP（RustPython）坑位——与本会话实测强相关**：
 
@@ -167,6 +174,25 @@ pygame-rs-dev/       # 开发解释器 pygamest-dev + examples/（78 案例）+ 
 - **feature 门控**：`pygame_voxelis`（--features voxelis）、`fluid`（FluidWorld——
   缺失按 F2 即 AttributeError 崩脚本）、spine/live2d——案例调缺失模块先查
   构建特性，别只看代码。
+
+**流体（salva DFSPH）**：
+
+- **耦合定约 = 仅 fixed 刚体参与**（2026-11-23 复测回封）：dynamic 注册
+  开放被三球对照实验推翻（DC 投影对运动边界接触粒子注入失控速度 →
+  穿透一切静态边界；大球/高位落水复测同炸）——dynamic×流体挂账 v2。
+  kinematic（velocity-based）API 可用（`RigidBodyBuilder3D("kinematic")` +
+  `set_angvel`）但流体耦合同属挂账。
+- **穿墙残余 = DFSPH 冲击压力尖峰**：冲击把粒子速度瞬时推到 15-20 m/s，
+  单步位移 > 薄壁厚 = 整穿、DC 投影无法回收。对策 = `fw.clamp_velocity(12.0)`
+  每帧 step 后调用（opt-in 数值伪影闸；正常流动 5-8 m/s 不受影响）+
+  半步 `step(dt/2)×2`。
+- **screen-space 液面正典** = fluid3d_game v3.3：球 pass 24bit 打包视深
+  rgb（Rgba8Unorm 线性离屏；**alpha 是 0-255 整数语义**——`fill((0,0,0,0))`
+  走 alpha 混合 = 清不掉，清屏恒 `(…,255)`）→ blurH/blurV 可分离高斯
+  **跨球融合**（bilateral 的边缘保持恰是"单个球"观感来源）→ 法线重建
+  着色。编码窗收窄到场景深度带（全视锥编码 8bit = 15 级量化假法线）。
+  合成不能 raw 在主屏（回放盖一切）——第二离屏面 + `gfxdraw` 像素段
+  `draw_surface` blit 贴主屏（与线框/HUD 同序）。
 - **debug 构建的物理/渲染数值代码慢 10-50 倍**（rapier 求解器/wgpu 上传
   无内联）——性能验收用 `target/release/python.exe`；"30 刚体就卡"类
   报障先问构建形态（dev 日常 = debug）。
