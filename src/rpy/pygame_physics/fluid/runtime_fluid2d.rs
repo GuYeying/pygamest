@@ -129,22 +129,30 @@ pub(crate) mod coupling {
     /// the 3D sibling documented the full experiment chain (2026-11-18).
     /// Works for any collider shape, rotated colliders included. Force
     /// feedback is auto-disabled for non-dynamic bodies by salva itself.
+    ///
+    /// 耦合定约（2026-11-23 复测回封 8957dc3 语义，2D 同款同步）：
+    /// **仅 fixed 刚体参与**——dynamic 注册开放（bb46a1b 单向）被 3D
+    /// 三球对照复测推翻（被动态体穿过的水块全体失控穿底，未接触句柄
+    /// 完好；大球/高位落水复测同炸），DC 投影对运动边界接触粒子注入
+    /// 失控速度。dynamic ×流体耦合挂账 v2。
     pub(crate) fn sync_coupling(
         pipeline: &mut FluidsPipeline,
         colliders: &ColliderSet,
-        _bodies: &RigidBodySet,
+        bodies: &RigidBodySet,
         _particle_radius: SReal,
     ) {
         for (handle, collider) in colliders.iter() {
             if pipeline.coupling.entries.contains_key(&handle) {
                 continue;
             }
-            // 域分层 v3 配套（2026-11-19）：dynamic collider 照常注册
-            //（曾整体跳过——力反馈冲量爆炸/飞出；根修 =
-            // make_pipeline 的 boundary_force_coefficient = 0，冲量在
-            // transmit 端归零而 DC 位置投影保留 = 单向排开交互开放）。
-            // fixed 边界的力反馈由 salva 自动关闭（forces = None），
-            // 系数归零只作用于 dynamic 父体路径，零副作用。
+            let dynamic = collider
+                .parent()
+                .and_then(|p| bodies.get(p))
+                .map(|b| b.is_dynamic())
+                .unwrap_or(false);
+            if dynamic {
+                continue;
+            }
             let bh = pipeline.liquid_world.add_boundary(make_boundary(Vec::new()));
             pipeline.coupling.register_coupling(
                 bh,

@@ -152,19 +152,32 @@ pub(crate) mod coupling {
     /// transform happens inside salva's update_boundaries). Force feedback
     /// is auto-disabled for non-dynamic bodies by salva itself
     /// (boundary.forces = None when the parent body is not dynamic).
+    ///
+    /// 耦合定约（2026-11-23 复测回封 8957dc3 语义）：**仅 fixed 刚体参与**。
+    /// dynamic 照常注册曾于 bb46a1b 开放（boundary_force_coefficient=0
+    /// 单向），fluid3d_game 三球对照复测推翻：被动态体穿过的水块全体
+    /// 失控穿底自由落体（逐句柄实锤 handle#0 y=-11.25，未接触句柄完好；
+    /// 大球 0.2>粒子半径 0.09 + 高位落水复测同炸）——DC 投影对运动边界
+    /// 接触粒子注入失控速度，一步穿 0.12m 薄底且投影无法回收。dynamic
+    /// ×流体耦合整体挂账 v2（位置投影+力回传一并重立项）。
     pub(crate) fn sync_coupling(
         pipeline: &mut FluidsPipeline,
         colliders: &ColliderSet,
-        _bodies: &RigidBodySet,
+        bodies: &RigidBodySet,
         _particle_radius: SReal,
     ) {
         for (handle, collider) in colliders.iter() {
             if pipeline.coupling.entries.contains_key(&handle) {
                 continue;
             }
-            // 域分层 v3 配套（2026-11-19）：dynamic collider 照常注册
-            //（曾整体跳过——力反馈冲量爆炸/飞出；根修 = make_pipeline
-            // 的 boundary_force_coefficient = 0，2D 同款）。
+            let dynamic = collider
+                .parent()
+                .and_then(|p| bodies.get(p))
+                .map(|b| b.is_dynamic())
+                .unwrap_or(false);
+            if dynamic {
+                continue;
+            }
             let bh = pipeline.liquid_world.add_boundary(make_boundary(Vec::new()));
             pipeline.coupling.register_coupling(
                 bh,
