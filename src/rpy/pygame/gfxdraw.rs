@@ -870,6 +870,8 @@ use std::cell::Cell;
         /// gen_arc(radius, start_deg, stop_deg, segments=0) -> VertexBuf：
         /// 圆弧线（中心原点，度数制起止角，0° = +x 方向逆时针；lines
         /// 拓扑消费）。segments=0 = 按密度自适应（每 ~10° 一段）。
+        /// 剖分本体归位 starfish-gfx shape2d::arc（2026-11-24 下沉定约
+        /// ——本层只留 py 收参 + 密度策略）。
         #[pyfunction]
         fn gen_arc(args: FuncArgs, vm: &VirtualMachine) -> PyResult<PyVertexBuf> {
             use rustpython_vm::function::ArgIntoFloat;
@@ -885,20 +887,18 @@ use std::cell::Cell;
                 return Err(vm.new_type_error("gen_arc(radius, start_deg, stop_deg, segments=0)"));
             }
             let (r, a0, a1) = (p[0], p[1], p[2]);
-            // 分段密度对齐旧 arc（每 ~10° 一段，clamp 4..256）；折线
-            // **成对展开**（p0,p1, p1,p2, ...）——lines 流按 2 点一组
-            // 解释，连续点列直接入流会隔点配对（错乱虚线）+ 奇数尾点
-            // 错配。
+            // 分段密度策略（py API 默认语义）：每 ~10° 一段，clamp 4..256
             let sweep = (a1 - a0).abs();
             let seg = kw_arg_int(&args, vm, "segments", 0)?
                 .max(((sweep / 10.0).ceil() as u32).clamp(4, 256));
-            let mut g = starfish_gfx::geometry::Geometry::default();
-            for i in 0..seg {
-                let a = a0.to_radians() + (a1 - a0).to_radians() * i as f32 / seg as f32;
-                let b = a0.to_radians() + (a1 - a0).to_radians() * (i + 1) as f32 / seg as f32;
-                g.push([r * a.cos(), r * a.sin(), 0.0], [1.0; 4]);
-                g.push([r * b.cos(), r * b.sin(), 0.0], [1.0; 4]);
-            }
+            let g = starfish_gfx::geometry::shape2d::arc(
+                glam::Vec2::ZERO,
+                r,
+                a0,
+                a1,
+                seg,
+                [1.0; 4],
+            );
             Ok(geo_to_buf(g))
         }
 
