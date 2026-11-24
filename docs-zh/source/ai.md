@@ -46,6 +46,9 @@ pygame-rs-dev/       # 开发解释器 pygamest-dev + examples/（78 案例）+ 
   `pygame_voxelis`(稀疏体素) `pygame_tilemap/spine/ozz/live2d` `io` `tasks` `video` `dialog`
   + **stdlite 批次** `parse`(json/toml) `random`(确定性流) `ds`(堆/有序表/并查集)
   `codec`(sha256/zlib/base64)（math 已含标量补全 exp/log/pi…）。
+- **net 定约（2026-11-24 用户定夺）**：保持基础 socket 面（TCP connect/
+  send/recv/close + UDP send_to/recv_from 共 7 口）——**高级封装（对局
+  同步/房间/断线重连协议）暂不做**；应用层需要时自建。
 - **坐标系**：逻辑中心原点、y 向上（逻辑像素）；`set_mode((W,H))` 后恒像素域图元
   直接用逻辑像素坐标。
 - **鼠标**：`mouse.get_pos/get_pressed/get_rel/set_visible/set_grab/get_grab/set_pos`。
@@ -256,6 +259,7 @@ pygame-rs-dev/       # 开发解释器 pygamest-dev + examples/（78 案例）+ 
 |---|---|
 | 帧缓冲真值 | `pygame.render.set_fb_dump(True)` + env `STARFISH_FB_BMP=path` → 逐帧覆写 BMP（present 前唯一有效采样点） |
 | 屏幕网格回读 | `pygame.render.screen_probe()` → 7×5 [(x,y,r,g,b,a)]（绕过截图/合成器） |
+| **断言回归网** | `bash pygame-rs-dev/examples/_regress_run.sh`（20 案例限时跑 → stdout `[x-test] PASS/FAIL` 聚合红绿；REGRESS_T 调限时；断言三形态皆收：逐项 `] PASS` / 汇总 `SUMMARY PASS` / `断言 PASS`；首轮 151 断言全绿 2026-11-24） |
 | 窗口截图 | `pygame-rs-dev/shot_pw.ps1 -Out x.png`（PrintWindow；DWM 合成态兜底） |
 | wasm 控制台 | web 宿主页 console log 区（`[log]` 行）；`?script=X.py` 直跑案例 |
 | B 探针 | `[B] B0/B1/B2...` 阶段打点（web_start→runtime::run 载荷链） |
