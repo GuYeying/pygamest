@@ -43,7 +43,9 @@ pygame-rs-dev/       # 开发解释器 pygamest-dev + examples/（78 案例）+ 
 - **模块**：display/event/key/mouse/font/image/mixer/time/draw/gfxdraw/math/
   rect/sprite/transform/mask/sndarray/touch/gamepad/net/permission/version +
   引擎扩展 `render`(GPU 管线) `pygame_gui`(egui) `pygame_physics`(rapier 2d/3d)
-  `pygame_voxelis`(稀疏体素) `pygame_tilemap/spine/ozz/live2d` `io` `tasks` `video` `dialog`。
+  `pygame_voxelis`(稀疏体素) `pygame_tilemap/spine/ozz/live2d` `io` `tasks` `video` `dialog`
+  + **stdlite 批次** `parse`(json/toml) `random`(确定性流) `ds`(堆/有序表/并查集)
+  `codec`(sha256/zlib/base64)（math 已含标量补全 exp/log/pi…）。
 - **坐标系**：逻辑中心原点、y 向上（逻辑像素）；`set_mode((W,H))` 后恒像素域图元
   直接用逻辑像素坐标。
 - **鼠标**：`mouse.get_pos/get_pressed/get_rel/set_visible/set_grab/get_grab/set_pos`。
@@ -55,6 +57,19 @@ pygame-rs-dev/       # 开发解释器 pygamest-dev + examples/（78 案例）+ 
 - **render 低层**：`ac = pygame.render.access()` → buffer/mesh/shader/bind_group/
   pipeline/raw_render/raw_compute；`screen.raw_render()` 直绘会话（NDC 域、
   相机 buffer 用户全权管理）。
+
+- **stdlite 定界批次（2026-11-24 定约）**：横向扁平 starfish-xxx crate
+  （不复用 RP Lib 源码、与 RP 隔离）→ 绑定进 pygamest 作 pygame 子模块。
+  已落五面：math 标量补全（f2a28ab）/ parse(json+toml 同构 serde_json::Value) /
+  random（PCG32 确定性流 + 模块级全 API + Random 类）/ ds（Heap+SortedList+
+  UnionFind，值载荷索引侧表零编组）/ codec（sha256+zlib+base64）。
+  不纳入：audio/video/dialog/gamepad/time（领域服务）；mask 死 crate 待清。
+  **绑定正典**（random.rs/ds.rs/codec.rs）：类 = struct `#[pyclass]` +
+  `impl Constructor`（无标注）+ 方法块 `#[pyclass(with(Constructor))]`；
+  槽禁令 `__len__`/`__init__` 不作 pymethod（普通方法名 len()/构造收参）；
+  序列协议 = `obj.length(vm)` + `obj.get_item(&i, vm)`；异常分两路——
+  RP 调用口已返 PyRef 的直接 `?` 传播，String 错误源才 `bridge::exc_msg`；
+  内嵌模块 `use super::*` 继承外层全部导入。
 
 ## 3. 渲染域 v3.1（全显式相机）
 
