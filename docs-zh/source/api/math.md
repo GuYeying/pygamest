@@ -36,7 +36,10 @@
 
 ## <span class="c-func">标量数学（stdlite 批次补全——CPython math 对齐）</span>
 
-三角/角度/幂指/取整/判定——CPython `math` 同名同语义（f64 直算）。
+三角/角度/幂指/取整/判定——CPython `math` 同名同语义。**精度界实录**
+（2026-11-24 测试取证）：三角/角度族（sin…radians）= **f32 内核**
+（引擎 2D/3D 约定，~7 位有效数字）；幂指/取整/判定族（sqrt…isnan）=
+f64 直算。
 
 #### <span class="c-func">sin(x) / cos(x) / tan(x) -> float</span>
 

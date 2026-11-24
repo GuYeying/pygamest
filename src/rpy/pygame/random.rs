@@ -159,24 +159,28 @@ use rustpython_vm::{
 
             #[pymethod]
             fn uniform(&self, a: ArgIntoFloat, b: ArgIntoFloat) -> f64 {
-                srng::uniform(a.into_float() as f32, b.into_float() as f32) as f64
+                self.state
+                    .borrow_mut()
+                    .uniform(a.into_float() as f32, b.into_float() as f32) as f64
             }
 
             #[pymethod]
             fn randint(&self, a: i64, b: i64) -> i64 {
-                srng::randint(a, b)
+                self.state.borrow_mut().randint(a, b)
             }
 
             #[pymethod]
             fn gaussian(&self, mu: ArgIntoFloat, sigma: ArgIntoFloat) -> f64 {
-                srng::gaussian(mu.into_float() as f32, sigma.into_float() as f32) as f64
+                self.state
+                    .borrow_mut()
+                    .gaussian(mu.into_float() as f32, sigma.into_float() as f32) as f64
             }
 
             /// choice_from(len)：len 索引取一（py 侧 choice(seq) 组装——
             /// 避免实例层重复绑序列口）
             #[pymethod]
             fn choice_from(&self, len: i64) -> i64 {
-                srng::choice_len(len.max(0) as usize) as i64
+                self.state.borrow_mut().rand_bounded(len.max(0) as u64) as i64
             }
 
             #[pymethod]

@@ -4775,7 +4775,7 @@ dependencies = [
 
 [[package]]
 name = "pygamest"
-version = "0.3.74"
+version = "0.3.75"
 dependencies = [
  "chacha20poly1305",
  "egui-starfish-we",
