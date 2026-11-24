@@ -110,6 +110,117 @@ use std::cell::Cell;
             (x.into_float() as f32).to_radians()
         }
 
+        // ── 标量数学补全（2026-11-24：RP stdlib math 缺失——water_pool
+        // 手写泰勒 exp 实证缺口；f64 精度对标 CPython math）──
+
+        #[pyfunction]
+        fn sqrt(x: ArgIntoFloat) -> f64 {
+            (x.into_float()).sqrt()
+        }
+
+        #[pyfunction]
+        fn exp(x: ArgIntoFloat) -> f64 {
+            (x.into_float()).exp()
+        }
+
+        #[pyfunction]
+        fn log(
+            x: ArgIntoFloat,
+            base: rustpython_vm::function::OptionalArg<ArgIntoFloat>,
+        ) -> f64 {
+            let v = x.into_float();
+            match base {
+                rustpython_vm::function::OptionalArg::Present(b) => {
+                    v.ln() / b.into_float().ln()
+                }
+                _ => v.ln(),
+            }
+        }
+
+        #[pyfunction]
+        fn log2(x: ArgIntoFloat) -> f64 {
+            (x.into_float()).log2()
+        }
+
+        #[pyfunction]
+        fn log10(x: ArgIntoFloat) -> f64 {
+            (x.into_float()).log10()
+        }
+
+        #[pyfunction]
+        fn pow(x: ArgIntoFloat, y: ArgIntoFloat) -> f64 {
+            (x.into_float()).powf(y.into_float())
+        }
+
+        #[pyfunction]
+        fn floor(x: ArgIntoFloat, vm: &VirtualMachine) -> i64 {
+            // CPython 语义：返回 int（f64 as i64 饱和 cast——inf/NaN 截到
+            // 边界值，游戏规模可接受）
+            x.into_float().floor() as i64
+        }
+
+        #[pyfunction]
+        fn ceil(x: ArgIntoFloat, vm: &VirtualMachine) -> i64 {
+            x.into_float().ceil() as i64
+        }
+
+        #[pyfunction]
+        fn trunc(x: ArgIntoFloat, vm: &VirtualMachine) -> i64 {
+            x.into_float().trunc() as i64
+        }
+
+        #[pyfunction]
+        fn fabs(x: ArgIntoFloat) -> f64 {
+            (x.into_float()).abs()
+        }
+
+        #[pyfunction]
+        fn fmod(x: ArgIntoFloat, y: ArgIntoFloat) -> f64 {
+            (x.into_float()) % (y.into_float())
+        }
+
+        #[pyfunction]
+        fn copysign(x: ArgIntoFloat, y: ArgIntoFloat) -> f64 {
+            (x.into_float()).copysign(y.into_float())
+        }
+
+        #[pyfunction]
+        fn hypot(x: ArgIntoFloat, y: ArgIntoFloat) -> f64 {
+            (x.into_float()).hypot(y.into_float())
+        }
+
+        #[pyfunction]
+        fn isfinite(x: ArgIntoFloat) -> bool {
+            (x.into_float()).is_finite()
+        }
+
+        #[pyfunction]
+        fn isinf(x: ArgIntoFloat) -> bool {
+            (x.into_float()).is_infinite()
+        }
+
+        #[pyfunction]
+        fn isnan(x: ArgIntoFloat) -> bool {
+            (x.into_float()).is_nan()
+        }
+
+        // ── 常量（CPython math 同名小写——non_upper_case 抑制）──
+        #[pyattr]
+        #[allow(non_upper_case_globals)]
+        pub(crate) const pi: f64 = std::f64::consts::PI;
+        #[pyattr]
+        #[allow(non_upper_case_globals)]
+        pub(crate) const tau: f64 = std::f64::consts::TAU;
+        #[pyattr]
+        #[allow(non_upper_case_globals)]
+        pub(crate) const e: f64 = std::f64::consts::E;
+        #[pyattr]
+        #[allow(non_upper_case_globals)]
+        pub(crate) const inf: f64 = f64::INFINITY;
+        #[pyattr]
+        #[allow(non_upper_case_globals)]
+        pub(crate) const nan: f64 = f64::NAN;
+
         // ── Vector2：基础向量（批次 H v1；rotate/angle_to 等留增强批）──
         #[derive(Clone, Debug, PyPayload)]
         #[pyattr]
