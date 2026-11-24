@@ -1157,8 +1157,9 @@ impl PyDebugLinesRenderer3D {
     /// 一处设置、全体生效；Auto 状态按目标尺寸自动解算）。再调
     /// set_camera_lookat 即解除。
     #[pymethod]
-    fn follow_global_camera(&self, enable: Option<bool>) {
-        self.follow_global.set(enable.unwrap_or(true));
+    fn follow_global_camera(&self, enable: rustpython_vm::function::OptionalOption<bool>) {
+        // OptionalOption 坑族根修（2026-11-24）——见 pygame/time.rs tick 注
+        self.follow_global.set(enable.flatten().unwrap_or(true));
     }
 }
 

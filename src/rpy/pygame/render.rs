@@ -1683,9 +1683,13 @@ pub(crate) mod render {
     ///   ——引擎自动左乘呈现拟合收进画布（脚本零矩阵知识；桌面/全屏
     ///   恒等，Android 窗口化与主绘制/UI/物理调试线同一映射）。
     #[pyfunction]
-    fn write_camera_mvp(buf: PyRef<PyBuffer>, cam_mvp: Option<PyRef<PyMat4>>) {
+    fn write_camera_mvp(
+        buf: PyRef<PyBuffer>,
+        cam_mvp: rustpython_vm::function::OptionalOption<PyRef<PyMat4>>,
+    ) {
+        // OptionalOption 坑族根修（2026-11-24）——缺省/None/值三态统一
         let screen = starfish_pygame::display::get_screen();
-        let m = match cam_mvp {
+        let m = match cam_mvp.flatten() {
             Some(cm) => {
                 let fit = screen.present_fit();
                 fit * cm.0.get()
@@ -1693,7 +1697,7 @@ pub(crate) mod render {
             // 单参形态（两段式统一 2026-11-18）：全局相机 MVP = 屏上相机
             // （world→画布基底）× present_fit（画布→表面 letterbox）——
             // 与双参/段级/调试同一两段组合，letterbox 平台不缺第二段
-            None => screen.present_fit() * screen.present_mvp(),
+            _ => screen.present_fit() * screen.present_mvp(),
         };
         let bytes: Vec<u8> = m
             .to_cols_array()
@@ -2202,12 +2206,22 @@ pub(crate) mod render {
             self.cmds.borrow_mut().push(ComputeCmd::BindGroup(index, group));
         }
 
-        /// dispatch(x, y=1, z=1)：工作组派发
+        /// dispatch(x, y=1, z=1)：工作组派发。**OptionalArg 根修**
+        ///（2026-11-24 挂账①取证：Option 直型在 pymethod 里不可省略
+        /// ——dispatch(8, 8) 两参即 TypeError"expected 3 arguments"，
+        /// "引擎丢 y 维"实为此 TypeError 的误判归因；Option 可选须
+        /// OptionalArg 形态——绑定层五定约正条）
         #[pymethod]
-        fn dispatch(&self, x: u32, y: Option<u32>, z: Option<u32>) {
-            self.cmds
-                .borrow_mut()
-                .push(ComputeCmd::Dispatch(x, y.unwrap_or(1), z.unwrap_or(1)));
+        fn dispatch(
+            &self,
+            x: u32,
+            y: rustpython_vm::function::OptionalOption<u32>,
+            z: rustpython_vm::function::OptionalOption<u32>,
+        ) {
+            // OptionalOption 坑族根修（2026-11-24）——缺省/None/值三态统一
+            let y = y.flatten().unwrap_or(1);
+            let z = z.flatten().unwrap_or(1);
+            self.cmds.borrow_mut().push(ComputeCmd::Dispatch(x, y, z));
         }
 
         /// copy_buffer(src, dst, size)：compute 写 storage → copy 到

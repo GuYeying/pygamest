@@ -4775,7 +4775,7 @@ dependencies = [
 
 [[package]]
 name = "pygamest"
-version = "0.3.75"
+version = "0.3.77"
 dependencies = [
  "chacha20poly1305",
  "egui-starfish-we",
@@ -6221,8 +6221,8 @@ dependencies = [
 
 [[package]]
 name = "starfish-codec"
-version = "0.9.76"
-source = "git+https://github.com/GuYeying/starfish#45fc4ec517fad6c9b2159a638423e368f9f82352"
+version = "0.9.77"
+source = "git+https://github.com/GuYeying/starfish#9127ff7aa2012e994eb2ef059ceaeb7c7966c077"
 dependencies = [
  "flate2",
  "sha2",
@@ -6257,8 +6257,8 @@ dependencies = [
 
 [[package]]
 name = "starfish-ds"
-version = "0.9.76"
-source = "git+https://github.com/GuYeying/starfish#45fc4ec517fad6c9b2159a638423e368f9f82352"
+version = "0.9.77"
+source = "git+https://github.com/GuYeying/starfish#9127ff7aa2012e994eb2ef059ceaeb7c7966c077"
 dependencies = [
  "starfish-debug",
 ]
@@ -6321,8 +6321,8 @@ dependencies = [
 
 [[package]]
 name = "starfish-parse"
-version = "0.9.76"
-source = "git+https://github.com/GuYeying/starfish#45fc4ec517fad6c9b2159a638423e368f9f82352"
+version = "0.9.77"
+source = "git+https://github.com/GuYeying/starfish#9127ff7aa2012e994eb2ef059ceaeb7c7966c077"
 dependencies = [
  "serde",
  "serde_json",
@@ -6399,8 +6399,8 @@ dependencies = [
 
 [[package]]
 name = "starfish-rng"
-version = "0.9.76"
-source = "git+https://github.com/GuYeying/starfish#45fc4ec517fad6c9b2159a638423e368f9f82352"
+version = "0.9.77"
+source = "git+https://github.com/GuYeying/starfish#9127ff7aa2012e994eb2ef059ceaeb7c7966c077"
 dependencies = [
  "starfish-debug",
 ]

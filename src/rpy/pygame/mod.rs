@@ -116,7 +116,13 @@ pub mod pygame {
 
         /// set_clip(rect | None)：离屏会话裁剪矩形（后续绘制生效）
         #[pymethod]
-        fn set_clip(&self, rect: Option<SfRect>, _vm: &VirtualMachine) {
+        fn set_clip(
+            &self,
+            rect: rustpython_vm::function::OptionalOption<SfRect>,
+            _vm: &VirtualMachine,
+        ) {
+            // OptionalOption 坑族根修（2026-11-24）——缺省/None/值三态统一
+            let rect = rect.flatten();
             self.surface.set_clip(rect.map(|r| {
                 [r.x, r.y, r.w, r.h]
             }));

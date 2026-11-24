@@ -50,8 +50,11 @@ use std::cell::Cell;
             /// vsync 已把帧距拉到 ≥ 目标时不再补睡（三端同语义，无双重
             /// 节流）；Web 上睡眠 no-op（rAF 节流），本调用只作度量。
             #[pymethod]
-            fn tick(&self, fps: Option<u32>) -> f32 {
-                self.inner.borrow_mut().tick(fps.unwrap_or(0)) * 1000.0
+            fn tick(&self, fps: rustpython_vm::function::OptionalOption<u32>) -> f32 {
+                // OptionalOption 坑族根修（2026-11-24）：Option 直型在 py
+                // 面不可省略、OptionalArg 直型不收显式 None——嵌套形态
+                // 三态统一（缺省/None/值）
+                self.inner.borrow_mut().tick(fps.flatten().unwrap_or(0)) * 1000.0
             }
 
             /// get_time() -> float：本帧真实间隔（毫秒，同 tick 返回值）。

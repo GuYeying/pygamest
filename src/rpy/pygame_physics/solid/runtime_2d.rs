@@ -944,8 +944,9 @@ impl PyDebugLinesRenderer {
     /// 相机按像素正交，米坐标直入会过小——跟随时请配 Manual 相机
     /// （set_camera 时按 ppm 计入视图矩阵）。再调 set_camera 即解除。
     #[pymethod]
-    fn follow_global_camera(&self, enable: Option<bool>) {
-        self.follow_global.set(enable.unwrap_or(true));
+    fn follow_global_camera(&self, enable: rustpython_vm::function::OptionalOption<bool>) {
+        // OptionalOption 坑族根修（2026-11-24）——见 pygame/time.rs tick 注
+        self.follow_global.set(enable.flatten().unwrap_or(true));
     }
 }
 

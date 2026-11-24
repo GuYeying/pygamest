@@ -440,10 +440,14 @@ use std::sync::Arc;
             /// track_time(track=0) -> float | None：轨道当前时间（秒——
             /// 播放进度查询；空轨 None）。
             #[pymethod]
-            fn track_time(&self, track: Option<usize>) -> Option<f64> {
+            fn track_time(
+                &self,
+                track: rustpython_vm::function::OptionalOption<usize>,
+            ) -> Option<f64> {
+                // OptionalOption 坑族根修（2026-11-24）——见 pygame/time.rs tick 注
                 self.inner
                     .borrow()
-                    .track(track.unwrap_or(0))
+                    .track(track.flatten().unwrap_or(0))
                     .map(|t| t.track_time as f64)
             }
 

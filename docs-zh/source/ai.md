@@ -212,10 +212,19 @@ pygame-rs-dev/       # 开发解释器 pygamest-dev + examples/（78 案例）+ 
   合成不能 raw 在主屏（回放盖一切）——第二离屏面 + `gfxdraw` 像素段
   `draw_surface` blit 贴主屏（与线框/HUD 同序）。
 - **heightfield 水面正典** = water_pool（GPU compute 波场，2026-11-23
-  取证定案四象限）——**compute 数据链可用，但有四个必须绕开的坑**：
-  ①**1D dispatch**：引擎 compute pass 丢 y 维 workgroup（dispatch(8,8)
-  实测只跑 2/8 行组，gid.y 上限 16）——恒用 `workgroup_size(64,1,1)` +
-  `dispatch(n²/64, 1, 1)` + `i = gid.x` 一维索引；
+  取证定案四象限）——**compute 数据链可用，坑 ① 已根修，②③④ 仍须
+  遵守**：
+  ①~~1D dispatch~~ **已根修（2026-11-24 取证改判）**：y 维从未在引擎
+  丢失——"dispatch(8,8) 只跑 2/8 行组"实为绑定层 `dispatch` 的
+  `Option<u32>` 直型参数不可省略（两参即 TypeError，被误判为引擎
+  丢 y）。**OptionalOption 坑族定约（2026-11-24）**：py 面一切
+  `Option<T>` 直型参数均不可省略；`OptionalArg<T>` 只收"缺省"不收
+  "显式 None"（parity_test 显式 `play(beep, None)` 实锤）——**可选
+  参数一律 `OptionalOption<T>`（= `OptionalArg<Option<T>>`）+
+  `.flatten()`，缺省/None/值三态统一**。2026-11-24 全量清修 9 处
+  （dispatch/time.tick/set_clip/mixer.play/write_camera_mvp/
+  mask.from_surface/spine.track_time/physics.follow_global_camera
+  ×2）。**新绑定口一律 OptionalOption**；探针 = `_probe_2d_dispatch.py`；
   ②**ping-pong = 两条独立 `raw_compute` 会话**（同会话两次
   `set_bind_group` 被引擎自动排 0/1，shader 只认 group(0) = 第二
   dispatch 复用第一组 = ping-pong 断裂；两会话各 auto-index 0 ✓）；

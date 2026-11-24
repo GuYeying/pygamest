@@ -222,10 +222,16 @@ use std::cell::Cell;
         impl PyChannel {
             /// play(sound, loops=0)：本通道定点播放
             #[pymethod]
-            fn play(&self, sound: PyRef<PySound>, loops: Option<i32>, vm: &VirtualMachine) -> PyResult<()> {
+            fn play(
+                &self,
+                sound: PyRef<PySound>,
+                loops: rustpython_vm::function::OptionalOption<i32>,
+                vm: &VirtualMachine,
+            ) -> PyResult<()> {
+                // OptionalOption 坑族根修（2026-11-24）——见 pygame/time.rs tick 注
                 self.inner
                     .borrow()
-                    .play(&starfish_pygame::mixer::Sound::from_data(sound.data.clone()), loops.unwrap_or(0))
+                    .play(&starfish_pygame::mixer::Sound::from_data(sound.data.clone()), loops.flatten().unwrap_or(0))
                     .map_err(|e| vm.new_value_error(format!("音频错误: {e:?}")))
             }
 

@@ -161,10 +161,12 @@ use std::cell::Cell;
         #[pyfunction]
         fn from_surface(
             surface: PyRef<crate::rpy::pygame::pygame::PySurface>,
-            threshold: Option<u8>,
+            threshold: rustpython_vm::function::OptionalOption<u8>,
             vm: &VirtualMachine,
         ) -> PyResult<PyRef<PyMask>> {
-            let m = SfMask::from_surface(&surface.surface, threshold.unwrap_or(127))
+            // OptionalOption 坑族根修（2026-11-24）——缺省/None/值三态统一
+            let threshold = threshold.flatten().unwrap_or(127);
+            let m = SfMask::from_surface(&surface.surface, threshold)
                 .map_err(|e| vm.new_value_error(format!("mask.from_surface 失败: {e:?}")))?;
             Ok(PyMask { inner: std::cell::RefCell::new(m) }.into_ref(&vm.ctx))
         }
