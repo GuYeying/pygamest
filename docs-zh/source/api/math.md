@@ -34,6 +34,58 @@
 
 更高阶平滑阶跃插值。
 
+## <span class="c-func">标量数学（stdlite 批次补全——CPython math 对齐）</span>
+
+三角/角度/幂指/取整/判定——CPython `math` 同名同语义（f64 直算）。
+
+#### <span class="c-func">sin(x) / cos(x) / tan(x) -> float</span>
+
+三角函数（弧度制）。
+
+#### <span class="c-func">atan2(y, x) -> float / asin(x) / acos(x) -> float</span>
+
+反三角（atan2 全象限；asin/acos 定义域外 = NaN——Rust f32 语义，
+非 CPython 异常）。
+
+#### <span class="c-func">degrees(x) / radians(x) -> float</span>
+
+角度 ↔ 弧度换算。
+
+#### <span class="c-func">sqrt(x) -> float / exp(x) -> float</span>
+
+平方根 / e 指数。
+
+#### <span class="c-func">log(x, base=...) -> float / log2(x) / log10(x) -> float</span>
+
+自然对数（base 可选——CPython 同形）/ 2 底 / 10 底。
+
+#### <span class="c-func">pow(x, y) -> float</span>
+
+幂（`x**y` 语义）。
+
+#### <span class="c-func">floor(x) / ceil(x) / trunc(x) -> int</span>
+
+下取整 / 上取整 / 截断——**返回 int**。
+
+#### <span class="c-func">fabs(x) -> float / fmod(x, y) / copysign(x, y) / hypot(x, y)</span>
+
+绝对值（返 float）/ 浮点取模 / 带符号复制 / 直角三角形斜边。
+
+#### <span class="c-func">isfinite(x) / isinf(x) / isnan(x) -> bool</span>
+
+浮点判定三件套。
+
+## <span class="c-const">常量</span>
+
+`math.pi` / `math.tau` / `math.e` / `math.inf` / `math.nan`——CPython math 同名小写。
+
+```python
+import pygame.math as m
+print(m.pi, m.tau, m.e)      # 3.141592653589793 6.283185307179586 2.718281828459045
+print(m.hypot(3, 4))         # 5.0
+print(m.degrees(m.pi / 2))   # 90.0
+```
+
 ## <span class="c-func">3D 构造函数</span>
 
 度数制入口（弧度制走 glam 语义层）。
