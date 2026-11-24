@@ -30,4 +30,8 @@ touch <touch>
 transform <transform>
 version <version>
 video <video>
+parse <parse>
+random <random>
+ds <ds>
+codec <codec>
 ```
