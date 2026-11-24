@@ -25,6 +25,7 @@ permission <permission>
 render <render>
 sndarray <sndarray>
 sprite <sprite>
+tasks <tasks>
 touch <touch>
 transform <transform>
 version <version>

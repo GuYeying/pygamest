@@ -1,4 +1,4 @@
-# pygame_tasks
+# pygame.tasks
 
 协程任务原语——**协作式微调度器**（帧泵驱动：Rust 帧边界统一推进任务表，
 单线程零竞态）。配合 `async def main()` 入口使用——网络等待、多域拆分、
