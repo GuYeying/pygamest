@@ -986,6 +986,8 @@ pub(crate) mod mixer;
 pub(crate) mod mouse;
 pub(crate) mod net;
 pub(crate) mod permission;
+pub(crate) mod parse;
+pub(crate) mod random;
 pub(crate) mod render;
 pub(crate) mod sndarray;
 pub(crate) mod sprite;
