@@ -1516,20 +1516,31 @@ impl PyUi {
 
     /// color_edit(r, g, b, a=None) -> (r, g, b, a)：颜色编辑器（非预乘
     /// 0..255；返回本帧值）。
+    ///
+    /// **运行态 = egui Id 记忆**（py 初值仅首帧生效）——色盘是弹窗内
+    /// 跨帧交互控件，无状态每帧重置形态对它不成立：blending 状态编码
+    /// 在 Hsva alpha **符号位**（Additive = 负），py 四元无符号位语义
+    /// ——每帧重建恒冲掉 additive = 切换失效 + HSV 重建球跳位
+    ///（2026-11-25 用户实锤）。多实例 = 共享全局记忆位（单色盘场景）。
     #[pymethod]
     fn color_edit(&self, args: ColorEditArgs, vm: &VirtualMachine) -> PyResult<(u8, u8, u8, u8)> {
+        const MEM_ID: &str = "pygame_gui_color_edit";
         let (r, g, b) = (args.r, args.g, args.b);
         let a = args.a.unwrap_or(255);
-        let mut color = egui::Color32::from_rgba_unmultiplied(r, g, b, a);
-        with_ui(vm, |ui| {
+        let out = with_ui(vm, |ui| {
+            let id = egui::Id::new(MEM_ID);
+            let mut color = ui.ctx().data_mut(|d| {
+                d.get_temp::<egui::Color32>(id).unwrap_or_else(|| {
+                    egui::Color32::from_rgba_unmultiplied(r, g, b, a)
+                })
+            });
             // **全功能 srgba 编辑器**（BlendOrAdditive——blending 选择在
-            // 上方；unmultiplied 变体 = OnlyBlend 固定模式没有该项，
-            // 2026-11-25 用户实锤）。数据换向：入口非预乘→预乘存储
-            // （球稳——曾直喂非预乘值进预乘编辑器 = alpha 中段取色球
-            // 跳左下角黑角），出口回非预乘契约
+            // 上方；数据 = 预乘存储换向非预乘契约，球稳）
             ui.color_edit_button_srgba(&mut color);
+            ui.ctx().data_mut(|d| d.insert_temp(id, color));
+            color.to_srgba_unmultiplied()
         })?;
-        let [r, g, b, a] = color.to_srgba_unmultiplied();
+        let [r, g, b, a] = out;
         Ok((r, g, b, a))
     }
 
@@ -1574,7 +1585,9 @@ impl PyUi {
         vm: &VirtualMachine,
     ) -> PyResult<(i32, i32, i32)> {
         let (mut y, mut m, mut d) = (year, month.clamp(1, 12), day.clamp(1, 31));
-        let label = format!("📅 {y:04}-{m:02}-{d:02}");
+        // 纯文本标签（📅 emoji 在 CJK 注入字体无字形 = tofu 方框——
+        // 2026-11-25 用户实锤）
+        let label = format!("日期: {y:04}-{m:02}-{d:02}");
         with_ui(vm, |ui| {
             ui.menu_button(label, |inner| {
                 inner.horizontal(|h| {
