@@ -69,6 +69,32 @@ egui 是否想要键盘输入。未初始化 = False。
 `1.0` = 原生像素）与当前值查询。**次帧生效**（egui 愿望值语义）；
 未初始化时 set 静默、scale 返回 `1.0`。
 
+## <span class="c-func">主题（2026-11-25 新增——gui.py 定典）</span>
+
+#### <span class="c-func">set_theme(name) -> bool</span>
+
+主题风格切换：`"dark"` / `"light"`——egui Visuals 全量切换；未识别名/
+未初始化 = False。次帧生效。
+
+#### <span class="c-func">style_override(accent=None, bg=None, rounding=None, item_spacing=None, button_padding=None, font_size=None) -> bool</span>
+
+**当前主题全定制覆盖**（kwargs 任意子集，叠加在当前主题之上）：
+
+| 参数 | 形态 | 说明 |
+|---|---|---|
+| `accent` | `(r,g,b,a)` 0..255 | 强调色（选中/激活/悬停按钮/淡底联动） |
+| `bg` | `(r,g,b,a)` | 面板/窗口底色（extreme 底联动 0.6 倍） |
+| `rounding` | float 像素 | 全局圆角（窗口/菜单/五种控件态，clamp 0..32） |
+| `item_spacing` | `(x, y)` | 控件间距 |
+| `button_padding` | `(x, y)` | 按钮内边距 |
+| `font_size` | float 像素 | 正文字号（Button ×1.1 / Heading ×2.0 联动，clamp 8..48） |
+
+#### <span class="c-func">style_reset()</span>
+
+清除全部定制覆盖——恢复当前主题基线（dark/light 由 set_theme 记忆位
+决定）。正典用法见 `pure_examples/gui.py` 主题分页（四预设按钮 +
+归零）。
+
 ```{note}
 [v3 缓议] egui::Window / SidePanel / TopPanel（ctx 级多面板——现架构 =
 透明 CentralPanel 单通道定约）；Ui 内嵌游戏纹理（ui_image——需引擎层

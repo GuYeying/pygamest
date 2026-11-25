@@ -716,6 +716,219 @@ pub(crate) fn scale() -> f32 {
     })
 }
 
+/// set_theme(name) -> bool：主题风格切换（"dark"/"light"——egui Visuals
+/// 全量切换；未识别名/未初始化 = False）。gui.py 标准案例的主题分页正典。
+static THEME_DARK: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(true);
+
+pub(crate) fn set_theme(name: &str) -> bool {
+    let Some(rc) = EGUI.with(|c| c.borrow().as_ref().cloned()) else {
+        return false;
+    };
+    let ctx = &rc.borrow().ctx;
+    let visuals = match name {
+        "dark" => egui::Visuals::dark(),
+        "light" => egui::Visuals::light(),
+        _ => return false,
+    };
+    THEME_DARK.store(name == "dark", std::sync::atomic::Ordering::SeqCst);
+    ctx.set_visuals(visuals);
+    true
+}
+
+/// style_override 收参结构（kwargs 任意子集——FromArgs + pyarg optional；
+/// 颜色收 PyObjectRef 四元运行期解析——RP 无元组 TryFromBorrowedObject）
+#[derive(FromArgs)]
+pub(crate) struct StyleOverrideArgs {
+    #[pyarg(any, optional)]
+    pub(crate) accent: Option<PyObjectRef>,
+    #[pyarg(any, optional)]
+    pub(crate) bg: Option<PyObjectRef>,
+    #[pyarg(any, optional)]
+    pub(crate) rounding: Option<ArgIntoFloat>,
+    #[pyarg(any, optional)]
+    pub(crate) item_spacing: Option<PyObjectRef>,
+    #[pyarg(any, optional)]
+    pub(crate) button_padding: Option<PyObjectRef>,
+    #[pyarg(any, optional)]
+    pub(crate) font_size: Option<ArgIntoFloat>,
+}
+
+/// (r,g,b,a) 序列 → RGBA 四元（钳制 0..255）
+fn parse_rgba(
+    vm: &VirtualMachine,
+    obj: &PyObjectRef,
+) -> PyResult<(u8, u8, u8, u8)> {
+    use rustpython_vm::convert::TryFromObject;
+    let parts: Vec<i64> =
+        vm.extract_elements_with(obj, |o| i64::try_from_object(vm, o))?;
+    if parts.len() != 4 {
+        return Err(vm.new_value_error(format!(
+            "颜色须 (r,g,b,a) 四元，得 {} 元",
+            parts.len()
+        )));
+    }
+    let c = |v: i64| -> u8 { v.clamp(0, 255) as u8 };
+    Ok((c(parts[0]), c(parts[1]), c(parts[2]), c(parts[3])))
+}
+
+/// (x, y) 二元序列 → f32 对（int/float 兼取——ArgIntoFloat 坑族：
+/// f64 直取拒 int，gui.py 的 item_spacing=(10, 8) 实锤）
+fn parse_xy(vm: &VirtualMachine, obj: &PyObjectRef) -> PyResult<(f32, f32)> {
+    use rustpython_vm::convert::TryFromObject;
+    let parts: Vec<f64> = vm.extract_elements_with(obj, |o| {
+        match f64::try_from_object(vm, o.clone()) {
+            Ok(v) => Ok(v),
+            Err(e) => i64::try_from_object(vm, o)
+                .map(|i| i as f64)
+                .map_err(|_| e),
+        }
+    })?;
+    if parts.len() != 2 {
+        return Err(vm.new_value_error(format!(
+            "间距须 (x, y) 二元，得 {} 元",
+            parts.len()
+        )));
+    }
+    Ok((parts[0] as f32, parts[1] as f32))
+}
+
+/// style_override(accent=None, bg=None, rounding=None, item_spacing=None,
+/// button_padding=None, font_size=None) -> bool：**当前主题全定制覆盖**
+///（颜色非预乘 0..255；rounding/spacing/font_size 像素单位——叠加在
+/// 当前 visuals 之上，style_reset 归零）。gui.py 定制主题分页正典。
+pub(crate) fn style_override(
+    args: StyleOverrideArgs,
+    vm: &VirtualMachine,
+) -> bool {
+    let Some(rc) = EGUI.with(|c| c.borrow().as_ref().cloned()) else {
+        return false;
+    };
+    let accent = match &args.accent {
+        Some(o) => match parse_rgba(vm, o) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                stash_exc(e);
+                return false;
+            }
+        },
+        None => None,
+    };
+    let bg = match &args.bg {
+        Some(o) => match parse_rgba(vm, o) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                stash_exc(e);
+                return false;
+            }
+        },
+        None => None,
+    };
+    let item_spacing = match &args.item_spacing {
+        Some(o) => match parse_xy(vm, o) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                stash_exc(e);
+                return false;
+            }
+        },
+        None => None,
+    };
+    let button_padding = match &args.button_padding {
+        Some(o) => match parse_xy(vm, o) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                stash_exc(e);
+                return false;
+            }
+        },
+        None => None,
+    };
+    let ctx = &rc.borrow().ctx;
+    // 0.37 主题槽化 API——当前主题槽定向覆盖
+    let theme = if THEME_DARK.load(std::sync::atomic::Ordering::SeqCst) {
+        egui::Theme::Dark
+    } else {
+        egui::Theme::Light
+    };
+    ctx.style_mut_of(theme, |style| {
+        let col =
+            |c: (u8, u8, u8, u8)| egui::Color32::from_rgba_unmultiplied(c.0, c.1, c.2, c.3);
+        let v = &mut style.visuals;
+        if let Some(a) = accent {
+            let c = col(a);
+            v.selection.bg_fill = c;
+            v.widgets.active.bg_fill = c;
+            v.widgets.hovered.bg_fill = c.gamma_multiply(0.7);
+            v.widgets.inactive.bg_fill = c.gamma_multiply(0.35);
+            v.faint_bg_color = c.gamma_multiply(0.12);
+        }
+        if let Some(b) = bg {
+            let c = col(b);
+            v.panel_fill = c;
+            v.window_fill = c;
+            v.extreme_bg_color = c.gamma_multiply(0.6);
+        }
+        if let Some(r) = args.rounding {
+            let r = (r.into_float() as f32).clamp(0.0, 32.0);
+            // 0.37 字段名：window/menu_corner_radius + 逐态 corner_radius
+            let cr = egui::CornerRadius::same(r as u8);
+            v.window_corner_radius = cr;
+            v.menu_corner_radius = cr;
+            v.widgets.noninteractive.corner_radius = cr;
+            v.widgets.inactive.corner_radius = cr;
+            v.widgets.hovered.corner_radius = cr;
+            v.widgets.active.corner_radius = cr;
+            v.widgets.open.corner_radius = cr;
+        }
+        if let Some((x, y)) = item_spacing {
+            style.spacing.item_spacing = egui::vec2(x.max(0.0), y.max(0.0));
+        }
+        if let Some((x, y)) = button_padding {
+            style.spacing.button_padding = egui::vec2(x.max(0.0), y.max(0.0));
+        }
+        if let Some(fs) = args.font_size {
+            let fs = fs.into_float() as f32;
+            let fs = fs.clamp(8.0, 48.0);
+            style.text_styles.insert(
+                egui::TextStyle::Body,
+                egui::FontId::proportional(fs),
+            );
+            style.text_styles.insert(
+                egui::TextStyle::Button,
+                egui::FontId::proportional(fs * 1.1),
+            );
+            style.text_styles.insert(
+                egui::TextStyle::Heading,
+                egui::FontId::proportional(fs * 2.0),
+            );
+        }
+    });
+    true
+}
+
+/// style_reset()：清除全部定制覆盖——恢复当前主题基线
+///（dark/light 由 set_theme 记忆位决定；egui Style 默认值 + 主题 visuals）。
+pub(crate) fn style_reset() {
+    let Some(rc) = EGUI.with(|c| c.borrow().as_ref().cloned()) else {
+        return;
+    };
+    let ctx = &rc.borrow().ctx;
+    let dark = THEME_DARK.load(std::sync::atomic::Ordering::SeqCst);
+    let theme = if dark {
+        egui::Theme::Dark
+    } else {
+        egui::Theme::Light
+    };
+    let mut st = egui::Style::default();
+    st.visuals = if dark {
+        egui::Visuals::dark()
+    } else {
+        egui::Visuals::light()
+    };
+    ctx.set_style_of(theme, st);
+}
+
 // ── with 区域（horizontal() 的无回调形态）────────────────────────
 
 /// 开一个布局区（`with ui.horizontal():` / `with ui.vertical():` 的入口）：

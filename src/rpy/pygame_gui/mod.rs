@@ -21,8 +21,8 @@ pub(crate) mod runtime;
         use egui_starfish_we::egui;
         use rustpython_derive::pyclass;
         use rustpython_vm::{
-            PyObjectRef, PyPayload, PyRef, PyResult, Py, VirtualMachine, builtins::PyModule,
-
+            PyObjectRef, PyPayload, PyRef, PyResult, Py, VirtualMachine,
+            builtins::{PyModule, PyStrRef},
         };
 
         use crate::rpy::pygame::event::PyEvent;
@@ -130,6 +130,33 @@ class UiBase:
         #[pyfunction]
         fn scale(_vm: &VirtualMachine) -> f32 {
             crate::rpy::pygame_gui::runtime::scale()
+        }
+
+        /// set_theme(name) -> bool：主题风格切换（"dark"/"light"——
+        /// egui Visuals 全量切换；未识别名/未初始化 = False）。
+        /// pure_examples/gui.py 主题分页正典（2026-11-25 新增）。
+        #[pyfunction]
+        fn set_theme(name: PyStrRef, _vm: &VirtualMachine) -> bool {
+            let Some(n) = name.to_str() else { return false };
+            crate::rpy::pygame_gui::runtime::set_theme(n)
+        }
+
+        /// style_override(accent=None, bg=None, rounding=None,
+        /// item_spacing=None, button_padding=None, font_size=None) -> bool：
+        /// **当前主题全定制覆盖**（kwargs 任意子集；颜色非预乘 0..255，
+        /// 其余像素单位）——style_reset 归零。gui.py 定制主题正典。
+        #[pyfunction]
+        fn style_override(
+            args: crate::rpy::pygame_gui::runtime::StyleOverrideArgs,
+            vm: &VirtualMachine,
+        ) -> bool {
+            crate::rpy::pygame_gui::runtime::style_override(args, vm)
+        }
+
+        /// style_reset()：清除全部定制覆盖——恢复当前主题基线。
+        #[pyfunction]
+        fn style_reset(_vm: &VirtualMachine) {
+            crate::rpy::pygame_gui::runtime::style_reset()
         }
 
         // 定约：egui 的**指针交互归 Screen**（窗口指针直通）——多 surface
