@@ -452,17 +452,19 @@ pub(crate) fn draw_ui(vm: &VirtualMachine, panel: PyObjectRef) -> PyResult<()> {
         vm.new_type_error("draw_ui 须在 `with screen.render():` 会话块内调用（t = 会话对象）")
     })?;
     let screen = starfish_pygame::display::get_screen();
-    // ppp 帧级同步（**画布 letterbox scale** = min(物理/逻辑)——两段式
+    // ppp 帧级对账（**画布 letterbox scale × 用户缩放愿望**——两段式
     // 定约下相机基底恒等，缩放基准独立现算。2026-11-18 Android"首帧
     // 对、旋转/迟到 resize 后错位"根因：ppp 仅 init 设一次，迟到
     // Resized 后陈旧 = 布局/合成域分裂。每帧对账 = 旋转/缩放自适应；
-    // 桌面逻辑==物理 = 1.0 恒零变）
+    // 桌面逻辑==物理 = fit 1.0 零变。2026-11-25 乘 UI_SCALE_WISH——
+    // 用户 set_scale 曾被本对账当漂移抹掉（applied 1.5 ≠ want 1.0
+    // 强制回写 = 缩放滑条无效根因））
     {
         let (pw, ph) = starfish_pygame::render::DrawTarget::size(screen);
         let (lw, lh) = screen.logical_size();
         let scale = (pw as f32 / lw.max(1) as f32).min(ph as f32 / lh.max(1) as f32);
         if scale.is_finite() && scale > 0.0 {
-            let want = scale.max(0.25);
+            let want = (scale * ui_scale_wish()).max(0.25);
             if (rc.borrow().ctx.pixels_per_point() - want).abs() > 1e-3 {
                 rc.borrow().ctx.set_pixels_per_point(want);
             }
@@ -700,11 +702,23 @@ pub(crate) fn shutdown() {
 /// 高分屏 / 桌面缩放场景：1.0 = 原生像素，1.5 = 控件放大 1.5 倍）。未
 /// 初始化静默（无运行时可调）。
 pub(crate) fn set_scale(ppp: f32) {
+    // 用户缩放愿望（**持久分子**——帧级对账的乘法基准，见 draw_ui 侧
+    // want 计算；thread_local Cell 贴 EGUI 同款单线程纪律）
+    UI_SCALE_WISH.with(|w| w.set(ppp.max(0.25)));
     EGUI.with(|c| {
         if let Some(rc) = c.borrow().as_ref() {
-            rc.borrow().ctx.set_pixels_per_point(ppp.max(0.25));
+            rc.borrow().ctx.set_zoom_factor(ppp.max(0.25));
         }
     });
+}
+
+/// 用户 UI 缩放愿望（set_scale 写、帧级对账读——乘法基准）
+fn ui_scale_wish() -> f32 {
+    UI_SCALE_WISH.with(|w| w.get())
+}
+
+thread_local! {
+    static UI_SCALE_WISH: std::cell::Cell<f32> = const { std::cell::Cell::new(1.0) };
 }
 
 /// scale() -> float：当前 UI 缩放（未初始化 = 1.0）。
