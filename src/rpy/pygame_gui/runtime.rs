@@ -724,16 +724,16 @@ thread_local! {
     static FONT_BASE: std::cell::RefCell<
         Option<Vec<(egui::TextStyle, f32, egui::FontFamily)>>,
     > = const { std::cell::RefCell::new(None) };
+    /// spacing 基线（**复选框/单选框尺寸基元**——egui 控件方框 =
+    /// spacing.icon_width/interact_size，与字阶解耦的固定值；不随
+    /// 字阶乘 = 字大框小的"半 bug"观感，2026-11-25 用户实锤）
+    static SPACING_BASE: std::cell::RefCell<Option<egui::Spacing>> =
+        const { std::cell::RefCell::new(None) };
 }
 
-/// set_font_scale(f)：**全局字阶缩放**（UI 整体变大变小的正解——
-/// Body/Button/Heading/Small/Monospace 五档全乘，控件尺寸随文本
-/// 自适配；矢量重栅格无损；f=1.0 还原基线。ppp 渲染缩放在本集成
-/// 不可用：points≡logical 三端定约锁死（2026-11-14），字阶缩放
-/// 才是布局域内的安全口——2026-11-25 gui.py 用户诉求）。
-pub(crate) fn set_font_scale(f: f32) {
-    let f = f.clamp(0.5, 3.0);
-    let base_list = FONT_BASE.with(|b| {
+/// 取字阶基线（字体五档 + spacing 基元——首调用从默认 Style 捕获）
+fn font_scale_bases() -> (Vec<(egui::TextStyle, f32, egui::FontFamily)>, egui::Spacing) {
+    let fonts = FONT_BASE.with(|b| {
         let mut b = b.borrow_mut();
         if b.is_none() {
             *b = Some(
@@ -746,18 +746,54 @@ pub(crate) fn set_font_scale(f: f32) {
         }
         b.clone().unwrap()
     });
+    let spacing = SPACING_BASE.with(|s| {
+        let mut s = s.borrow_mut();
+        if s.is_none() {
+            *s = Some(egui::Style::default().spacing.clone());
+        }
+        s.clone().unwrap()
+    });
+    (fonts, spacing)
+}
+
+/// set_font_scale(f)：**全局字阶缩放**（UI 整体变大变小的正解——
+/// Body/Button/Heading/Small/Monospace 五档全乘 + spacing 基元
+/// （icon_width/interact_size/item_spacing/button_padding——复选框/
+/// 单选框等控件方框尺寸基元，egui 里与字阶解耦的固定值）；控件
+/// 随文本与框径自适配；矢量重栅格无损；f=1.0 还原基线。ppp 渲染
+/// 缩放在本集成不可用：points≡logical 三端定约锁死（2026-11-14），
+/// 字阶缩放才是布局域内的安全口——2026-11-25 gui.py 用户诉求）。
+pub(crate) fn set_font_scale(f: f32) {
+    let f = f.clamp(0.5, 3.0);
+    let (base_fonts, base_spacing) = font_scale_bases();
     EGUI.with(|c| {
         if let Some(rc) = c.borrow().as_ref() {
             let ctx = &rc.borrow().ctx;
             // 双主题槽都施加（set_theme 切换不丢缩放）
             for theme in [egui::Theme::Dark, egui::Theme::Light] {
                 ctx.style_mut_of(theme, |style| {
-                    for (ts, size, family) in &base_list {
+                    for (ts, size, family) in &base_fonts {
                         style.text_styles.insert(
                             ts.clone(),
                             egui::FontId::new(size * f, family.clone()),
                         );
                     }
+                    let s = &mut style.spacing;
+                    s.icon_width = base_spacing.icon_width * f;
+                    s.icon_width_inner = base_spacing.icon_width_inner * f;
+                    s.icon_spacing = base_spacing.icon_spacing * f;
+                    s.interact_size = egui::vec2(
+                        base_spacing.interact_size.x * f,
+                        base_spacing.interact_size.y * f,
+                    );
+                    s.item_spacing = egui::vec2(
+                        base_spacing.item_spacing.x * f,
+                        base_spacing.item_spacing.y * f,
+                    );
+                    s.button_padding = egui::vec2(
+                        base_spacing.button_padding.x * f,
+                        base_spacing.button_padding.y * f,
+                    );
                 });
             }
         }
