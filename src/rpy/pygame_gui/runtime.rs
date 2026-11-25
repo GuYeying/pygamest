@@ -1518,15 +1518,57 @@ impl PyUi {
     /// 0..255；返回本帧值）。
     #[pymethod]
     fn color_edit(&self, args: ColorEditArgs, vm: &VirtualMachine) -> PyResult<(u8, u8, u8, u8)> {
-        let mut c = egui::Color32::from_rgba_unmultiplied(
-            args.r,
-            args.g,
-            args.b,
-            args.a.unwrap_or(255),
-        );
+        let mut c = [args.r, args.g, args.b, args.a.unwrap_or(255)];
         with_ui(vm, |ui| {
-            ui.color_edit_button_srgba(&mut c);
+            // **srgba_unmultiplied 编辑器**（非预乘契约对口——曾用
+            // srgba 预乘编辑器吃非预乘值：alpha 拖条非两端时取色球
+            // 自动跳回左下角黑角，2026-11-25 用户实锤）
+            ui.color_edit_button_srgba_unmultiplied(&mut c);
         })?;
-        Ok((c.r(), c.g(), c.b(), c.a()))
+        Ok((c[0], c[1], c[2], c[3]))
+    }
+
+    /// range_slider_f32(text, lo, hi) -> (lo, hi)：**区间双柄滑条**
+    ///（egui RangeSlider——返回本帧区间）。
+    #[pymethod]
+    fn range_slider_f32(
+        &self,
+        text: PyStrRef,
+        lo: ArgIntoFloat,
+        hi: ArgIntoFloat,
+        vm: &VirtualMachine,
+    ) -> PyResult<(f64, f64)> {
+        let t = as_str(&text, vm)?.to_owned();
+        with_ui(vm, |ui| {
+            let mut a = lo.into_float();
+            let mut b = hi.into_float();
+            let range = a..=b;
+            ui.add(egui::RangeSlider::new(&mut a, &mut b, range).text(t));
+            (a, b)
+        })
+    }
+
+    /// date_picker(year, month, day) -> (y, m, d)：**日期选择组合控件**
+    ///（egui 0.37 无原生 DatePickerButton——group + 年/月/日 drag
+    /// 组合承载；返回本帧三元）。
+    #[pymethod]
+    fn date_picker(
+        &self,
+        year: i32,
+        month: i32,
+        day: i32,
+        vm: &VirtualMachine,
+    ) -> PyResult<(i32, i32, i32)> {
+        with_ui(vm, |ui| {
+            let (mut y, mut m, mut d) = (year, month.clamp(1, 12), day.clamp(1, 31));
+            ui.group(|inner| {
+                inner.horizontal(|h| {
+                    h.add(egui::DragValue::new(&mut y).prefix("年 ").range(1900..=2100));
+                    h.add(egui::DragValue::new(&mut m).prefix("月 ").range(1..=12));
+                    h.add(egui::DragValue::new(&mut d).prefix("日 ").range(1..=31));
+                });
+            });
+            (y, m, d)
+        })
     }
 }
