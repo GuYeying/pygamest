@@ -939,12 +939,26 @@ fn region_begin(vm: &VirtualMachine, vertical: bool) -> PyResult<PyRef<PyUiRegio
         vm.new_type_error("Ui 仅在 draw_ui 的面板 draw 回调栈内有效")
     })?;
     // SAFETY：parent_ptr 在置位窗口内（回调栈中），Ui 存活
+    // **原生 horizontal 对齐**（0.37 allocate_ui_with_layout 同构——先圈
+    // 一行高矩形再建子 Ui；曾无 max_rect = 子区占满剩余高度，
+    // Align::Center 把整行垂直居中 + 父光标回填错位 = 区后控件全灭，
+    // 2026-11-25 gui.py 标准案例实锤根修）
+    let parent = unsafe { &*parent_ptr };
     let layout = if vertical {
         egui::Layout::top_down(egui::Align::LEFT)
     } else {
         egui::Layout::left_to_right(egui::Align::Center)
     };
-    let child: egui::Ui = unsafe { (*parent_ptr).new_child(egui::UiBuilder::new().layout(layout)) };
+    let avail = parent.available_size_before_wrap();
+    let init = if vertical {
+        egui::vec2(avail.x, avail.y)
+    } else {
+        egui::vec2(avail.x, parent.spacing().interact_size.y)
+    };
+    let child_rect = egui::Rect::from_min_size(parent.cursor().left_top(), init);
+    let child: egui::Ui = unsafe {
+        (*parent_ptr).new_child(egui::UiBuilder::new().layout(layout).max_rect(child_rect))
+    };
     let mut boxed = Box::new(child);
     let child_ptr: *mut egui::Ui = &mut *boxed; // Box 入栈后堆址稳定，指针跨 move 有效
     UI_REGIONS.with(|r| r.borrow_mut().push(boxed));
