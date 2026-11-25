@@ -159,6 +159,15 @@ class UiBase:
             crate::rpy::pygame_gui::runtime::style_reset()
         }
 
+        /// set_font_scale(f)：**全局字阶缩放**（UI 整体变大变小——
+        /// 五档文本样式全乘，控件随文本自适配，矢量无损；f=1.0 还原。
+        /// 2026-11-25 gui.py 用户诉求正解：ppp 渲染缩放被 points≡logical
+        /// 三端定约锁死不可用，字阶缩放是布局域内安全口）。
+        #[pyfunction]
+        fn set_font_scale(f: f64, _vm: &VirtualMachine) {
+            crate::rpy::pygame_gui::runtime::set_font_scale(f as f32)
+        }
+
         // 定约：egui 的**指针交互归 Screen**（窗口指针直通）——多 surface
         // 的 draw_ui 是纯展示（游戏内面板/画中画），事件不做逐 surface
         // 路由（2026-10-24 注入式方案评估后回退：egui 的原生多视口是

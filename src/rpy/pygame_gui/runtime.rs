@@ -719,6 +719,49 @@ fn ui_scale_wish() -> f32 {
 
 thread_local! {
     static UI_SCALE_WISH: std::cell::Cell<f32> = const { std::cell::Cell::new(1.0) };
+    /// 字阶基线（首次 set_font_scale 时从 egui 默认 Style 捕获——
+    /// 后续缩放恒以基线 × f，f=1.0 精确还原）
+    static FONT_BASE: std::cell::RefCell<
+        Option<Vec<(egui::TextStyle, f32, egui::FontFamily)>>,
+    > = const { std::cell::RefCell::new(None) };
+}
+
+/// set_font_scale(f)：**全局字阶缩放**（UI 整体变大变小的正解——
+/// Body/Button/Heading/Small/Monospace 五档全乘，控件尺寸随文本
+/// 自适配；矢量重栅格无损；f=1.0 还原基线。ppp 渲染缩放在本集成
+/// 不可用：points≡logical 三端定约锁死（2026-11-14），字阶缩放
+/// 才是布局域内的安全口——2026-11-25 gui.py 用户诉求）。
+pub(crate) fn set_font_scale(f: f32) {
+    let f = f.clamp(0.5, 3.0);
+    let base_list = FONT_BASE.with(|b| {
+        let mut b = b.borrow_mut();
+        if b.is_none() {
+            *b = Some(
+                egui::Style::default()
+                    .text_styles
+                    .iter()
+                    .map(|(ts, fid)| (ts.clone(), fid.size, fid.family.clone()))
+                    .collect(),
+            );
+        }
+        b.clone().unwrap()
+    });
+    EGUI.with(|c| {
+        if let Some(rc) = c.borrow().as_ref() {
+            let ctx = &rc.borrow().ctx;
+            // 双主题槽都施加（set_theme 切换不丢缩放）
+            for theme in [egui::Theme::Dark, egui::Theme::Light] {
+                ctx.style_mut_of(theme, |style| {
+                    for (ts, size, family) in &base_list {
+                        style.text_styles.insert(
+                            ts.clone(),
+                            egui::FontId::new(size * f, family.clone()),
+                        );
+                    }
+                });
+            }
+        }
+    });
 }
 
 /// scale() -> float：当前 UI 缩放（未初始化 = 1.0）。
