@@ -1518,39 +1518,53 @@ impl PyUi {
     /// 0..255；返回本帧值）。
     #[pymethod]
     fn color_edit(&self, args: ColorEditArgs, vm: &VirtualMachine) -> PyResult<(u8, u8, u8, u8)> {
-        let mut c = [args.r, args.g, args.b, args.a.unwrap_or(255)];
+        let (r, g, b) = (args.r, args.g, args.b);
+        let a = args.a.unwrap_or(255);
+        let mut color = egui::Color32::from_rgba_unmultiplied(r, g, b, a);
         with_ui(vm, |ui| {
-            // **srgba_unmultiplied 编辑器**（非预乘契约对口——曾用
-            // srgba 预乘编辑器吃非预乘值：alpha 拖条非两端时取色球
-            // 自动跳回左下角黑角，2026-11-25 用户实锤）
-            ui.color_edit_button_srgba_unmultiplied(&mut c);
+            // **全功能 srgba 编辑器**（BlendOrAdditive——blending 选择在
+            // 上方；unmultiplied 变体 = OnlyBlend 固定模式没有该项，
+            // 2026-11-25 用户实锤）。数据换向：入口非预乘→预乘存储
+            // （球稳——曾直喂非预乘值进预乘编辑器 = alpha 中段取色球
+            // 跳左下角黑角），出口回非预乘契约
+            ui.color_edit_button_srgba(&mut color);
         })?;
-        Ok((c[0], c[1], c[2], c[3]))
+        let [r, g, b, a] = color.to_srgba_unmultiplied();
+        Ok((r, g, b, a))
     }
 
-    /// range_slider_f32(text, lo, hi) -> (lo, hi)：**区间双柄滑条**
-    ///（egui RangeSlider——返回本帧区间）。
+    /// range_slider_f32(text, lo, hi, min, max) -> (lo, hi)：**区间双柄
+    /// 滑条**（egui RangeSlider——lo/hi = 当前双柄值，min/max = 轨道
+    /// 界；界与柄分离——曾以当前值充界 = 拖动区间收缩重叠至钉死，
+    /// 2026-11-25 用户实锤；fixed_decimals(1) 定宽标签）。
     #[pymethod]
     fn range_slider_f32(
         &self,
         text: PyStrRef,
         lo: ArgIntoFloat,
         hi: ArgIntoFloat,
+        min: ArgIntoFloat,
+        max: ArgIntoFloat,
         vm: &VirtualMachine,
     ) -> PyResult<(f64, f64)> {
         let t = as_str(&text, vm)?.to_owned();
         with_ui(vm, |ui| {
             let mut a = lo.into_float();
             let mut b = hi.into_float();
-            let range = a..=b;
-            ui.add(egui::RangeSlider::new(&mut a, &mut b, range).text(t));
+            let bounds = min.into_float()..=max.into_float();
+            ui.add(
+                egui::RangeSlider::new(&mut a, &mut b, bounds)
+                    .text(t)
+                    .fixed_decimals(1),
+            );
             (a, b)
         })
     }
 
-    /// date_picker(year, month, day) -> (y, m, d)：**日期选择组合控件**
-    ///（egui 0.37 无原生 DatePickerButton——group + 年/月/日 drag
-    /// 组合承载；返回本帧三元）。
+    /// date_picker(year, month, day) -> (y, m, d)：**日期选择弹框**
+    ///（按钮显示当前日期，点击弹出菜单框调年/月/日——对齐 DatePicker
+    /// Button 的弹窗交互形态；egui 0.37 无原生组件，menu_button 组合
+    /// 承载；拖数值调整，点框外关闭）。
     #[pymethod]
     fn date_picker(
         &self,
@@ -1559,16 +1573,20 @@ impl PyUi {
         day: i32,
         vm: &VirtualMachine,
     ) -> PyResult<(i32, i32, i32)> {
+        let (mut y, mut m, mut d) = (year, month.clamp(1, 12), day.clamp(1, 31));
+        let label = format!("📅 {y:04}-{m:02}-{d:02}");
         with_ui(vm, |ui| {
-            let (mut y, mut m, mut d) = (year, month.clamp(1, 12), day.clamp(1, 31));
-            ui.group(|inner| {
+            ui.menu_button(label, |inner| {
                 inner.horizontal(|h| {
                     h.add(egui::DragValue::new(&mut y).prefix("年 ").range(1900..=2100));
+                });
+                inner.horizontal(|h| {
                     h.add(egui::DragValue::new(&mut m).prefix("月 ").range(1..=12));
                     h.add(egui::DragValue::new(&mut d).prefix("日 ").range(1..=31));
                 });
+                inner.label("拖动数值调整 · 点框外关闭");
             });
-            (y, m, d)
-        })
+        });
+        Ok((y, m, d))
     }
 }
