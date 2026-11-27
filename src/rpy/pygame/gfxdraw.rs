@@ -741,6 +741,24 @@ use std::cell::Cell;
             Ok(())
         }
 
+        /// set_blend_mode(mode)：图元内容层混合模式转发（pygame.render
+        /// 同名口——"alpha"/"opaque"/"premultiplied"；gfxdraw 几何与
+        /// draw_surface 系全部消费该状态，sticky 到再次设置）
+        #[pyfunction]
+        fn set_blend_mode(mode: String, vm: &VirtualMachine) -> PyResult<()> {
+            starfish_pygame::render::set_blend_mode(&mode)
+                .map_err(|e| vm.new_value_error(e))
+        }
+
+        /// set_cull_mode(mode)：图元内容层剔除模式转发（"none"/"back"/
+        /// "front"——默认 none 保证镜像 blit 正常显示，2D 场景一般不改；
+        /// 3D 大场景建议走 mesh_builder 自绘管线单独设置 cull）
+        #[pyfunction]
+        fn set_cull_mode(mode: String, vm: &VirtualMachine) -> PyResult<()> {
+            starfish_pygame::render::set_cull_mode(&mode)
+                .map_err(|e| vm.new_value_error(e))
+        }
+
         // ── gen_* 生成器族（Rust 内生成位置流——原点中心局部坐标；
         // 位置由 set_transform 赋予，性能 = 语义函数族同级）────────────
 
