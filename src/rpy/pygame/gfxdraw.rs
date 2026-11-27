@@ -390,47 +390,9 @@ use std::cell::Cell;
             Ok(())
         }
 
-        /// set_color(f)：one-shot 绘制色（下一次 gfxdraw 图元用此色；
-        /// draw 后自动重置回默认紫色）
-        #[pyfunction]
-        fn set_color(
-            f: PyObjectRef,
-            color: SfColor,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            let c = [
-                color.0[0] as f32 / 255.0,
-                color.0[1] as f32 / 255.0,
-                color.0[2] as f32 / 255.0,
-                color.0[3] as f32 / 255.0,
-            ];
-            match route(&f, vm)? {
-                Target::Surf(s) => s.surface.set_draw_color(c),
-                Target::Active => bridge::with_session(vm, |t| t.set_draw_color(c))?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| t.set_draw_color(c))?,
-            }
-            Ok(())
-        }
-
-        /// set_wireframe(f, enabled=True)：one-shot 线框模式（下一次图元
-        /// 渲染为三角网格边线——呈现原始三角化的边）
-        #[pyfunction]
-        fn set_wireframe(
-            f: PyObjectRef,
-            args: FuncArgs,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            use rustpython_vm::convert::TryFromObject;
-            let enabled = args.args.first()
-                .and_then(|o| bool::try_from_object(vm, o.clone()).ok())
-                .unwrap_or(true);
-            match route(&f, vm)? {
-                Target::Surf(s) => s.surface.set_draw_wireframe(enabled),
-                Target::Active => bridge::with_session(vm, |t| t.set_draw_wireframe(enabled))?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| t.set_draw_wireframe(enabled))?,
-            }
-            Ok(())
-        }
+        // ── set_color / set_wireframe / push 三口已删（2026-11-27 接口
+        //    破坏定约——draw_batch 参数自包含统一口替代：color/wireframe
+        //    kwargs one-shot 语义与原口精确对齐；拓扑随数据走）──
 
         // ── push 统一口（v1 批次：VertexBuf + set_topology + push +
         // gen_* 生成器族）────────────────────────────────────────────
@@ -693,49 +655,11 @@ use std::cell::Cell;
             Ok((buf_topo, points, indices))
         }
 
-        /// push(f, data, indices=None)：顶点位置流入批——**deprecated**
-        /// （2026-11-25 接口破坏定约：权威形态 = `draw_batch` 参数自包含
-        /// 口——拓扑随数据 + transform/color/wireframe kwargs，FFI
-        /// N+1→1。本口保留读 sticky 会话状态，存量案例迁移期兼容）。
-        ///
-        /// data 三通道：VertexBuf（含自带索引）/ bytes（f32 LE，长度
-        /// 12 倍数）/ list（扁平数字流或 [(x,y),...] 点列表）。索引
-        /// 语义：indices 参数 > VertexBuf 自带 > 按拓扑逐组解释。
-        #[pyfunction]
-        fn push(args: PushArgs, vm: &VirtualMachine) -> PyResult<()> {
-            let (buf_topo, points, mut indices) = parse_push_data(&args.data, vm)?;
-            if let Some(idx) = args.indices {
-                indices = idx; // 显式索引覆盖 VertexBuf 自带
-            }
+        // ── push 口已删（2026-11-26 用户定夺——one-shot 统一定约：
+        //    transform/color/wireframe 本次是本次、下次是下次各自独立，
+        //    draw_batch 参数自包含即全部语义；旧 push 的 sticky 会话
+        //    读取路径随之移除）──
 
-            // 会话状态读取（色/拓扑 sticky）+ 入批（不触发 one-shot 重置）
-            match route(&args.f, vm)? {
-                Target::Surf(s) => {
-                    let topo = s
-                        .surface
-                        .current_topology()
-                        .unwrap_or(buf_topo);
-                    let color = s.surface.current_draw_color();
-                    s.surface
-                        .push_stream(topo, &points, &indices, color);
-                }
-                Target::Active => bridge::with_session(vm, |t| {
-                    let topo = t
-                        .current_topology()
-                        .unwrap_or(buf_topo);
-                    let color = t.current_draw_color();
-                    t.push_stream(topo, &points, &indices, color);
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    let topo = t
-                        .current_topology()
-                        .unwrap_or(buf_topo);
-                    let color = t.current_draw_color();
-                    t.push_stream(topo, &points, &indices, color);
-                })?,
-            }
-            Ok(())
-        }
 
         /// draw_batch 参数（**参数自包含**——None = 沿用会话当前值）
         #[derive(FromArgs)]
