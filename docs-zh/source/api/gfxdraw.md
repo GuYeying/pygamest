@@ -1,10 +1,8 @@
 # pygame.gfxdraw
 
-SDL_gfx 风格图元 + **渲染统一 draw 面**——图元函数**只收 renderpass + 几何参数**；颜色/线框经独立状态机单独设置（one-shot，draw 后自动重置）。
-
-另有 **push 统一口**（见下文 [push 统一口](#push-统一口)）——手写顶点数据
-的通用出口：`VertexBuf` 顶点容器 + `set_topology` 拓扑状态 + `push`
-入批，数据全程在 Rust 侧流转。
+SDL_gfx 风格图元 + **渲染统一 draw 面**——`gen_*` 生成器产出顶点数据，
+`draw_batch` 一口入批：**参数自包含**（transform/color/wireframe kwargs，
+`None` = 沿用会话当前值；one-shot 语义统一——本次是本次、下次是下次）。
 
 ```{note}
 首参 `f` 是**渲染会话**（`with screen.render() as f` 的 `f`，
@@ -13,49 +11,47 @@ SDL_gfx 风格图元 + **渲染统一 draw 面**——图元函数**只收 rende
 [坐标系] **中心原点、y 向上**——`(0, 0)` = 屏幕/画布中心，`+y` 向上
 （与 3D 透视 / 物理米制系三方同构）。
 
-[颜色状态机] 图元**不收颜色参数**——颜色经 `set_color(f, color)` 单独
-设置。**双语义分立**：push 流 = sticky（色/拓扑/变换跨 push 持续）；
-不设 = **默认紫色**（调试可辨）。
+[拓扑随数据] 顶点流的图元解释**随数据走**：填充族生成器烤入
+`triangles`、线族烤入 `lines`——无需手工声明；自定义流经
+`buf.topology` 属性覆写（"triangles"/"lines"）。
 
 [图元函数族退役] SDL_gfx 风格图元函数（`filled_circle` / `box` /
 `line` / `rectangle` 等直接绘制口）已全部剔除——形状统一走
-`gen_*` 生成器 + `push` 统一口（数据面收敛，见下节）。
-
-[线框状态机] `set_wireframe(f)` 开启三角网格边线渲染（one-shot）——
-呈现原始三角化的**边**（圆的扇形边、耳切对角线都直接可见），
-"是什么形式就是什么形式"。
+`gen_*` 生成器 + `draw_batch` 统一口（数据面收敛，见下节）。
 
 [旧口退役] 会话对象上的 `r.rect` / `r.circle` 等绘制便捷方法与 `blit`
 家族已全部剔除——图元走本模块，贴图走 `draw_surface` 系。
 ```
 
-## <span class="c-func">push 统一口</span>
+## <span class="c-func">draw_batch 统一口</span>
 
-手写顶点数据的统一出口——与图元函数族（SDL_gfx 风格）互补。数据
-形态为**位置流**（每点 x,y,z 三个分量），颜色、uv、变换全部在入批
-时按当前状态烘焙——数据全程 Rust 侧流转，Python 侧无逐顶点 tuple
-摆渡。
+顶点批绘制统一口——**参数自包含**（2026-11-25 接口破坏定约：替代
+sticky 三口 + push 组合，FFI N+1→1；2026-11-27 one-shot 统一——
+transform/color/wireframe 本次是本次、下次是下次，各自独立）。
 
 ```python
 with screen.render() as t:
-    tri = pygame.gfxdraw.gen_circle(60)          # 生成器：Rust 生成位置流
-    pygame.gfxdraw.set_topology(t, "triangles")  # sticky——跨 push 持续
-    pygame.gfxdraw.set_color(t, (230, 90, 60))
-    pygame.gfxdraw.set_transform(t, pygame.math.mat4_translation(-200, 0, 0))
-    pygame.gfxdraw.push(t, tri)                  # 生成器句柄
-    pygame.gfxdraw.push(t, [80, 0, -80, 0, 0, 100])  # 扁平 list 同色同拓扑
-
-    pygame.gfxdraw.set_topology(t, "lines")      # 切拓扑
-    pygame.gfxdraw.push(t, seg_bytes)            # bytes 直拷通道
+    # 拓扑随数据：outline 生成器烤入 Lines、填充生成器烤入 Triangles
+    pygame.gfxdraw.draw_batch(
+        t, pygame.gfxdraw.gen_circle_outline(60),
+        transform=pygame.math.mat4_translation(-200, 0, 0),
+        color=(230, 90, 60, 255),
+    )
+    pygame.gfxdraw.draw_batch(
+        t, pygame.gfxdraw.gen_circle(60),
+        transform=pygame.math.mat4_translation(200, 0, 0),
+        color=(90, 160, 255, 255),
+        wireframe=True,                      # one-shot 仅本批
+    )
+    pygame.gfxdraw.draw_batch(t, seg_bytes)  # bytes 直拷通道（默认色/变换）
 ```
 
-语义与图元函数族的分界：**push 流是 sticky**——`set_color` /
-`set_topology` / `set_transform` 设置后跨 push 持续，直到再次设置；
-图元函数族保持 one-shot（draw 后重置，pygame 兼容语义）不变。
+- `transform=None`：沿用会话当前变换（`set_transform` 设置的持久值）
+- `color=None`：沿用会话当前绘制色
+- `wireframe=None`：沿用会话当前线框开关
 
-拓扑语义：顶点按**点**分组——`triangles` = 3 点一三角、`lines` =
-2 点一线段；每点恒为 x,y,z 三分量（2D 场景 z 传 0）。索引越界自动
-跳过对应组（不 panic——push 收用户任意数据）。
+数据形态为**位置流**（每点 x,y,z 三分量），颜色、uv、索引全部在入批
+时烘焙——数据全程 Rust 侧流转，Python 侧无逐顶点 tuple 摆渡。
 
 #### <span class="c-func">VertexBuf()</span>
 
@@ -65,95 +61,52 @@ with screen.render() as t:
 倍数——`struct.pack` / `array` / numpy 产出零解包）；`set_indices(
 indices)` 设置索引；`clear()` 清空复用容器。
 
+**`topology` 属性**（可读写）：`"triangles"`（默认）/ `"lines"`——
+自定义流的图元解释覆写口。
+
 ```python
 buf = pygame.gfxdraw.VertexBuf()
 buf.add_points([x1, y1, 0, x2, y2, 0, x3, y3, 0])   # 3 个点
 buf.set_indices([0, 1, 2])
-pygame.gfxdraw.push(t, buf)
+buf.topology = "lines"                               # 覆写解释（可选）
+pygame.gfxdraw.draw_batch(t, buf)
 ```
 
-#### <span class="c-func">push(f, data, indices=None)</span>
+#### <span class="c-func">draw_batch(f, data, transform=None, color=None, wireframe=None)</span>
 
-顶点位置流入批。`data` 三通道：`VertexBuf`（含自带索引）/ bytes
-（f32 LE）/ list（扁平 `[x,y,z,...]` 数字流或 `[(x,y),...]` 点列表）。
-`indices` 参数可覆盖 VertexBuf 自带索引；不设索引时按拓扑逐组解释。
-
-#### <span class="c-func">set_topology(f, mode)</span>
-
-push 流拓扑状态（sticky）。`mode` 取 `"triangles"`（默认）、`"lines"`
-或 `"default"`（回默认）。
+顶点批绘制。`data` 三通道：`VertexBuf`（自带拓扑与索引）/ bytes
+（f32 LE）/ list（扁平 `[x,y,z,...]` 数字流或 `[(x,y),...]` 点列表，
+按 Triangles 解释）。`indices` 语义：VertexBuf 自带索引优先。
 
 #### 生成器族（gen_*）
 
 Rust 内生成位置流，返回 `VertexBuf`——性能与生成全程不落地 Python
 一致。2D 形状产出为**原点中心局部坐标**（`gen_line`/`gen_polygon`
-系例外——输入点即局部坐标），位置由 `set_transform` 赋予：
+系例外——输入点即局部坐标）。**拓扑烤入**：填充族 → `triangles`、
+`*_outline`/`line`/`arc` → `lines`：
 
-| 生成器 | 产出 |
-|---|---|
-| `gen_circle(radius, segments=48)` | 填充圆（扇形三角化） |
-| `gen_circle_outline(radius, segments=64)` | 圆周线（1px） |
-| `gen_rect(w, h)` / `gen_rect_outline(w, h)` | 矩形 / 周界线 |
-| `gen_ellipse(rx, ry, segments=48)` | 填充椭圆 |
-| `gen_arc(radius, start_deg, stop_deg, segments=48)` | 圆弧线（度数制） |
-| `gen_line(x1, y1, x2, y2)` | 线段 |
-| `gen_polygon(points)` / `gen_polygon_outline(points)` | 多边形填充 / 周界线 |
-| `gen_cube(size)` / `gen_box(min, max)` | 立方体 / 轴对齐盒（3D） |
-| `gen_sphere(radius, su=16, sv=12)` | 球体（3D） |
-| `gen_plane(center, right, up, size)` | 任意朝向面片（3D） |
-| `gen_cylinder(radius, height, segments=24)` / `gen_cone(radius, height, segments=24)` | 圆柱 / 圆锥（3D，中心 = 柱高中点） |
-| `gen_polygon3d(points)` | 3D 多边形板（Newell 稳健三角化） |
+| 生成器 | 产出 | 烤入拓扑 |
+|---|---|---|
+| `gen_circle(radius, segments=48)` | 填充圆（扇形三角化） | triangles |
+| `gen_circle_outline(radius, segments=64)` | 圆周线（1px） | lines |
+| `gen_rect(w, h)` / `gen_rect_outline(w, h)` | 矩形 / 周界线 | triangles / lines |
+| `gen_ellipse(rx, ry, segments=48)` | 填充椭圆 | triangles |
+| `gen_arc(radius, start_deg, stop_deg, segments=48)` | 圆弧线（度数制） | lines |
+| `gen_line(x1, y1, x2, y2)` | 线段 | lines |
+| `gen_polygon(points)` / `gen_polygon_outline(points)` | 多边形填充 / 周界线 | triangles / lines |
+| `gen_cube(size)` / `gen_box(min, max)` | 立方体 / 轴对齐盒（3D） | triangles |
+| `gen_sphere(radius, su=16, sv=12)` | 球体（3D） | triangles |
+| `gen_plane(center, right, up, size)` | 任意朝向面片（3D） | triangles |
+| `gen_cylinder(radius, height, segments=24)` / `gen_cone(radius, height, segments=24)` | 圆柱 / 圆锥（3D，中心 = 柱高中点） | triangles |
+| `gen_polygon3d(points)` | 3D 多边形板（Newell 稳健三角化） | triangles |
 
-## <span class="c-func">状态机</span>
-
-#### <span class="c-func">set_color(f, color)</span>
-
-**绘制色状态**——后续 push / 图元绘制用此色。push 流 = **sticky**
-（跨 push 持续直到再次设置）；不设 = **默认紫色**（调试可辨——忘了
-设色一眼看出）。
-
-```python
-pygame.gfxdraw.set_color(f, (255, 0, 0))
-pygame.gfxdraw.set_transform(f, pygame.math.mat4_translation(0, 0, 0))
-pygame.gfxdraw.push(f, pygame.gfxdraw.gen_circle(50))      # → 红色
-pygame.gfxdraw.set_transform(f, pygame.math.mat4_translation(100, 0, 0))
-pygame.gfxdraw.push(f, pygame.gfxdraw.gen_circle(50))      # → 仍红色（sticky）
-```
-
-- :param f: 渲染会话
-- :param color: `(r, g, b)` / `(r, g, b, a)` 纯色
-- :type color: tuple[int, int, int] | tuple[int, int, int, int]
-
-#### <span class="c-func">set_wireframe(f, enabled=True)</span>
-
-**one-shot 线框模式**——下一次图元 draw 渲染为三角网格边线（三角形 →
-三条边），随后自动重置回填充面。
-
-```python
-pygame.gfxdraw.set_wireframe(f)
-pygame.gfxdraw.filled_circle(f, 0, 0, 50)  # → 网格线框（三角边可见）
-pygame.gfxdraw.filled_circle(f, 100, 0, 50)  # → 填充面（默认）
-```
-
-- :param f: 渲染会话
-- :param enabled: `True`（默认）/ `False`
-- :type enabled: bool
-
-#### <span class="c-func">set_camera(f, camera)</span>
-
-会话相机切换（后续 gfx 绘制进新段；仅本会话生效）。
-
-- :param f: 渲染会话
-- :param camera: 相机（`pygame.render.game_camera_ortho` / `game_camera_perspective` 产物）
-- :type camera: Camera
-
-#### <span class="c-func">reset_camera(f)</span>
-
-回 Auto 兜底相机。
+## <span class="c-func">会话变换（blit / spine / ozz 桥的持久变换）</span>
 
 #### <span class="c-func">set_transform(f, model)</span>
 
-会话变换（one-shot——下一次绘制的顶点按此矩阵 CPU 烘）。
+会话持久变换——`draw_surface` 系 / `draw_spine` / `draw_ozz_*` 桥的
+顶点按此矩阵 CPU 烘焙（**这些桥不收 transform 参数，走持久状态**；
+`draw_batch` 不读此状态——它的 transform 走 kwargs）。
 
 - :param model: 模型矩阵（Mat4）
 - :type model: Mat4
@@ -188,6 +141,17 @@ pygame.gfxdraw.filled_circle(f, 100, 0, 50)  # → 填充面（默认）
 `draw_ozz_bones`：动画运行时插座（spine / ozz 适配库自持管线）。
 
 ### 相机状态（clear_camera）
+
+#### <span class="c-func">set_camera(f, camera)</span>
+
+会话相机切换（后续 gfx 绘制进新段；仅本会话生效）。
+
+- :param camera: 相机（`pygame.render.game_camera_ortho` / `game_camera_perspective` 产物）
+- :type camera: Camera
+
+#### <span class="c-func">reset_camera(f)</span>
+
+回 Auto 兜底相机。
 
 #### <span class="c-func">clear_camera(f)</span>
 
