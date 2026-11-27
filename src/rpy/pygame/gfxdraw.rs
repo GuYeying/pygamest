@@ -17,7 +17,7 @@ use std::cell::Cell;
         use rustpython_derive::pyclass;
         use rustpython_vm::PyPayload;
         use rustpython_vm::convert::TryFromObject;
-        use rustpython_vm::builtins::PyStr;
+        use rustpython_vm::builtins::{PyStr, PyStrRef};
         use rustpython_vm::types::Constructor;
         use rustpython_derive::FromArgs;
         use crate::rpy::bridge;
@@ -445,14 +445,21 @@ use std::cell::Cell;
         /// VertexBuf：顶点位置流容器（Rust Vec 持有——py 侧零逐顶点
         /// tuple 摆渡）。三条填充通道：add_point 单点 / add_points 扁平
         /// 数组 / extend bytes 直拷；gen_* 生成器产出同类型。
+        ///
+        /// **拓扑随数据走**（2026-11-25 定约——替代全局 set_topology
+        /// sticky 状态）：线族生成器烤入 Lines、填充族 Triangles；py 可
+        /// 经 `buf.topology` 属性覆写（"triangles"/"lines"）控制自己的
+        /// 顶点数据解释——push 按缓冲自带拓扑分仓，零 sticky 陷阱。
         #[derive(PyPayload)]
         #[pyattr]
         #[pyclass(module = "pygame.gfxdraw", name = "VertexBuf", unhashable = true)]
         pub(crate) struct PyVertexBuf {
             /// 扁平位置流 [x,y,z × N]
             pub(crate) points: std::cell::RefCell<Vec<f32>>,
-            /// 可选索引（空 = 逐 3 一切三角 / 逐 2 一切线段）
+            /// 可选索引（空 = 按拓扑逐 3/逐 2 解释）
             pub(crate) indices: std::cell::RefCell<Vec<u16>>,
+            /// push 拓扑（None = Triangles；线族生成器烤入 Lines）
+            pub(crate) topology: std::cell::RefCell<Option<starfish_pygame::render::batch::BatchTopology>>,
         }
 
         impl std::fmt::Debug for PyVertexBuf {
@@ -473,12 +480,45 @@ use std::cell::Cell;
                 Ok(Self {
                     points: std::cell::RefCell::new(Vec::new()),
                     indices: std::cell::RefCell::new(Vec::new()),
+                    topology: std::cell::RefCell::new(None),
                 })
             }
         }
 
         #[pyclass(with(Constructor))]
         impl PyVertexBuf {
+            /// topology 属性（"triangles" / "lines"——开发者覆写口；
+            /// gen_* 已按语义烤入，覆写用于自定义流的解释控制）
+            #[pygetset]
+            fn topology(&self) -> String {
+                match self
+                    .topology
+                    .borrow()
+                    .unwrap_or(starfish_pygame::render::batch::BatchTopology::Triangles)
+                {
+                    starfish_pygame::render::batch::BatchTopology::Lines => "lines".to_owned(),
+                    _ => "triangles".to_owned(),
+                }
+            }
+
+            #[pygetset(setter)]
+            fn set_topology(&self, value: PyStrRef, vm: &VirtualMachine) -> PyResult<()> {
+                let s = value
+                    .to_str()
+                    .ok_or_else(|| vm.new_value_error("topology 含非 UTF-8 字符"))?;
+                let topo = match s {
+                    "triangles" => starfish_pygame::render::batch::BatchTopology::Triangles,
+                    "lines" => starfish_pygame::render::batch::BatchTopology::Lines,
+                    other => {
+                        return Err(vm.new_value_error(format!(
+                            "topology 未识别：{other:?}（triangles/lines）"
+                        )))
+                    }
+                };
+                *self.topology.borrow_mut() = Some(topo);
+                Ok(())
+            }
+
             /// add_point(x, y)：追加 2D 点（z=0）。
             #[pymethod]
             fn add_point(&self, x: f64, y: f64) {
@@ -549,7 +589,8 @@ use std::cell::Cell;
             }
         }
 
-        /// Geometry → VertexBuf（生成器共用：抽 pos 流 + 索引）
+        /// Geometry → VertexBuf（生成器共用：抽 pos 流 + 索引；拓扑默认
+        /// Triangles——线族 gen 后自行覆写 Lines）
         fn geo_to_buf(g: starfish_gfx::geometry::Geometry) -> PyVertexBuf {
             let points: Vec<f32> = g
                 .vertices
@@ -559,6 +600,7 @@ use std::cell::Cell;
             PyVertexBuf {
                 points: std::cell::RefCell::new(points),
                 indices: std::cell::RefCell::new(g.indices),
+                topology: std::cell::RefCell::new(None),
             }
         }
 
@@ -576,37 +618,10 @@ use std::cell::Cell;
             }
         }
 
-        /// set_topology(f, mode)：push 流拓扑状态（**sticky**——持续生效
-        /// 直至再设；draw 函数族不经此状态——函数名即拓扑）。mode 取
-        /// "triangles"（默认，顶点按 3 个一组）、"lines"（按 2 个一组）
-        /// 或 "default"（回默认）。
-        #[pyfunction]
-        fn set_topology(f: PyObjectRef, mode: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
-            use starfish_pygame::render::batch::BatchTopology;
-            let mode_str = mode
-                .downcast_ref::<PyStr>()
-                .map(|s| s.to_str().map(|s| s.to_owned()))
-                .ok_or_else(|| vm.new_type_error("topology 须为字符串"))?
-                .ok_or_else(|| vm.new_value_error("topology 含非 UTF-8 字符"))?;
-            let topo = match mode_str.as_str() {
-                "triangles" => Some(Some(BatchTopology::Triangles)),
-                "lines" => Some(Some(BatchTopology::Lines)),
-                "default" => Some(None),
-                other => {
-                    return Err(vm.new_value_error(format!(
-                        "topology 未识别：{other:?}（triangles/lines/default）"
-                    )))
-                }
-            };
-            match route(&f, vm)? {
-                Target::Surf(s) => s.surface.set_topology(topo.unwrap()),
-                Target::Active => bridge::with_session(vm, |t| t.set_topology(topo.unwrap()))?,
-                Target::Targets => {
-                    bridge::with_mrt_session(vm, |t| t.set_topology(topo.unwrap()))?
-                }
-            }
-            Ok(())
-        }
+        // ── set_topology 全局口已移除（2026-11-25 定约——拓扑随数据走：
+        //    gen_* 烤入 VertexBuf.topology（线族 Lines/填充族 Triangles），
+        //    开发者经 buf.topology 属性覆写。sticky 全局状态曾致漏复位
+        //    = 后续填充图元被按线段解释的错乱陷阱）──
 
         /// push 参数（data = VertexBuf | bytes | 扁平 list | [(x,y),...]；
         /// indices 可选——覆盖 VertexBuf 自带索引）
@@ -635,9 +650,13 @@ use std::cell::Cell;
             use rustpython_vm::convert::TryFromObject;
             use starfish_pygame::render::batch::BatchTopology;
 
-            // 数据解析（buf → bytes → 扁平 list → 点列表）
+            // 数据解析（buf → bytes → 扁平 list → 点列表）；**拓扑随数据
+            // 走**（2026-11-25 定约——VertexBuf 自带烤入拓扑，开发者可
+            // 经 buf.topology 覆写；裸 bytes/list 流 = 默认 Triangles）
+            let mut buf_topo: Option<BatchTopology> = None;
             let (points, mut indices): (Vec<f32>, Vec<u16>) =
                 if let Some(buf) = args.data.downcast_ref::<PyVertexBuf>() {
+                    buf_topo = *buf.topology.borrow();
                     (
                         buf.points.borrow().clone(),
                         buf.indices.borrow().clone(),
@@ -685,31 +704,22 @@ use std::cell::Cell;
             if let Some(idx) = args.indices {
                 indices = idx; // 显式索引覆盖 VertexBuf 自带
             }
+            let buf_topo = buf_topo.unwrap_or(BatchTopology::Triangles);
 
-            // 会话状态读取（色/拓扑）+ 入批（sticky——不触发 one-shot 重置）
+            // 会话状态读取（色）+ 入批（拓扑随数据——sticky 状态废弃）
             match route(&args.f, vm)? {
                 Target::Surf(s) => {
-                    let topo = s
-                        .surface
-                        .current_topology()
-                        .unwrap_or(BatchTopology::Triangles);
                     let color = s.surface.current_draw_color();
                     s.surface
-                        .push_stream(topo, &points, &indices, color);
+                        .push_stream(buf_topo, &points, &indices, color);
                 }
                 Target::Active => bridge::with_session(vm, |t| {
-                    let topo = t
-                        .current_topology()
-                        .unwrap_or(BatchTopology::Triangles);
                     let color = t.current_draw_color();
-                    t.push_stream(topo, &points, &indices, color);
+                    t.push_stream(buf_topo, &points, &indices, color);
                 })?,
                 Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    let topo = t
-                        .current_topology()
-                        .unwrap_or(BatchTopology::Triangles);
                     let color = t.current_draw_color();
-                    t.push_stream(topo, &points, &indices, color);
+                    t.push_stream(buf_topo, &points, &indices, color);
                 })?,
             }
             Ok(())
@@ -757,7 +767,9 @@ use std::cell::Cell;
                 seg,
                 [1.0; 4],
             );
-            Ok(geo_to_buf(g))
+            let buf = geo_to_buf(g);
+            buf.topology.replace(Some(starfish_pygame::render::batch::BatchTopology::Lines));
+            Ok(buf)
         }
 
         /// gen_rect(w, h) -> VertexBuf：填充矩形（中心原点局部坐标）。
@@ -804,7 +816,9 @@ use std::cell::Cell;
                 glam::vec2(hw, hh),
                 [1.0; 4],
             );
-            Ok(geo_to_buf(g))
+            let buf = geo_to_buf(g);
+            buf.topology.replace(Some(starfish_pygame::render::batch::BatchTopology::Lines));
+            Ok(buf)
         }
 
         /// gen_polygon(points) -> VertexBuf：多边形（扇化三角化；输入
@@ -864,7 +878,9 @@ use std::cell::Cell;
                 glam::vec2(p[2], p[3]),
                 [1.0; 4],
             );
-            Ok(geo_to_buf(g))
+            let buf = geo_to_buf(g);
+            buf.topology.replace(Some(starfish_pygame::render::batch::BatchTopology::Lines));
+            Ok(buf)
         }
 
         /// gen_arc(radius, start_deg, stop_deg, segments=0) -> VertexBuf：
@@ -899,7 +915,9 @@ use std::cell::Cell;
                 seg,
                 [1.0; 4],
             );
-            Ok(geo_to_buf(g))
+            let buf = geo_to_buf(g);
+            buf.topology.replace(Some(starfish_pygame::render::batch::BatchTopology::Lines));
+            Ok(buf)
         }
 
         /// gen_ellipse(rx, ry, segments=48) -> VertexBuf：填充椭圆（扇形
@@ -941,7 +959,9 @@ use std::cell::Cell;
                 .map(|(x, y)| glam::vec2(*x as f32, *y as f32))
                 .collect();
             let g = starfish_gfx::geometry::shape2d::polyline(&pts, true, [1.0; 4]);
-            Ok(geo_to_buf(g))
+            let buf = geo_to_buf(g);
+            buf.topology.replace(Some(starfish_pygame::render::batch::BatchTopology::Lines));
+            Ok(buf)
         }
 
         /// gen_sphere(radius, segments_u=16, segments_v=12) -> VertexBuf：
