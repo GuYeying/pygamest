@@ -1,5 +1,7 @@
 # pygame_gui
 
+(快速上手)=
+
 egui 即时模式 GUI——**独立顶层模块**（`import pygame_gui`；非
 `pygame.*` 子模块）。接口定约为"第三方库等价物，不 pygame 化"——
 控件方法名 = egui 原生词汇。

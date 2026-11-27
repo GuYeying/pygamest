@@ -189,6 +189,7 @@ Camera。
 
 MVP（projection × view——唯一上传量；调试 / 教学口）。
 
+(gamecamera-正交与透视相机)=
 ### <span class="c-class">GameCamera —— letterbox 内聚相机</span>
 
 **显式传入，杜绝兜底**（2026-11 定约）——`screen.set_camera(cam)` 的
@@ -441,6 +442,7 @@ storage → mesh **索引缓冲**直搬（动态索引通路——粒子重生�
 
 storage → 采样纹理（**bytes_per_row 须 256 对齐**）。
 
+(gpusettings-gpu-装配配置)=
 ### <span class="c-class">GpuSettings —— GPU 装配配置</span>
 
 `pygame.display.set_mode` 的 `gpu_settings=` kwargs 承载（**从平台
@@ -462,6 +464,7 @@ screen = pygame.display.set_mode((800, 600), gpu_settings=gpu)
 - `dx12_swapchain_kind`：`"hwnd"`（默认）/ `"visual"`（逐像素透明
   专属）
 
+(surfacesettings-表面交换链配置)=
 ### <span class="c-class">SurfaceSettings —— 表面/交换链配置</span>
 
 `set_mode` 的 `surface_settings=` kwargs 承载（仅首次装配消费）。

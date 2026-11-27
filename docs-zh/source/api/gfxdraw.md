@@ -117,14 +117,11 @@ Rust 内生成位置流，返回 `VertexBuf`——性能与生成全程不落地
 
 ## <span class="c-func">贴图通道（draw_surface 系）</span>
 
-#### <span class="c-func">draw_surface(f, src)</span>
+#### <span class="c-func">draw_surface(f, src, transform=None)</span>
 
 画一张离屏面——**中心锚**（局部原点 = 物体中心）。位置/旋转/缩放/
-镜像全由 `set_transform` 的模型矩阵承载。
-
-#### <span class="c-func">draw_surface_centered(f, src, center)</span>
-
-中心锚画面（quad 中心对位 `center`）。
+镜像经 `transform=` kwarg 自带（Mat4——None = 无变换直绘；内部走
+tf 通道）。**会话持久变换（set_transform）已不作用于本口**。
 
 #### <span class="c-func">draw_surface_uv(f, src, uv, tint=None)</span>
 
