@@ -21,6 +21,12 @@ SDL_gfx 风格图元 + **渲染统一 draw 面**——`gen_*` 生成器产出顶
 
 [旧口退役] 会话对象上的 `r.rect` / `r.circle` 等绘制便捷方法与 `blit`
 家族已全部剔除——图元走本模块，贴图走 `draw_surface` 系。
+
+[混合/剔除] 图元内容层**全局口**：`pygame.render.set_blend_mode("alpha"
+/ "opaque" / "premultiplied")` + `set_cull_mode("none" / "back" /
+"front")`——gfxdraw 几何与 draw_surface 系全部消费该状态（详见
+[pygame.render](render.md#set-blend-mode-mode)）。per-call 粒度未做
+（batch 分仓无 blend 维度）。
 ```
 
 ## <span class="c-func">draw_batch 统一口</span>
