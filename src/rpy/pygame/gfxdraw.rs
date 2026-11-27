@@ -87,22 +87,36 @@ use std::cell::Cell;
         f: PyObjectRef,
         skeleton: PyRef<crate::rpy::pygame_spine::pygame_spine::PySpineSkeleton>,
         pages: Vec<PyRef<PySurface>>,
+        transform: rustpython_vm::function::OptionalArg<PyRef<crate::rpy::pygame::math::math::PyMat4>>,
         vm: &VirtualMachine,
     ) -> PyResult<()> {
         use starfish_pygame::render::DrawTarget;
         let sk = skeleton.inner.borrow();
         let cmds = pygame_spine::render::render(&sk);
+        // 定位变换 CPU 烘（None = 恒等——spine 世界坐标仿射 xy）
+        let mat = match transform {
+            rustpython_vm::function::OptionalArg::Present(m) => Some(m.0.get()),
+            rustpython_vm::function::OptionalArg::Missing => None,
+        };
         fn draw_cmds<T: DrawTarget + ?Sized>(
             t: &T,
             cmds: &[pygame_spine::RenderCommand],
             pages: &[std::sync::Arc<starfish_pygame::render::Surface>],
+            mat: Option<glam::Mat4>,
         ) {
             for c in cmds {
                 let Some(page) = pages.get(c.page) else {
                     continue; // 图集页越界：跳过（数据面校验在 Python 侧）
                 };
-                let positions: Vec<f32> =
+                let mut positions: Vec<f32> =
                     c.positions.iter().flat_map(|p| [p.x, p.y]).collect();
+                if let Some(m) = mat {
+                    for p in positions.chunks_exact_mut(2) {
+                        let v = m * glam::Vec4::new(p[0], p[1], 0.0, 1.0);
+                        p[0] = v.x;
+                        p[1] = v.y;
+                    }
+                }
                 // chine uv = PNG 原生 top-down 域（v=0 图顶）——与引擎纹理
                 // 上传方向一致，直传零翻转
                 let uvs: Vec<f32> = c.uvs.clone();
@@ -114,15 +128,15 @@ use std::cell::Cell;
             pages.iter().map(|p| p.surface.clone()).collect();
         match route(&f, vm)? {
             Target::Surf(s) => {
-                draw_cmds(&*s.surface, &cmds, &page_surfaces);
+                draw_cmds(&*s.surface, &cmds, &page_surfaces, mat);
                 Ok(())
             }
             Target::Active => bridge::with_session(vm, |t| {
-                draw_cmds(t, &cmds, &page_surfaces);
+                draw_cmds(t, &cmds, &page_surfaces, mat);
                 Ok(())
             })?,
             Target::Targets => bridge::with_mrt_session(vm, |t| {
-                draw_cmds(t, &cmds, &page_surfaces);
+                draw_cmds(t, &cmds, &page_surfaces, mat);
                 Ok(())
             })?,
         }
@@ -143,6 +157,9 @@ use std::cell::Cell;
         cy: Option<ArgIntoFloat>,
         #[pyarg(any, optional)]
         size: Option<ArgIntoFloat>,
+        /// 定位变换（None = 恒等——CPU 烘进 quad 顶点）
+        #[pyarg(any, optional)]
+        transform: Option<PyRef<crate::rpy::pygame::math::math::PyMat4>>,
     }
 
     #[cfg(feature = "ozz")]
@@ -212,6 +229,15 @@ use std::cell::Cell;
             t.draw_mesh(white, positions, uvs, indices, [1.0, 0.85, 0.45, 0.92]);
         }
         let white_q = starfish_pygame::render::Surface::from_rgba8((1, 1), &[255, 255, 255, 255]);
+        // 定位变换 CPU 烘（生成后统一——仿射 xy，z=0）
+        if let Some(m) = &args.transform {
+            let mat = m.0.get();
+            for p in positions.chunks_exact_mut(2) {
+                let v = mat * glam::Vec4::new(p[0], p[1], 0.0, 1.0);
+                p[0] = v.x;
+                p[1] = v.y;
+            }
+        }
         match route(&f, vm)? {
             Target::Surf(s2) => {
                 draw_quads(&*s2.surface, &positions, &uvs, &indices, &white_q);
@@ -241,6 +267,9 @@ use std::cell::Cell;
         cx: Option<ArgIntoFloat>,
         #[pyarg(any, optional)]
         cy: Option<ArgIntoFloat>,
+        /// 定位变换（None = 恒等——CPU 烘进线段坐标）
+        #[pyarg(any, optional)]
+        transform: Option<PyRef<crate::rpy::pygame::math::math::PyMat4>>,
     }
 
     #[cfg(feature = "ozz")]
@@ -260,6 +289,7 @@ use std::cell::Cell;
             s: f32,
             ox: f32,
             oy: f32,
+            mat: Option<glam::Mat4>,
         ) {
             let px = |x: f32| (x * s + ox) as i32;
             let py = |y: f32| (y * s + oy) as i32;
@@ -271,25 +301,37 @@ use std::cell::Cell;
                     continue;
                 };
                 let (jx, jy) = pos[i];
+                // 定位变换 CPU 烘（i32 化前 f32 域——取整抖动消除）
+                let seg = [
+                    (px(jx) as f32, py(jy) as f32),
+                    (px(ppos.0) as f32, py(ppos.1) as f32),
+                ];
+                let seg = match mat {
+                    Some(m) => seg.map(|(x, y)| {
+                        let v = m * glam::Vec4::new(x, y, 0.0, 1.0);
+                        (v.x, v.y)
+                    }),
+                    None => seg,
+                };
                 t.push_points(
                     BatchTopology::Lines,
                     None,
-                    &[(px(jx) as f32, py(jy) as f32), (px(ppos.0) as f32, py(ppos.1) as f32)],
+                    &seg,
                     [1.0, 0.9, 0.3, 1.0],
                 );
             }
         }
         match route(&f, vm)? {
             Target::Surf(s2) => {
-                draw_bones(&*s2.surface, &pos, &parents, s, ox, oy);
+                draw_bones(&*s2.surface, &pos, &parents, s, ox, oy, args.transform.as_deref().map(|m| m.0.get()));
                 Ok(())
             }
             Target::Active => bridge::with_session(vm, |t| {
-                draw_bones(t, &pos, &parents, s, ox, oy);
+                draw_bones(t, &pos, &parents, s, ox, oy, args.transform.as_deref().map(|m| m.0.get()));
                 Ok(())
             })?,
             Target::Targets => bridge::with_mrt_session(vm, |t| {
-                draw_bones(t, &pos, &parents, s, ox, oy);
+                draw_bones(t, &pos, &parents, s, ox, oy, args.transform.as_deref().map(|m| m.0.get()));
                 Ok(())
             })?,
         }
@@ -1073,23 +1115,29 @@ use std::cell::Cell;
         fn draw_surface(
             f: PyObjectRef,
             src: PyRef<PySurface>,
-            transform: Option<PyRef<crate::rpy::pygame::math::math::PyMat4>>,
+            transform: rustpython_vm::function::OptionalArg<PyRef<crate::rpy::pygame::math::math::PyMat4>>,
             vm: &VirtualMachine,
         ) -> PyResult<()> {
             use starfish_pygame::render::DrawTarget;
             match route(&f, vm)? {
-                Target::Surf(s) => match &transform {
-                    Some(m) => DrawTarget::draw_surface_tf(
-                        &*s.surface, &src.surface, m.0.get(), None),
-                    None => DrawTarget::draw_surface(&*s.surface, &src.surface),
+                Target::Surf(s) => match transform {
+                    rustpython_vm::function::OptionalArg::Present(m) => {
+                        DrawTarget::draw_surface_tf(
+                            &*s.surface, &src.surface, m.0.get(), None)
+                    }
+                    _ => DrawTarget::draw_surface(&*s.surface, &src.surface),
                 },
-                Target::Active => bridge::with_session(vm, |t| match &transform {
-                    Some(m) => DrawTarget::draw_surface_tf(t, &src.surface, m.0.get(), None),
-                    None => DrawTarget::draw_surface(t, &src.surface),
+                Target::Active => bridge::with_session(vm, |t| match transform {
+                    rustpython_vm::function::OptionalArg::Present(m) => {
+                        DrawTarget::draw_surface_tf(t, &src.surface, m.0.get(), None)
+                    }
+                    _ => DrawTarget::draw_surface(t, &src.surface),
                 })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| match &transform {
-                    Some(m) => DrawTarget::draw_surface_tf(t, &src.surface, m.0.get(), None),
-                    None => DrawTarget::draw_surface(t, &src.surface),
+                Target::Targets => bridge::with_mrt_session(vm, |t| match transform {
+                    rustpython_vm::function::OptionalArg::Present(m) => {
+                        DrawTarget::draw_surface_tf(t, &src.surface, m.0.get(), None)
+                    }
+                    _ => DrawTarget::draw_surface(t, &src.surface),
                 })?,
             }
             Ok(())
