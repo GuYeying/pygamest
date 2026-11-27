@@ -363,7 +363,11 @@ use std::cell::Cell;
             Ok(())
         }
 
-        /// set_transform(f, model)：会话变换（后续绘制顶点按此矩阵 CPU 烘）
+        /// set_transform(f, model)：会话持久变换——**服务 draw_surface 系
+        /// / draw_spine / draw_ozz 桥**（这些桥的顶点按此矩阵 CPU 烘）。
+        /// draw_batch 不读此状态（transform 走 kwargs 参数自包含）。
+        /// ⚠️ 退役条件：spine/ozz 桥 transform kwarg 化 + draw_surface
+        /// 系迁移完成后删除（spine/ozz 桥 CPU 烘改造属下一批）。
         #[pyfunction]
         fn set_transform(
             f: PyObjectRef,
@@ -389,10 +393,6 @@ use std::cell::Cell;
             }
             Ok(())
         }
-
-        // ── set_color / set_wireframe / push 三口已删（2026-11-27 接口
-        //    破坏定约——draw_batch 参数自包含统一口替代：color/wireframe
-        //    kwargs one-shot 语义与原口精确对齐；拓扑随数据走）──
 
         // ── push 统一口（v1 批次：VertexBuf + set_topology + push +
         // gen_* 生成器族）────────────────────────────────────────────
@@ -595,65 +595,6 @@ use std::cell::Cell;
             indices: Option<Vec<u16>>,
         }
 
-        /// push/draw_batch 共用数据解析（**拓扑随数据走**——VertexBuf
-        /// 自带烤入拓扑（线族 Lines/填充族 Triangles），开发者可经
-        /// buf.topology 覆写；裸 bytes/list 流 = 默认 Triangles）
-        fn parse_push_data(
-            data: &PyObjectRef,
-            vm: &VirtualMachine,
-        ) -> PyResult<(starfish_pygame::render::batch::BatchTopology, Vec<f32>, Vec<u16>)> {
-            use rustpython_vm::convert::TryFromObject;
-            use starfish_pygame::render::batch::BatchTopology;
-
-            let mut buf_topo = BatchTopology::Triangles;
-            let (points, indices): (Vec<f32>, Vec<u16>) =
-                if let Some(buf) = data.downcast_ref::<PyVertexBuf>() {
-                    buf_topo = buf.topology.borrow().unwrap_or(BatchTopology::Triangles);
-                    (
-                        buf.points.borrow().clone(),
-                        buf.indices.borrow().clone(),
-                    )
-                } else if let Some(b) = data.downcast_ref::<rustpython_vm::builtins::PyBytes>() {
-                    let bytes = b.as_bytes();
-                    if bytes.len() % 12 != 0 {
-                        return Err(vm.new_value_error(format!(
-                            "push bytes 长度须为 12 的倍数（每点 3×f32），实际 {}",
-                            bytes.len()
-                        )));
-                    }
-                    let pts: Vec<f32> = bytes
-                        .chunks_exact(4)
-                        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                        .collect();
-                    (pts, Vec::new())
-                } else if let Ok(flat) = vm.extract_elements_with(
-                    data,
-                    |o| {
-                        rustpython_vm::function::ArgIntoFloat::try_from_object(vm, o.clone())
-                            .map(|f| f.into_float())
-                    },
-                ) {
-                    // 数字流（int/float 混合扁平 list）
-                    if flat.len() % 3 != 0 {
-                        return Err(vm.new_value_error(format!(
-                            "push 扁平 list 长度须为 3 的倍数（[x,y,z × N]），实际 {}",
-                            flat.len()
-                        )));
-                    }
-                    (
-                        flat.into_iter().map(|v| v as f32).collect(),
-                        Vec::new(),
-                    )
-                } else {
-                    let pts = SfPoints::try_from_object(vm, data.clone())?;
-                    let mut flat = Vec::with_capacity(pts.0.len() * 3);
-                    for (x, y) in pts.0 {
-                        flat.extend([x as f32, y as f32, 0.0f32]);
-                    }
-                    (flat, Vec::new())
-                };
-            Ok((buf_topo, points, indices))
-        }
 
         // ── push 口已删（2026-11-26 用户定夺——one-shot 统一定约：
         //    transform/color/wireframe 本次是本次、下次是下次各自独立，
@@ -661,17 +602,19 @@ use std::cell::Cell;
         //    读取路径随之移除）──
 
 
-        /// draw_batch 参数（**参数自包含**——None = 沿用会话当前值）
+        /// draw_batch 参数（**强类型 VertexBuf**——裸数据先经 VertexBuf
+        /// 构造（add_points/extend/set_indices），数据通道归一；
+        /// None = 沿用会话当前值）
         #[derive(FromArgs)]
         struct DrawBatchArgs {
             /// 渲染会话（with ...render() as f 的 f）
             f: PyObjectRef,
-            /// 顶点数据（VertexBuf | bytes | 扁平 list | [(x,y),...]）
-            data: PyObjectRef,
-            /// 模型变换（None = 沿用会话当前）
+            /// 顶点批（拓扑/索引随数据）
+            data: PyRef<PyVertexBuf>,
+            /// 模型变换（None = 单位变换）
             #[pyarg(any, optional)]
             transform: Option<PyRef<crate::rpy::pygame::math::math::PyMat4>>,
-            /// 绘制色（None = 沿用会话当前）
+            /// 绘制色（None = 默认色）
             #[pyarg(any, optional)]
             color: Option<SfColor>,
             /// 线框模式（None = 沿用会话当前；one-shot 仅本批）
@@ -688,8 +631,13 @@ use std::cell::Cell;
         fn draw_batch(args: DrawBatchArgs, vm: &VirtualMachine) -> PyResult<()> {
             use starfish_pygame::render::batch::BatchTopology;
 
-            let (buf_topo, points, indices) = parse_push_data(&args.data, vm)?;
-            let _ = &indices;
+            let buf_topo = args
+                .data
+                .topology
+                .borrow()
+                .unwrap_or(BatchTopology::Triangles);
+            let points = args.data.points.borrow().clone();
+            let indices = args.data.indices.borrow().clone();
             match route(&args.f, vm)? {
                 Target::Surf(s) => {
                     let color = match &args.color {
@@ -1118,37 +1066,37 @@ use std::cell::Cell;
             Ok(geo_to_buf(g))
         }
 
-        /// draw_surface(f, src)：画离屏面（位置/变换由 set_transform 承载）
+        /// draw_surface(f, src, transform=None)：画离屏面（**中心锚**；
+        /// transform=None = 无变换直绘，Some = 显式矩阵——走 tf 通道；
+        /// set_transform 持久口已删——2026-11-27 参数自包含定约）
         #[pyfunction]
-        fn draw_surface(f: PyObjectRef, src: PyRef<PySurface>, vm: &VirtualMachine) -> PyResult<()> {
-            use starfish_pygame::render::DrawTarget;
-            match route(&f, vm)? {
-                Target::Surf(s) => DrawTarget::draw_surface(&*s.surface, &src.surface),
-                Target::Active => bridge::with_session(vm, |t| DrawTarget::draw_surface(t, &src.surface))?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| DrawTarget::draw_surface(t, &src.surface))?,
-            }
-            Ok(())
-        }
-
-        /// draw_surface_centered(f, src, center)：中心锚画面
-        #[pyfunction]
-        fn draw_surface_centered(
+        fn draw_surface(
             f: PyObjectRef,
             src: PyRef<PySurface>,
-            center: crate::rpy::args::SfPoint,
+            transform: Option<PyRef<crate::rpy::pygame::math::math::PyMat4>>,
             vm: &VirtualMachine,
         ) -> PyResult<()> {
             use starfish_pygame::render::DrawTarget;
             match route(&f, vm)? {
-                Target::Surf(s) => DrawTarget::draw_surface_centered(
-                    &*s.surface, &src.surface, (center.0 as f32, center.1 as f32)),
-                Target::Active => bridge::with_session(vm, |t| DrawTarget::draw_surface_centered(
-                    t, &src.surface, (center.0 as f32, center.1 as f32)))?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| DrawTarget::draw_surface_centered(
-                    t, &src.surface, (center.0 as f32, center.1 as f32)))?,
+                Target::Surf(s) => match &transform {
+                    Some(m) => DrawTarget::draw_surface_tf(
+                        &*s.surface, &src.surface, m.0.get(), None),
+                    None => DrawTarget::draw_surface(&*s.surface, &src.surface),
+                },
+                Target::Active => bridge::with_session(vm, |t| match &transform {
+                    Some(m) => DrawTarget::draw_surface_tf(t, &src.surface, m.0.get(), None),
+                    None => DrawTarget::draw_surface(t, &src.surface),
+                })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| match &transform {
+                    Some(m) => DrawTarget::draw_surface_tf(t, &src.surface, m.0.get(), None),
+                    None => DrawTarget::draw_surface(t, &src.surface),
+                })?,
             }
             Ok(())
         }
+
+        // ── draw_surface_centered 已删（2026-11-27 参数自包含定约——
+        //    中心锚 = draw_surface(t, src, transform=translation(cx, cy))）──
 
         /// draw_surface_uv(f, src, uv, tint=None)：子区域画面（area 语义继任）
         #[pyfunction]
