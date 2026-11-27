@@ -76,7 +76,6 @@ pygamest（本仓）
 
 | 模块 | 能力 |
 |---|---|
-| `dialog` | 跨平台模态对话框（选文件 / 消息） |
 | `video` | 视频输出 |
 | `io` | 异步资源链（`fetch`/`load` + 分发形态解密） |
 | `net` | TCP/UDP 轮询面 |
@@ -160,7 +159,7 @@ img2 = pygame.image.load_from_bytes(data)            # sync 字节构造（无�
 | `display` `event` `time`(Clock) `key` `mouse` | 窗口 / 事件轮询 / 计时 / 输入 |
 | `image` `font` `mixer` `draw` `gfxdraw` `transform` `mask` `math` `Rect` `Surface` | 资源 / 文本（含 CJK 预载链）/ 图形（六形状×填充描边/半透明）/ 几何 |
 | `gamepad` `touch` `sndarray` `sprite` `video` `permission` `version` | 手柄 / 多点触控 / 数组互操作 / 精灵组 / 视频输出 |
-| `io` `net` `dialog` | 跨平台读写 / TCP·UDP 轮询面 / 桌面模态 |
+| `io` `net` | 跨平台读写 / TCP·UDP 轮询面 |
 | `pygame_gui` | egui 对接（OOP 门面 `UiBase`：`t.draw_ui(panel)` + `egui.event(e)` 显式喂事件 + 嵌套布局 with 语法） |
 | `pygame_physics` | Rapier 原生词汇物理（`PhysicsWorld` / `RigidBodyBuilder`，`t.draw_debug` 调试线） |
 | `pygame_spine` `pygame_ozz` `pygame_live2d` | 三动画库（2D 骨骼 / 3D 骨骼 / Cubism——路径进对象出，独立 crate 轴） |
