@@ -633,36 +633,25 @@ use std::cell::Cell;
             indices: Option<Vec<u16>>,
         }
 
-        /// push(f, data, indices=None)：顶点位置流入批——gfxdraw 的统一
-        /// 出口。拓扑/颜色/变换全部按当前状态烘焙（set_topology /
-        /// set_color / set_transform——**sticky**：跨 push 持续，与 draw
-        /// 函数族的 one-shot 不同）。
-        ///
-        /// data 三通道：
-        /// - VertexBuf（生成器产出或手动构造——含自带索引）
-        /// - bytes（f32 LE 内存块，长度 12 的倍数）
-        /// - list：扁平 [x,y,z,...] 数字流或 [(x,y),...] 点列表
-        ///
-        /// 索引语义：indices 参数 > VertexBuf 自带索引 > 按拓扑逐组解释
-        /// （triangles 3 个/组、lines 2 个/组）。
-        #[pyfunction]
-        fn push(args: PushArgs, vm: &VirtualMachine) -> PyResult<()> {
+        /// push/draw_batch 共用数据解析（**拓扑随数据走**——VertexBuf
+        /// 自带烤入拓扑（线族 Lines/填充族 Triangles），开发者可经
+        /// buf.topology 覆写；裸 bytes/list 流 = 默认 Triangles）
+        fn parse_push_data(
+            data: &PyObjectRef,
+            vm: &VirtualMachine,
+        ) -> PyResult<(starfish_pygame::render::batch::BatchTopology, Vec<f32>, Vec<u16>)> {
             use rustpython_vm::convert::TryFromObject;
             use starfish_pygame::render::batch::BatchTopology;
 
-            // 数据解析（buf → bytes → 扁平 list → 点列表）；**拓扑随数据
-            // 走**（2026-11-25 定约——VertexBuf 自带烤入拓扑，开发者可
-            // 经 buf.topology 覆写；裸 bytes/list 流 = 默认 Triangles）
-            let mut buf_topo: Option<BatchTopology> = None;
-            let (points, mut indices): (Vec<f32>, Vec<u16>) =
-                if let Some(buf) = args.data.downcast_ref::<PyVertexBuf>() {
-                    buf_topo = *buf.topology.borrow();
+            let mut buf_topo = BatchTopology::Triangles;
+            let (points, indices): (Vec<f32>, Vec<u16>) =
+                if let Some(buf) = data.downcast_ref::<PyVertexBuf>() {
+                    buf_topo = buf.topology.borrow().unwrap_or(BatchTopology::Triangles);
                     (
                         buf.points.borrow().clone(),
                         buf.indices.borrow().clone(),
                     )
-                } else if let Some(b) = args.data.downcast_ref::<rustpython_vm::builtins::PyBytes>()
-                {
+                } else if let Some(b) = data.downcast_ref::<rustpython_vm::builtins::PyBytes>() {
                     let bytes = b.as_bytes();
                     if bytes.len() % 12 != 0 {
                         return Err(vm.new_value_error(format!(
@@ -676,7 +665,7 @@ use std::cell::Cell;
                         .collect();
                     (pts, Vec::new())
                 } else if let Ok(flat) = vm.extract_elements_with(
-                    &args.data,
+                    data,
                     |o| {
                         rustpython_vm::function::ArgIntoFloat::try_from_object(vm, o.clone())
                             .map(|f| f.into_float())
@@ -694,31 +683,144 @@ use std::cell::Cell;
                         Vec::new(),
                     )
                 } else {
-                    let pts = SfPoints::try_from_object(vm, args.data.clone())?;
+                    let pts = SfPoints::try_from_object(vm, data.clone())?;
                     let mut flat = Vec::with_capacity(pts.0.len() * 3);
                     for (x, y) in pts.0 {
                         flat.extend([x as f32, y as f32, 0.0f32]);
                     }
                     (flat, Vec::new())
                 };
+            Ok((buf_topo, points, indices))
+        }
+
+        /// push(f, data, indices=None)：顶点位置流入批——**deprecated**
+        /// （2026-11-25 接口破坏定约：权威形态 = `draw_batch` 参数自包含
+        /// 口——拓扑随数据 + transform/color/wireframe kwargs，FFI
+        /// N+1→1。本口保留读 sticky 会话状态，存量案例迁移期兼容）。
+        ///
+        /// data 三通道：VertexBuf（含自带索引）/ bytes（f32 LE，长度
+        /// 12 倍数）/ list（扁平数字流或 [(x,y),...] 点列表）。索引
+        /// 语义：indices 参数 > VertexBuf 自带 > 按拓扑逐组解释。
+        #[pyfunction]
+        fn push(args: PushArgs, vm: &VirtualMachine) -> PyResult<()> {
+            let (buf_topo, points, mut indices) = parse_push_data(&args.data, vm)?;
             if let Some(idx) = args.indices {
                 indices = idx; // 显式索引覆盖 VertexBuf 自带
             }
-            let buf_topo = buf_topo.unwrap_or(BatchTopology::Triangles);
 
-            // 会话状态读取（色）+ 入批（拓扑随数据——sticky 状态废弃）
+            // 会话状态读取（色/拓扑 sticky）+ 入批（不触发 one-shot 重置）
             match route(&args.f, vm)? {
                 Target::Surf(s) => {
+                    let topo = s
+                        .surface
+                        .current_topology()
+                        .unwrap_or(buf_topo);
                     let color = s.surface.current_draw_color();
                     s.surface
-                        .push_stream(buf_topo, &points, &indices, color);
+                        .push_stream(topo, &points, &indices, color);
                 }
                 Target::Active => bridge::with_session(vm, |t| {
+                    let topo = t
+                        .current_topology()
+                        .unwrap_or(buf_topo);
                     let color = t.current_draw_color();
+                    t.push_stream(topo, &points, &indices, color);
+                })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
+                    let topo = t
+                        .current_topology()
+                        .unwrap_or(buf_topo);
+                    let color = t.current_draw_color();
+                    t.push_stream(topo, &points, &indices, color);
+                })?,
+            }
+            Ok(())
+        }
+
+        /// draw_batch 参数（**参数自包含**——None = 沿用会话当前值）
+        #[derive(FromArgs)]
+        struct DrawBatchArgs {
+            /// 渲染会话（with ...render() as f 的 f）
+            f: PyObjectRef,
+            /// 顶点数据（VertexBuf | bytes | 扁平 list | [(x,y),...]）
+            data: PyObjectRef,
+            /// 模型变换（None = 沿用会话当前）
+            #[pyarg(any, optional)]
+            transform: Option<PyRef<crate::rpy::pygame::math::math::PyMat4>>,
+            /// 绘制色（None = 沿用会话当前）
+            #[pyarg(any, optional)]
+            color: Option<SfColor>,
+            /// 线框模式（None = 沿用会话当前；one-shot 仅本批）
+            #[pyarg(any, optional)]
+            wireframe: Option<bool>,
+        }
+
+        /// draw_batch(f, data, transform=None, color=None, wireframe=None)：
+        /// **顶点批绘制统一口**（2026-11-25 接口破坏定约——拓扑随数据
+        /// 走（VertexBuf 烤入 / buf.topology 覆写），transform/color/
+        /// wireframe 参数自包含——替代 sticky 三口 + push 组合
+        /// （FFI N+1→1）；None = 沿用会话当前值）。
+        #[pyfunction]
+        fn draw_batch(args: DrawBatchArgs, vm: &VirtualMachine) -> PyResult<()> {
+            use starfish_pygame::render::batch::BatchTopology;
+
+            let (buf_topo, points, indices) = parse_push_data(&args.data, vm)?;
+            let _ = &indices;
+            match route(&args.f, vm)? {
+                Target::Surf(s) => {
+                    let color = match &args.color {
+                        Some(c) => [
+                            c.0[0] as f32 / 255.0,
+                            c.0[1] as f32 / 255.0,
+                            c.0[2] as f32 / 255.0,
+                            c.0[3] as f32 / 255.0,
+                        ],
+                        None => s.surface.current_draw_color(),
+                    };
+                    s.surface.with_batch(|b| {
+                        if let Some(m) = &args.transform {
+                            b.set_model(m.0.get());
+                        }
+                        if let Some(w) = args.wireframe {
+                            b.set_wireframe(w);
+                        }
+                        b.push_stream(buf_topo, &points, &indices, color);
+                    });
+                }
+                Target::Active => bridge::with_session(vm, |t| {
+                    let color = match &args.color {
+                        Some(c) => [
+                            c.0[0] as f32 / 255.0,
+                            c.0[1] as f32 / 255.0,
+                            c.0[2] as f32 / 255.0,
+                            c.0[3] as f32 / 255.0,
+                        ],
+                        None => t.current_draw_color(),
+                    };
+                    if let Some(m) = &args.transform {
+                        t.set_transform(m.0.get());
+                    }
+                    if let Some(w) = args.wireframe {
+                        t.set_draw_wireframe(w);
+                    }
                     t.push_stream(buf_topo, &points, &indices, color);
                 })?,
                 Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    let color = t.current_draw_color();
+                    let color = match &args.color {
+                        Some(c) => [
+                            c.0[0] as f32 / 255.0,
+                            c.0[1] as f32 / 255.0,
+                            c.0[2] as f32 / 255.0,
+                            c.0[3] as f32 / 255.0,
+                        ],
+                        None => t.current_draw_color(),
+                    };
+                    if let Some(m) = &args.transform {
+                        t.set_transform(m.0.get());
+                    }
+                    if let Some(w) = args.wireframe {
+                        t.set_draw_wireframe(w);
+                    }
                     t.push_stream(buf_topo, &points, &indices, color);
                 })?,
             }
