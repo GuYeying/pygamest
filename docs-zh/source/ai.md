@@ -81,8 +81,9 @@ pygame-rs-dev/       # 开发解释器 pygamest-dev + examples/（78 案例）+ 
 
 - **一切图元 = `present_fit × Screen.camera.mvp()`**（段 override 优先）；
   `gfxdraw.set_camera(rt, cam)` 段级显式。
-- **pygame 像素图元 API 恒像素域**（draw/blit/gfxdraw 无相机口/字体/HUD）。
-- **无显式相机 = NDC 恒等直通**（raw 段/自写 WGSL 默认域）。
+- **gfxdraw 几何走相机**（全局 `screen.set_camera` 或段级
+  `gfxdraw.set_camera(f, cam)`）；**两者都不设 = NDC 直通**——裸像素坐标
+  会整屏铺满（2026-11-27 帧缓冲实证）。`t.fill` 例外：恒像素正交盖满画布。
 - **`screen.set_camera(cam)` 一次设置缓存**：跨会话/resize/换画布不动；
   `clear_camera()` 显式回落像素基线段。
 - 相机类型**唯一** = `pygame.render.game_camera_ortho/perspective(...)`（Auto 隐式
@@ -148,8 +149,11 @@ pygame-rs-dev/       # 开发解释器 pygamest-dev + examples/（78 案例）+ 
   HUD 画进透明底离屏面 → 3D 之后第二个 raw pass alpha 合成回主屏。
 - **全屏 quad uv v 翻转**：wgpu 纹理 v=0 = 顶行，quad 直排映射 = 内容上下颠倒
   （fluid3d/voxel_mc 均踩过；纹理顶行 ↔ NDC y=-1）。
-- **`gfxdraw.set_color` 是 one-shot**（状态机——每次 draw 消费，漏设回落引擎
-  默认紫 128,0,128）；同批多图元逐个重设。
+- **颜色/剔除是 per-call 参数**（`draw_batch(color=, wireframe=, blend=, cull=)`）；
+  `gfxdraw.set_color` / `render.set_blend_mode` / `set_cull_mode` **已删除**——调用即
+  报错（旧状态机写法会直接炸，不会静默回落默认紫）。
+- **不设相机 = 裸 NDC 直通**（`[-1, 1]`）：像素坐标要先
+  `screen.set_camera(pygame.render.game_camera_ortho(w, h, w, h))`，否则图元整屏铺满。
 - **fill quad z 的 RH 语义**：RH directx 正交 z 映射 = `-2·z_view-1`（视空间
   前方恒负 z）——背景 quad 远平面 = `z_view=-1.0`；曾写 +1.0 = 相机背后 →
   裁剪剔除 = fill 消失（fill 恒近黑两日无人察觉——BMP 真值 + 纯红判别实锤）。

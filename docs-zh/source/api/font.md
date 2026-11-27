@@ -2,13 +2,15 @@
 
 字体与文字渲染模块。加载 TTF 字体，把文字渲染为可绘制的 Surface。
 
-文字表面经 `pygame.gfxdraw.draw_surface()` 放置到画布上；三维场景中
-可使用 `pygame.font.draw_text()` 一步完成渲染与放置。
+文字表面经 `pygame.gfxdraw.draw_surface()` 放置到画布上（中心锚，
+`transform=` 摆位；不写 `transform` 则居中、用 `dst_rect=` 则轴对齐）；
+也可用 `pygame.font.draw_text()` 一步完成渲染与放置。
 
 ```python
 font = await pygame.font.load("zhao.ttf", 24)
 surf = font.render("得分 1200", True, (255, 220, 0))
-pygame.gfxdraw.draw_surface(screen, surf)
+pygame.gfxdraw.draw_surface(t, surf,
+                            transform=pygame.math.mat4_translation(0, 200, 0))
 ```
 
 注意：按名字查找字体未命中时，会使用内嵌默认字体继续运行（默认字体
@@ -97,13 +99,14 @@ font = pygame.font.Font(ttf_bytes, 24)     # bytes
 
 ##### <span class="c-func">render(text, antialias=True, color=(255, 255, 255)) -> Surface</span>
 
-文字表面——返回独立 `Surface`，经
-`pygame.gfxdraw.draw_surface(f, surf)` + `set_transform` 放置。
+文字表面——返回独立 `Surface`（中心锚，局部原点 = 面中心），经
+`pygame.gfxdraw.draw_surface(f, surf, transform=...)` 放置（`transform`
+不收时按原点居中直绘）。
 
 ```python
 surf = font.render("得分 1200", True, (255, 220, 0))
-pygame.gfxdraw.set_transform(f, pygame.math.mat4_translation(0, 200, 0))
-pygame.gfxdraw.draw_surface(f, surf)
+pygame.gfxdraw.draw_surface(f, surf,
+                            transform=pygame.math.mat4_translation(0, 200, 0))
 ```
 
 - :param text: 渲染文本

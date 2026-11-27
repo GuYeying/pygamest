@@ -35,12 +35,19 @@ async def main():
 ```python
         with screen.render() as t:
             t.fill((30, 30, 46))
-            pygame.gfxdraw.set_color(t, (120, 220, 120))
-            pygame.gfxdraw.filled_circle(t, 0, 0, 80)   # 中心系原点画圆
+            pygame.gfxdraw.draw_batch(                      # 中心系原点画圆
+                t, pygame.gfxdraw.gen_circle(80),
+                color=(120, 220, 120, 255))
             hud = pygame.font.Font(None, 20).render("hello", True, (255, 255, 255))
-            pygame.gfxdraw.set_transform(t, pygame.math.mat4_translation(-380, 270, 0))
-            pygame.gfxdraw.draw_surface(t, hud)
+            pygame.gfxdraw.draw_surface(
+                t, hud, transform=pygame.math.mat4_translation(-380, 270, 0))
 ```
 
-坐标系 = **中心原点、y 向上**（与 3D 透视、物理米制系三方同构）；
-颜色走 [one-shot set_color 状态机](core-concepts.md)。
+坐标系 = **中心原点、y 向上**（与 3D 透视、物理米制系三方同构）。
+颜色是**逐次绘制的参数**（`color=(r, g, b, a)`）——没有 `set_color`
+状态机了。
+
+**坐标域要先声明**：进入循环前调一次
+`screen.set_camera(pygame.render.game_camera_ortho(800, 600, 800, 600))`。
+不设相机 = 裸 NDC 直通（`[-1, 1]` 单位方框），上面 `gen_circle(80)`
+会整屏铺满。

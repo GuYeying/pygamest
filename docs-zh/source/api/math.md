@@ -133,20 +133,20 @@ VP（或 MVP）→ 视锥（Gribb-Hartmann 六平面提取）。**CPU 侧剔除�
 的判定源**——CPU 烘批架构下"查一下再决定 push 不 push"零额外开销：
 
 ```python
-cam = pygame.render.camera_perspective(45.0, w / h, 0.1, 100.0)
-fr = pygame.math.frustum_from_mvp(cam.mvp())     # 每相机建一次（矩阵变则重建）
+cam = pygame.render.game_camera_perspective(45.0, w, h, w, h, 0.1, 100.0)
+vp = cam.mvp()                                    # 每相机算一次（矩阵变则重算）
+fr = pygame.math.frustum_from_mvp(vp)
 for obj in objects:
     if not fr.intersects_sphere(obj.x, obj.y, obj.z, obj.bound_r):
         continue                                  # 视锥外 → 不进 batch
-    pygame.gfxdraw.set_transform(t, obj.model())
-    pygame.gfxdraw.draw_surface(t, obj.surface)
+    pygame.gfxdraw.draw_surface(t, obj.surface, transform=obj.model())
 ```
 
 **letterbox**：裸 VP（未乘 `present_fit()`）给出**包含**可见区域的保守
 超集视锥——剔除安全方向（不误剔）；要精确画布子矩形传
 `present_fit().mul_mat4(cam.mvp())`。
 
-- :param m: VP / MVP 矩阵（`Camera.mvp()` 直入）
+- :param m: VP / MVP 矩阵（`GameCamera.mvp()` 直入）
 - :type m: Mat4
 - :rtype: Frustum
 

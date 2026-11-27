@@ -21,7 +21,8 @@ use std::cell::Cell;
         use rustpython_vm::types::Constructor;
         use rustpython_derive::FromArgs;
         use crate::rpy::bridge;
-        use starfish_pygame::render::DrawTarget;
+        use starfish_pygame::render::{DrawState, DrawTarget};
+        use starfish_pygame::render::batch::BatchTopology;
         use rustpython_vm::{
             PyObjectRef, PyRef, PyResult, VirtualMachine,
             function::{ArgIntoFloat, FuncArgs},
@@ -644,6 +645,66 @@ use std::cell::Cell;
         //    读取路径随之移除）──
 
 
+        /// 顶点流 → 目标 batch 的**统一渲染核心**（2026-11-27 定约：
+        /// draw_batch 与 3D 便捷口共用同一条渲染路径——几何/拓扑/索引
+        /// 由调用方备好，本函数只管三路由 + 状态落段）。
+        /// transform=None = 沿用会话当前变换（draw_batch 语义）；
+        /// 3D 便捷口坐标已绝对化，显式传单位阵（不继承会话变换）。
+        fn draw_stream_core(
+            vm: &VirtualMachine,
+            f: &PyObjectRef,
+            topo: BatchTopology,
+            points: &[f32],
+            indices: &[u16],
+            transform: Option<glam::Mat4>,
+            color: Option<[f32; 4]>,
+            state: DrawState,
+            wireframe: bool,
+        ) -> PyResult<()> {
+            match route(f, vm)? {
+                Target::Surf(s) => {
+                    let c = color.unwrap_or_else(|| s.surface.current_draw_color());
+                    s.surface.with_batch(|b| {
+                        if let Some(m) = transform {
+                            b.set_model(m);
+                        }
+                        b.push_stream_state(topo, points, indices, c, state, wireframe);
+                    });
+                }
+                Target::Active => bridge::with_session(vm, |t| {
+                    let c = color.unwrap_or_else(|| t.current_draw_color());
+                    t.with_batch(|b| {
+                        if let Some(m) = transform {
+                            b.set_model(m);
+                        }
+                        b.push_stream_state(topo, points, indices, c, state, wireframe);
+                    });
+                })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
+                    let c = color.unwrap_or_else(|| t.current_draw_color());
+                    t.with_batch(|b| {
+                        if let Some(m) = transform {
+                            b.set_model(m);
+                        }
+                        b.push_stream_state(topo, points, indices, c, state, wireframe);
+                    });
+                })?,
+            }
+            Ok(())
+        }
+
+
+        /// SfColor(0..255) → 着色器色(0..1)
+        fn sf_color(c: &SfColor) -> [f32; 4] {
+            [
+                c.0[0] as f32 / 255.0,
+                c.0[1] as f32 / 255.0,
+                c.0[2] as f32 / 255.0,
+                c.0[3] as f32 / 255.0,
+            ]
+        }
+
+
         /// draw_batch 参数（**强类型 VertexBuf**——裸数据先经 VertexBuf
         /// 构造（add_points/extend/set_indices），数据通道归一；
         /// None = 沿用会话当前值）
@@ -653,114 +714,76 @@ use std::cell::Cell;
             f: PyObjectRef,
             /// 顶点批（拓扑/索引随数据）
             data: PyRef<PyVertexBuf>,
-            /// 模型变换（None = 单位变换）
+            /// 模型变换（None = 沿用会话当前变换）
             #[pyarg(any, optional)]
             transform: Option<PyRef<crate::rpy::pygame::math::math::PyMat4>>,
-            /// 绘制色（None = 默认色）
+            /// 绘制色（None = 沿用会话当前色）
             #[pyarg(any, optional)]
             color: Option<SfColor>,
-            /// 线框模式（None = 沿用会话当前；one-shot 仅本批）
+            /// 线框模式（None = 否；仅本批）
             #[pyarg(any, optional)]
             wireframe: Option<bool>,
+            /// 混合档位（None = alpha；alpha/blend、noblend/opaque/none、
+            /// premultiplied、additive、multiply）
+            #[pyarg(any, optional)]
+            blend: Option<String>,
+            /// 剔除（None = none；none / back）
+            #[pyarg(any, optional)]
+            cull: Option<String>,
         }
 
-        /// draw_batch(f, data, transform=None, color=None, wireframe=None)：
-        /// **顶点批绘制统一口**（2026-11-25 接口破坏定约——拓扑随数据
-        /// 走（VertexBuf 烤入 / buf.topology 覆写），transform/color/
-        /// wireframe 参数自包含——替代 sticky 三口 + push 组合
-        /// （FFI N+1→1）；None = 沿用会话当前值）。
+        /// draw_batch(f, data, transform=None, color=None, wireframe=None,
+        /// blend=None, cull=None)：**顶点批绘制统一口**——拓扑随数据走
+        /// （VertexBuf 烤入 / buf.topology 覆写），变换/色/线框/混合/
+        /// 剔除参数自包含（本次调用独立，不落回会话状态）。
         #[pyfunction]
         fn draw_batch(args: DrawBatchArgs, vm: &VirtualMachine) -> PyResult<()> {
-            use starfish_pygame::render::batch::BatchTopology;
-
-            let buf_topo = args
+            let state = DrawState::from_names(args.blend.as_deref(), args.cull.as_deref())
+                .map_err(|e| vm.new_value_error(e))?;
+            let wireframe = args.wireframe.unwrap_or(false);
+            let topo = args
                 .data
                 .topology
                 .borrow()
                 .unwrap_or(BatchTopology::Triangles);
             let points = args.data.points.borrow().clone();
             let indices = args.data.indices.borrow().clone();
-            match route(&args.f, vm)? {
-                Target::Surf(s) => {
-                    let color = match &args.color {
-                        Some(c) => [
-                            c.0[0] as f32 / 255.0,
-                            c.0[1] as f32 / 255.0,
-                            c.0[2] as f32 / 255.0,
-                            c.0[3] as f32 / 255.0,
-                        ],
-                        None => s.surface.current_draw_color(),
-                    };
-                    s.surface.with_batch(|b| {
-                        if let Some(m) = &args.transform {
-                            b.set_model(m.0.get());
-                        }
-                        if let Some(w) = args.wireframe {
-                            b.set_wireframe(w);
-                        }
-                        b.push_stream(buf_topo, &points, &indices, color);
-                    });
-                }
-                Target::Active => bridge::with_session(vm, |t| {
-                    let color = match &args.color {
-                        Some(c) => [
-                            c.0[0] as f32 / 255.0,
-                            c.0[1] as f32 / 255.0,
-                            c.0[2] as f32 / 255.0,
-                            c.0[3] as f32 / 255.0,
-                        ],
-                        None => t.current_draw_color(),
-                    };
-                    if let Some(m) = &args.transform {
-                        t.set_transform(m.0.get());
-                    }
-                    if let Some(w) = args.wireframe {
-                        t.set_draw_wireframe(w);
-                    }
-                    t.push_stream(buf_topo, &points, &indices, color);
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    let color = match &args.color {
-                        Some(c) => [
-                            c.0[0] as f32 / 255.0,
-                            c.0[1] as f32 / 255.0,
-                            c.0[2] as f32 / 255.0,
-                            c.0[3] as f32 / 255.0,
-                        ],
-                        None => t.current_draw_color(),
-                    };
-                    if let Some(m) = &args.transform {
-                        t.set_transform(m.0.get());
-                    }
-                    if let Some(w) = args.wireframe {
-                        t.set_draw_wireframe(w);
-                    }
-                    t.push_stream(buf_topo, &points, &indices, color);
-                })?,
-            }
-            Ok(())
+            let transform = args.transform.as_ref().map(|m| m.0.get());
+            let color = args.color.as_ref().map(sf_color);
+            // 唯一渲染路径：与 3D 便捷口共用 draw_stream_core
+            draw_stream_core(
+                vm,
+                &args.f,
+                topo,
+                &points,
+                &indices,
+                transform,
+                color,
+                state,
+                wireframe,
+            )
         }
 
-        /// set_blend_mode(mode)：图元内容层混合模式转发（pygame.render
-        /// 同名口——"alpha"/"opaque"/"premultiplied"；gfxdraw 几何与
-        /// draw_surface 系全部消费该状态，sticky 到再次设置）
+        /// set_blend_mode(**已移除**)：改用 draw_batch/draw_surface 的
+        /// `blend=` 参数（alpha / noblend / premultiplied / additive / multiply）
         #[pyfunction]
-        fn set_blend_mode(mode: String, vm: &VirtualMachine) -> PyResult<()> {
-            starfish_pygame::render::set_blend_mode(&mode)
-                .map_err(|e| vm.new_value_error(e))
+        fn set_blend_mode(_mode: String, vm: &VirtualMachine) -> PyResult<()> {
+            Err(vm.new_runtime_error(
+                "set_blend_mode 已移除：请改用 draw_batch/draw_surface 的 blend= 参数（alpha / noblend / premultiplied / additive / multiply）",
+            ))
         }
 
-        /// set_cull_mode(mode)：图元内容层剔除模式转发（"none"/"back"/
-        /// "front"——默认 none 保证镜像 blit 正常显示，2D 场景一般不改；
-        /// 3D 大场景建议走 mesh_builder 自绘管线单独设置 cull）
+        /// set_cull_mode(**已移除**)：改用 draw_batch/draw_surface 的
+        /// `cull=` 参数（none / back）
         #[pyfunction]
-        fn set_cull_mode(mode: String, vm: &VirtualMachine) -> PyResult<()> {
-            starfish_pygame::render::set_cull_mode(&mode)
-                .map_err(|e| vm.new_value_error(e))
+        fn set_cull_mode(_mode: String, vm: &VirtualMachine) -> PyResult<()> {
+            Err(vm.new_runtime_error(
+                "set_cull_mode 已移除：请改用 draw_batch/draw_surface 的 cull= 参数（none / back）",
+            ))
         }
 
         // ── gen_* 生成器族（Rust 内生成位置流——原点中心局部坐标；
-        // 位置由 set_transform 赋予，性能 = 语义函数族同级）────────────
+        // 位置由 draw_batch 的 transform= 赋予，性能 = 语义函数族同级）──
 
         /// gen_circle(radius, segments=48) -> VertexBuf：填充圆（扇形
         /// 三角化，原点中心）。
@@ -1126,7 +1149,8 @@ use std::cell::Cell;
             Ok(geo_to_buf(g))
         }
 
-        /// draw_surface(f, src, transform=None, src_rect=None, dst_rect=None, tint=None)：
+        /// draw_surface(f, src, transform=None, src_rect=None, dst_rect=None,
+        /// tint=None, blend=None, cull=None)：
         /// 画离屏面统一口（2026-11-27 接口破坏定约——uv/tf/centered 三口
         /// 合并）。约束：transform 与 dst_rect **互斥**（同给 = ValueError）。
         /// 路由真值表：
@@ -1135,6 +1159,7 @@ use std::cell::Cell;
         /// - src_rect=Some → UV 归一化 [u0,v0,u1,v1] 取块（可与其他组合）
         /// - 全 None → src 原始尺寸中心锚直绘
         /// tint：None = 不着色；Some = 与 src.blit_tint 复合（RGBA 0..255）
+        /// blend/cull：本次调用的管线状态（None = alpha / 不剔除）
         #[derive(FromArgs)]
         struct DrawSurfaceArgs {
             f: PyObjectRef,
@@ -1149,11 +1174,19 @@ use std::cell::Cell;
             dst_rect: Option<Vec<f64>>,
             #[pyarg(any, optional)]
             tint: Option<SfColor>,
+            /// 混合档位（None = alpha）
+            #[pyarg(any, optional)]
+            blend: Option<String>,
+            /// 剔除（None = none；none / back）
+            #[pyarg(any, optional)]
+            cull: Option<String>,
         }
 
         #[pyfunction]
         fn draw_surface(args: DrawSurfaceArgs, vm: &VirtualMachine) -> PyResult<()> {
             use starfish_pygame::render::DrawTarget;
+            let state = DrawState::from_names(args.blend.as_deref(), args.cull.as_deref())
+                .map_err(|e| vm.new_value_error(e))?;
             // 互斥校验（文档写死 + 代码报错）
             if args.transform.is_some() && args.dst_rect.is_some() {
                 return Err(vm.new_value_error(
@@ -1244,165 +1277,29 @@ use std::cell::Cell;
                 uvs: [[f32; 2]; 4],
                 color: [f32; 4],
                 tex: &starfish_pygame::render::Texture,
+                state: DrawState,
             ) {
                 t.with_batch(|b| {
-                    b.push_quad_corners_3d(corners, uvs, color, Some(tex));
+                    b.push_quad_corners_3d_state(corners, uvs, color, Some(tex), state, false);
                 });
             }
             let tex = src.surface.texture().clone();
             match route(&args.f, vm)? {
-                Target::Surf(s) => draw_quad(&*s.surface, corners, uvs, color, &tex),
+                Target::Surf(s) => draw_quad(&*s.surface, corners, uvs, color, &tex, state),
                 Target::Active => bridge::with_session(vm, |t| {
-                    draw_quad(t, corners, uvs, color, &tex)
+                    draw_quad(t, corners, uvs, color, &tex, state)
                 })?,
                 Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    draw_quad(t, corners, uvs, color, &tex)
+                    draw_quad(t, corners, uvs, color, &tex, state)
                 })?,
             }
             Ok(())
         }
 
-        // ── 3D 形状（starfish-gfx shape3d 对接——2026-11-12；透视相机
-        // 走 gfxdraw.set_camera + render_depth 深度会话配套）────────────
+        // ── 3D 形状直调口已删（2026-11-27 用户定夺：只留一条通道）──
+        // 3D 几何统一走 gen_*（生成 VertexBuf）+ draw_batch（渲染）；
+        // 旧 cube / sphere / plane / cylinder / cone / polygon3d 全部移除。
 
-        /// cube(f, min, max)：立方体（填充）——min/max = [x, y, z] 对角。
-        #[pyfunction]
-        fn cube(
-            f: PyObjectRef,
-            min: Vec<f32>,
-            max: Vec<f32>,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            let mn = [min[0], min[1], min[2]];
-            let mx = [max[0], max[1], max[2]];
-            match route(&f, vm)? {
-                Target::Surf(s) => starfish_pygame::draw::cube(&*s.surface, mn, mx),
-                Target::Active => bridge::with_session(vm, |t| starfish_pygame::draw::cube(t, mn, mx))?,
-                Target::Targets => {
-                    bridge::with_mrt_session(vm, |t| starfish_pygame::draw::cube(t, mn, mx))?
-                }
-            };
-            Ok(())
-        }
-
-        /// sphere(f, center, radius, segments_u=16, segments_v=12)：球（填充）。
-        #[pyfunction]
-        fn sphere(
-            f: PyObjectRef,
-            center: Vec<f32>,
-            radius: f32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            let c = [center[0], center[1], center[2]];
-            match route(&f, vm)? {
-                Target::Surf(s) => {
-                    starfish_pygame::draw::sphere(&*s.surface, c, radius, 16, 12)
-                }
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::sphere(t, c, radius, 16, 12)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::sphere(t, c, radius, 16, 12)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// plane(f, center, right, up, size)：平面（填充）——center +
-        /// right/up 基（size = [宽, 高] 沿基向量）。
-        #[pyfunction]
-        fn plane(
-            f: PyObjectRef,
-            center: Vec<f32>,
-            right: Vec<f32>,
-            up: Vec<f32>,
-            size: Vec<f32>,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            let (c, r, u, sz) = (
-                [center[0], center[1], center[2]],
-                [right[0], right[1], right[2]],
-                [up[0], up[1], up[2]],
-                [size[0], size[1]],
-            );
-            match route(&f, vm)? {
-                Target::Surf(s) => {
-                    starfish_pygame::draw::plane(&*s.surface, c, r, u, sz)
-                }
-                Target::Active => {
-                    bridge::with_session(vm, |t| starfish_pygame::draw::plane(t, c, r, u, sz))?
-                }
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::plane(t, c, r, u, sz)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// cylinder(f, base_center, radius, height, segments=24)：圆柱（填充）
-        /// ——base_center 起沿 +y 挤出 height。
-        #[pyfunction]
-        fn cylinder(
-            f: PyObjectRef,
-            base_center: Vec<f32>,
-            radius: f32,
-            height: f32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            let c = [base_center[0], base_center[1], base_center[2]];
-            match route(&f, vm)? {
-                Target::Surf(s) => {
-                    starfish_pygame::draw::cylinder(&*s.surface, c, radius, height, 24)
-                }
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::cylinder(t, c, radius, height, 24)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::cylinder(t, c, radius, height, 24)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// cone(f, base_center, radius, height, segments=24)：圆锥（填充）
-        /// ——base_center 起沿 +y 顶点高 height。
-        #[pyfunction]
-        fn cone(
-            f: PyObjectRef,
-            base_center: Vec<f32>,
-            radius: f32,
-            height: f32,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            let c = [base_center[0], base_center[1], base_center[2]];
-            match route(&f, vm)? {
-                Target::Surf(s) => starfish_pygame::draw::cone(&*s.surface, c, radius, height, 24),
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::cone(t, c, radius, height, 24)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::cone(t, c, radius, height, 24)
-                })?,
-            };
-            Ok(())
-        }
-
-        /// polygon3d(f, points)：平面多边形 3D（填充）——共面点列
-        /// flat [x, y, z, ...]（len % 3 == 0；Newell 法平面基三角化）。
-        /// 透视相机 + 深度会话配套。
-        #[pyfunction]
-        fn polygon3d(f: PyObjectRef, points: Vec<f32>, vm: &VirtualMachine) -> PyResult<()> {
-            match route(&f, vm)? {
-                Target::Surf(s) => starfish_pygame::draw::polygon_3d(&*s.surface, &points),
-                Target::Active => bridge::with_session(vm, |t| {
-                    starfish_pygame::draw::polygon_3d(t, &points)
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| {
-                    starfish_pygame::draw::polygon_3d(t, &points)
-                })?,
-            };
-            Ok(())
-        }
 
     }
     // ── mask：位面（碰撞检测/像素级遮挡；pygame.mask 语义）────────

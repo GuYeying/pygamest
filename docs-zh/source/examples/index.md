@@ -36,10 +36,10 @@
 | `mesh_builder_demo.py` | 任意顶点布局 + 程序化棋盘 UV |
 | `custom_pipeline_demo.py` | 自建 WGSL 管线（raw_render / raw_compute 双通道） |
 | `compute_probe.py` | GPU 粒子系统（档位可选至 105 万粒） |
-| `gfx3d_demo.py` | gfxdraw 3D 词汇（深度会话 + 透视相机） |
+| `gfx3d_demo.py` | 3D 形状生成器（`gen_*` + `draw_batch`；深度会话 + 透视相机） |
 | `pip_test.py` | 画中画 / 游戏内面板 |
 | `blit_transform_demo.py` | blit_transform 空间放置（近大远小） |
-| `render_unify_demo.py` | per-draw 相机/变换状态机全形态 |
+| `render_unify_demo.py` | 相机三层级 + 逐次绘制参数全形态 |
 
 ## 动画三库
 

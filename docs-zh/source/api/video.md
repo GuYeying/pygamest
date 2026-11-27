@@ -20,7 +20,9 @@ while True:
     frame = video.frame()
     if frame is not None:
         with screen.render() as r:
-            pygame.gfxdraw.draw_surface(r, frame)
+            # 中心系像素域：dst_rect 铺满 800×600 画布（先声明正交相机）
+            pygame.gfxdraw.draw_surface(
+                r, frame, dst_rect=(-400, -300, 800, 600))
     await pygame.tasks.yield_now()
 ```
 
@@ -84,7 +86,7 @@ video.update(1.0 / 60.0)
 ```python
 frame = video.frame()
 if frame is not None:
-    pygame.gfxdraw.draw_surface(screen, frame)
+    pygame.gfxdraw.draw_surface(r, frame, dst_rect=(-400, -300, 800, 600))
 ```
 
 #### size() -> (width, height)

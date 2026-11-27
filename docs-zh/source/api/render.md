@@ -14,11 +14,10 @@
   `(-w/2, -h/2) .. (w/2, h/2)`，与 3D 透视相机、物理米制系三方同构；
   鼠标 / 触摸 / 事件坐标由引擎统一换算到中心系
 - 一切图元的位置 = `present_fit × 相机.mvp()`——相机构造用
-  [game_camera_ortho / game_camera_perspective](#gamcamera-正交与透视相机)
+  [game_camera_ortho / game_camera_perspective](#gamecamera-正交与透视相机)
 - 未显式 `screen.set_camera()` 时走 NDC 恒等域——自定义管线顶点直接
-  按 NDC 坐标写（错位显眼，便于诊断）
-- pygame 图元 API（[pygame.gfxdraw](gfxdraw.md)）恒像素域，与相机
-  解耦——HUD / UI 不随游戏相机漂移
+  按 NDC 坐标写（错位显眼，便于诊断）；[pygame.gfxdraw](gfxdraw.md)
+  的几何也吃这个默认域（像素坐标要先声明正交相机）
 - 自建管线（`raw_render`）**引擎不做相机兜底**——相机 buffer 由脚本
   全权管理（同帧多个 raw 会话须各持独立 buffer）
 
@@ -83,35 +82,34 @@ screen.set_camera(pygame.render.game_camera_ortho(lw, lh, lw, lh))
 
 - :rtype: Mat4
 
-#### <span class="c-func">set_blend_mode(mode)</span>
+#### <span class="c-func">set_blend_mode(mode) —— 已移除</span>
 
-设置图元内容层（`blit` / `fill` / `draw` 画的东西）的混合方式。
-`mode` 取值：
-
-| 值 | 行为 |
-|---|---|
-| `"alpha"` | 常规半透明贴图（默认） |
-| `"opaque"` | 不混合，直接覆盖底色 |
-| `"premultiplied"` | 预乘 alpha 混合 |
-
-设置后一直生效，直到再次调用。未知值抛 `ValueError`。
+**已移除**（2026-11-27 per-call 参数化）——混合改为**逐次绘制的参数**：
 
 ```python
-pygame.render.set_blend_mode("opaque")
+pygame.gfxdraw.draw_batch(t, buf, blend="additive")
+pygame.gfxdraw.draw_surface(t, surf, blend="premultiplied")
 ```
 
-#### <span class="c-func">set_cull_mode(mode)</span>
+`blend=` 取值（大小写敏感）：
 
-设置图元内容层的面剔除方式。`mode` 取 `"none"`（默认——不剔除）、
-`"back"`（剔除背面）或 `"front"`（剔除正面）。
+| 值 | 别名 | 行为 |
+|---|---|---|
+| `"alpha"` | `"blend"` | 常规半透明（默认） |
+| `"opaque"` | `"none"` / `"noblend"` / `"no_blend"` | 不混合，直接覆盖 |
+| `"premultiplied"` | `"premult"` | 预乘 alpha |
+| `"additive"` | `"add"` | 加色 |
+| `"multiply"` | `"mul"` | 正片叠底 |
 
-默认 `none` 保证镜像 blit（水平翻转贴图）正常显示，2D 场景一般
-不需要改；3D 场景建议在 raw 自绘管线里单独设置 cull。未知值抛
-`ValueError`。
+调用本口抛 `RuntimeError`（引擎用报错把旧写法推向新口，不静默降级）。
 
-```python
-pygame.render.set_cull_mode("back")
-```
+#### <span class="c-func">set_cull_mode(mode) —— 已移除</span>
+
+**已移除**（同上）——剔除走 `draw_batch(..., cull=...)` /
+`draw_surface(..., cull=...)`，取值 `"none"`（默认）/ `"back"`
+（只保留朝相机的面）。内容层按 **Ccw = 正面**裁决（画面 y 向上 +
+CCW 外向几何，2026-11-27 双三角像素实证），所以 `cull="back"` 剔的
+确实是背向面；`"front"` 仅供自建管线。调用本口抛 `RuntimeError`。
 
 #### <span class="c-func">access(offscreen=False) -> ResourceAccess</span>
 
@@ -175,19 +173,6 @@ MSAA 样本数。
 - :rtype: list
 
 ## <span class="c-class">类</span>
-
-### <span class="c-class">Camera —— 相机</span>
-
-直呼不可实例化——经 `camera_ortho` / `camera_perspective` 构造。
-
-##### <span class="c-func">with_view(view) -> Camera</span>
-
-替换视图矩阵（3D 位姿：`Mat4::look_at_rh` 等；2D 恒 Identity）。返回新
-Camera。
-
-##### <span class="c-func">mvp() -> Mat4</span>
-
-MVP（projection × view——唯一上传量；调试 / 教学口）。
 
 (gamecamera-正交与透视相机)=
 ### <span class="c-class">GameCamera —— letterbox 内聚相机</span>

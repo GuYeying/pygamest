@@ -151,14 +151,19 @@ with 会话入口——进入时开启渲染通道，退出时打包提交本帧
 ```python
 with screen.render() as r:
     r.fill((28, 34, 46))
-    pygame.gfxdraw.box(r, (10, 10, 100, 50))
+    pygame.gfxdraw.draw_batch(
+        r, pygame.gfxdraw.gen_rect(100, 50),
+        transform=pygame.math.mat4_translation(60, 35, 0))   # 中心锚摆位
 ```
 
 #### set_camera(cam)
 
 设置渲染相机（世界 → 画布）。相机由
 `pygame.render.game_camera_ortho()` / `game_camera_perspective()`
-构造。一次设置后跨会话与窗口缩放缓存，未显式设置时渲染走默认正交域。
+构造。一次设置后跨会话与窗口缩放缓存。
+
+**不设相机 = 裸 NDC 直通**（`[-1, 1]` 单位方框，喂像素坐标会整屏铺满）；
+要像素/中心系画面请显式设 `game_camera_ortho(lw, lh, lw, lh)`。
 
 ```python
 cam = pygame.render.game_camera_perspective(

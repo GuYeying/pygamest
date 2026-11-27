@@ -1,17 +1,17 @@
-//! pygame.render 绑定：渲染运行时状态口（set_blend_mode /
-//! set_cull_mode——图元内容层混合/剔除）+ SurfaceSettings（set_mode
-//! 创建期愿望：present_mode / clear_color / MSAA / 格式）+ 显式相机
-//!（game_camera_* 构造族 + screen.set_camera——域分层 v3）+ **底层资源
-//! 两入口**（ResourceAccess 建资源 + 主屏 RenderSurface 查询）与
-//! raw_render 直绘会话。
+//! pygame.render 绑定：SurfaceSettings（set_mode 创建期愿望：present_mode /
+//! clear_color / MSAA / 格式）+ 显式相机（game_camera_* 构造族 +
+//! screen.set_camera——域分层 v3）+ **底层资源两入口**（ResourceAccess
+//! 建资源 + 主屏 RenderSurface 查询）与 raw_render 直绘会话。
 //!
 //! 定约（域分层 v3，2026-11-19）：**显式相机唯一**——Camera 为唯一
 //! 相机类型（PyCamera/双类型并存退役）；screen.set_camera 一次设置
 //! 跨会话/resize/换画布缓存；未显式 = NDC 恒等默认域。pygame 图元
 //! API 恒像素域（pack None 段内置换算，不读相机）；raw 段顶点 NDC
 //! 直通。**render.init 已退役**：创建期愿望走 SurfaceSettings（传
-//! set_mode 的 surface_settings=），运行期内容层状态走
-//! set_blend_mode / set_cull_mode（3D 须显式 set_camera）。
+//! set_mode 的 surface_settings=）。**内容层混合/剔除已参数化**
+//! （2026-11-27）：set_blend_mode/set_cull_mode 移除，改走
+//! `gfxdraw.draw_batch/draw_surface` 的 blend/cull 参数（3D 须显式
+//! set_camera）。
 //!
 //! 批次 C/D（暴露面收缩定约）：**wgpu 裸对象（Device/Queue/Buffer/
 //! TextureView）零出 Python 界**——自建管线走 ResourceAccess 包装
@@ -477,24 +477,24 @@ pub(crate) mod render {
         .into_ref(&vm.ctx)
     }
 
-    /// set_blend_mode(mode)：设置图元内容层（blit / fill / draw 画的
-    /// 东西）的混合方式。mode 取 "alpha"（默认——常规半透明贴图）、
-    /// "opaque"（不混合，直接覆盖底色）或 "premultiplied"（预乘 alpha）。
-    /// 设置后一直生效，直到再次调用；未知值抛 ValueError。
-    /// 示例：pygame.render.set_blend_mode("opaque")
+    /// set_blend_mode(**已移除**)：混合改为逐次绘制的参数——
+    /// `gfxdraw.draw_batch(..., blend=...)` / `draw_surface(..., blend=...)`，
+    /// 取值 alpha / noblend / premultiplied / additive / multiply。
     #[pyfunction]
-    fn set_blend_mode(mode: String, vm: &VirtualMachine) -> PyResult<()> {
-        sf::set_blend_mode(&mode).map_err(|e| vm.new_value_error(e))
+    fn set_blend_mode(_mode: String, vm: &VirtualMachine) -> PyResult<()> {
+        Err(vm.new_runtime_error(
+            "set_blend_mode 已移除：请改用 draw_batch/draw_surface 的 blend= 参数（alpha / noblend / premultiplied / additive / multiply）",
+        ))
     }
 
-    /// set_cull_mode(mode)：设置图元内容层的面剔除方式。mode 取
-    /// "none"（默认——不剔除）、"back"（剔除背面）或 "front"（剔除
-    /// 正面）。默认 none 保证镜像 blit（水平翻转贴图）正常显示，2D
-    /// 场景一般不需要改；3D 场景建议在 raw 自绘管线里单独设置 cull。
-    /// 未知值抛 ValueError。示例：pygame.render.set_cull_mode("back")
+    /// set_cull_mode(**已移除**)：剔除改为逐次绘制的参数——
+    /// `gfxdraw.draw_batch(..., cull=...)` / `draw_surface(..., cull=...)`，
+    /// 取值 none / back（front 仅供自定义管线）。
     #[pyfunction]
-    fn set_cull_mode(mode: String, vm: &VirtualMachine) -> PyResult<()> {
-        sf::set_cull_mode(&mode).map_err(|e| vm.new_value_error(e))
+    fn set_cull_mode(_mode: String, vm: &VirtualMachine) -> PyResult<()> {
+        Err(vm.new_runtime_error(
+            "set_cull_mode 已移除：请改用 draw_batch/draw_surface 的 cull= 参数（none / back）",
+        ))
     }
 
 
