@@ -1126,90 +1126,138 @@ use std::cell::Cell;
             Ok(geo_to_buf(g))
         }
 
-        /// draw_surface(f, src, transform=None)：画离屏面（**中心锚**；
-        /// transform=None = 无变换直绘，Some = 显式矩阵——走 tf 通道；
-        /// set_transform 持久口已删——2026-11-27 参数自包含定约）
-        #[pyfunction]
-        fn draw_surface(
+        /// draw_surface(f, src, transform=None, src_rect=None, dst_rect=None, tint=None)：
+        /// 画离屏面统一口（2026-11-27 接口破坏定约——uv/tf/centered 三口
+        /// 合并）。约束：transform 与 dst_rect **互斥**（同给 = ValueError）。
+        /// 路由真值表：
+        /// - transform=Some → 全权矩阵（mat 变换中心锚 quad——不复合相机）
+        /// - dst_rect=Some → SDL 式拉伸（[x,y,w,h] 目标逻辑像素）
+        /// - src_rect=Some → UV 归一化 [u0,v0,u1,v1] 取块（可与其他组合）
+        /// - 全 None → src 原始尺寸中心锚直绘
+        /// tint：None = 不着色；Some = 与 src.blit_tint 复合（RGBA 0..255）
+        #[derive(FromArgs)]
+        struct DrawSurfaceArgs {
             f: PyObjectRef,
             src: PyRef<PySurface>,
-            transform: rustpython_vm::function::OptionalArg<PyRef<crate::rpy::pygame::math::math::PyMat4>>,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            use starfish_pygame::render::DrawTarget;
-            match route(&f, vm)? {
-                Target::Surf(s) => match transform {
-                    rustpython_vm::function::OptionalArg::Present(m) => {
-                        DrawTarget::draw_surface_tf(
-                            &*s.surface, &src.surface, m.0.get(), None)
-                    }
-                    _ => DrawTarget::draw_surface(&*s.surface, &src.surface),
-                },
-                Target::Active => bridge::with_session(vm, |t| match transform {
-                    rustpython_vm::function::OptionalArg::Present(m) => {
-                        DrawTarget::draw_surface_tf(t, &src.surface, m.0.get(), None)
-                    }
-                    _ => DrawTarget::draw_surface(t, &src.surface),
-                })?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| match transform {
-                    rustpython_vm::function::OptionalArg::Present(m) => {
-                        DrawTarget::draw_surface_tf(t, &src.surface, m.0.get(), None)
-                    }
-                    _ => DrawTarget::draw_surface(t, &src.surface),
-                })?,
-            }
-            Ok(())
+            #[pyarg(any, optional)]
+            transform: Option<PyRef<crate::rpy::pygame::math::math::PyMat4>>,
+            /// UV 归一化 [u0,v0,u1,v1]
+            #[pyarg(any, optional)]
+            src_rect: Option<Vec<f64>>,
+            /// 目标逻辑像素 [x,y,w,h]（与 transform 互斥）
+            #[pyarg(any, optional)]
+            dst_rect: Option<Vec<f64>>,
+            #[pyarg(any, optional)]
+            tint: Option<SfColor>,
         }
 
-        // ── draw_surface_centered 已删（2026-11-27 参数自包含定约——
-        //    中心锚 = draw_surface(t, src, transform=translation(cx, cy))）──
-
-        /// draw_surface_uv(f, src, uv, tint=None)：子区域画面（area 语义继任）
         #[pyfunction]
-        fn draw_surface_uv(
-            f: PyObjectRef,
-            src: PyRef<PySurface>,
-            uv: Vec<f32>,
-            tint: Option<SfColor>,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
+        fn draw_surface(args: DrawSurfaceArgs, vm: &VirtualMachine) -> PyResult<()> {
             use starfish_pygame::render::DrawTarget;
-            match route(&f, vm)? {
-                Target::Surf(s) => DrawTarget::draw_surface_uv(
-                    &*s.surface, &src.surface,
-                    [uv[0], uv[1], uv[2], uv[3]],
-                    tint.map(|c| c.0).unwrap_or([255, 255, 255, 255])),
-                Target::Active => bridge::with_session(vm, |t| DrawTarget::draw_surface_uv(
-                    t, &src.surface,
-                    [uv[0], uv[1], uv[2], uv[3]],
-                    tint.map(|c| c.0).unwrap_or([255, 255, 255, 255])))?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| DrawTarget::draw_surface_uv(
-                    t, &src.surface,
-                    [uv[0], uv[1], uv[2], uv[3]],
-                    tint.map(|c| c.0).unwrap_or([255, 255, 255, 255])))?,
+            // 互斥校验（文档写死 + 代码报错）
+            if args.transform.is_some() && args.dst_rect.is_some() {
+                return Err(vm.new_value_error(
+                    "draw_surface：transform 与 dst_rect 互斥（同给）",
+                ));
             }
-            Ok(())
-        }
-
-        /// draw_surface_tf(f, src, mat, tint=None)：显式矩阵画面（mat 全权，
-        /// 不复合会话 transform）
-        #[pyfunction]
-        fn draw_surface_tf(
-            f: PyObjectRef,
-            src: PyRef<PySurface>,
-            mat: PyRef<crate::rpy::pygame::math::math::PyMat4>,
-            tint: Option<SfColor>,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            use starfish_pygame::render::DrawTarget;
-            let tint = tint.map(|c| c.0).map(|px| [px[0] as f32 / 255.0, px[1] as f32 / 255.0, px[2] as f32 / 255.0, px[3] as f32 / 255.0]);
-            match route(&f, vm)? {
-                Target::Surf(s) => DrawTarget::draw_surface_tf(
-                    &*s.surface, &src.surface, mat.0.get(), tint),
-                Target::Active => bridge::with_session(vm, |t| DrawTarget::draw_surface_tf(
-                    t, &src.surface, mat.0.get(), tint))?,
-                Target::Targets => bridge::with_mrt_session(vm, |t| DrawTarget::draw_surface_tf(
-                    t, &src.surface, mat.0.get(), tint))?,
+            let src = &args.src;
+            src.surface.flush();
+            let (sw, sh) = src.surface.size32();
+            let (hw, hh) = (sw * 0.5, sh * 0.5);
+            let tint = args.tint.map(|c| c.0).map(|px| {
+                [
+                    px[0] as f32 / 255.0,
+                    px[1] as f32 / 255.0,
+                    px[2] as f32 / 255.0,
+                    px[3] as f32 / 255.0,
+                ]
+            });
+            let mut color = src.surface.blit_tint();
+            if let Some(t) = tint {
+                color = [
+                    color[0] * t[0],
+                    color[1] * t[1],
+                    color[2] * t[2],
+                    color[3] * t[3],
+                ];
+            }
+            // src_rect：UV 归一化 [u0,v0,u1,v1]（None = 整张）
+            let uv = match &args.src_rect {
+                Some(v) => {
+                    if v.len() != 4 {
+                        return Err(vm.new_value_error(format!(
+                            "src_rect 长度须为 4（u0,v0,u1,v1），实际 {}",
+                            v.len()
+                        )));
+                    }
+                    [
+                        v[0] as f32, v[1] as f32, v[2] as f32, v[3] as f32,
+                    ]
+                }
+                None => [0.0, 0.0, 1.0, 1.0],
+            };
+            let uvs = [
+                [uv[0], uv[1]],
+                [uv[2], uv[1]],
+                [uv[2], uv[3]],
+                [uv[0], uv[3]],
+            ];
+            // corners：transform → mat 变换中心锚 quad；dst_rect → SDL
+            // 式拉伸（[x,y,w,h] 目标逻辑像素左下角）；全 None → 中心锚直绘
+            let corners: [[f32; 3]; 4] = match (&args.transform, &args.dst_rect) {
+                (Some(m), _) => {
+                    let m = m.0.get();
+                    let c = |x: f32, y: f32| {
+                        let p = m.transform_point3(glam::Vec3::new(x, y, 0.0));
+                        [p.x, p.y, p.z]
+                    };
+                    [c(-hw, -hh), c(hw, -hh), c(hw, hh), c(-hw, hh)]
+                }
+                (_, Some(d)) => {
+                    if d.len() != 4 {
+                        return Err(vm.new_value_error(format!(
+                            "dst_rect 长度须为 4（x,y,w,h），实际 {}",
+                            d.len()
+                        )));
+                    }
+                    let (x, y, w, h) =
+                        (d[0] as f32, d[1] as f32, d[2] as f32, d[3] as f32);
+                    [
+                        [x, y, 0.0],
+                        [x + w, y, 0.0],
+                        [x + w, y + h, 0.0],
+                        [x, y + h, 0.0],
+                    ]
+                }
+                _ => [
+                    [-hw, -hh, 0.0],
+                    [hw, -hh, 0.0],
+                    [hw, hh, 0.0],
+                    [-hw, hh, 0.0],
+                ],
+            };
+            // 三路由统一进 batch（同一 material 管线族——直绘 = 中心锚
+            // quad 特例；mat/dst 已在 corners 生成端 CPU 烘）
+            fn draw_quad<T: starfish_pygame::render::DrawTarget + ?Sized>(
+                t: &T,
+                corners: [[f32; 3]; 4],
+                uvs: [[f32; 2]; 4],
+                color: [f32; 4],
+                tex: &starfish_pygame::render::Texture,
+            ) {
+                t.with_batch(|b| {
+                    b.push_quad_corners_3d(corners, uvs, color, Some(tex));
+                });
+            }
+            let tex = src.surface.texture().clone();
+            match route(&args.f, vm)? {
+                Target::Surf(s) => draw_quad(&*s.surface, corners, uvs, color, &tex),
+                Target::Active => bridge::with_session(vm, |t| {
+                    draw_quad(t, corners, uvs, color, &tex)
+                })?,
+                Target::Targets => bridge::with_mrt_session(vm, |t| {
+                    draw_quad(t, corners, uvs, color, &tex)
+                })?,
             }
             Ok(())
         }

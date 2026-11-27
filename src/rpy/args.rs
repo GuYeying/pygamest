@@ -161,6 +161,35 @@ impl TryFromObject for SfFPoint3 {
 #[derive(Debug, Clone)]
 pub struct SfFPoints(pub Vec<(f32, f32)>);
 
+/// 浮点矩形 `(x, y, w, h)`（序列形态；亚像素/UV 域通用——
+/// draw_surface 的 src_rect（UV 归一化）/dst_rect（目标逻辑像素）承载）
+#[derive(Debug, Clone, Copy)]
+pub struct SfFRect {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+impl TryFromObject for SfFRect {
+    fn try_from_object(vm: &VirtualMachine, obj: PyObjectRef) -> PyResult<Self> {
+        // int/float 均收（ArgIntoFloat 逐项——纯 int 序列零摩擦）
+        let items: Vec<f64> =
+            vm.extract_elements_with(&obj, |o| {
+                rustpython_vm::function::ArgIntoFloat::try_from_object(vm, o)
+                    .map(|v| v.into_float())
+            })?;
+        if items.len() != 4 {
+            return Err(vm.new_type_error(format!(
+                "rect (x, y, w, h) 长度须为 4，实际 {}",
+                items.len()
+            )));
+        }
+        let [x, y, w, h] = items.try_into().unwrap(); // 长度已验
+        Ok(Self { x: x as f32, y: y as f32, w: w as f32, h: h as f32 })
+    }
+}
+
 /// vertices 收参（topo = "triangles"/"lines"）
 #[derive(FromArgs)]
 pub(crate) struct VerticesArgs {
