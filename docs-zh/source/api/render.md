@@ -82,9 +82,10 @@ screen.set_camera(pygame.render.game_camera_ortho(lw, lh, lw, lh))
 
 - :rtype: Mat4
 
-#### <span class="c-func">set_blend_mode(mode) —— 已移除</span>
+#### <span class="c-func">set_blend_mode(mode) —— 已删除</span>
 
-**已移除**（2026-11-27 per-call 参数化）——混合改为**逐次绘制的参数**：
+**已删除**（2026-11-27 per-call 参数化；2026-11-28 引导桩退役——调用
+即 `AttributeError`）——混合改为**逐次绘制的参数**：
 
 ```python
 pygame.gfxdraw.draw_batch(t, buf, blend="additive")
@@ -101,16 +102,14 @@ pygame.gfxdraw.draw_surface(t, surf, blend="premultiplied")
 | `"additive"` | `"add"` | 加色 |
 | `"multiply"` | `"mul"` | 正片叠底 |
 
-调用本口抛 `RuntimeError`（引擎用报错把旧写法推向新口，不静默降级）。
+#### <span class="c-func">set_cull_mode(mode) —— 已删除</span>
 
-#### <span class="c-func">set_cull_mode(mode) —— 已移除</span>
-
-**已移除**（同上）——剔除随数据：`buf.cull` 属性（`"none"` 默认 /
-`"back"`，闭实体 `gen_*` 已自动烤入 `back`）+ `draw_surface(...,
-cull=...)` 逐次口（引擎 quad 无数据缓冲）。只保留朝相机的面。内容层
-按 **Ccw = 正面**裁决（画面 y 向上 + CCW 外向几何，2026-11-27 双三角
-像素实证），所以 `back` 剔的确实是背向面；`"front"` 仅供自建管线。
-调用本口抛 `RuntimeError`。
+**已删除**（同日引导桩退役——调用即 `AttributeError`）——剔除随数据：
+`buf.cull` 属性（`"none"` 默认 / `"back"`，闭实体 `gen_*` 已自动烤入
+`back`）；`draw_surface` 恒不剔除（quad 收益趋零，无此 kwarg）。只保留
+朝相机的面。内容层按 **Ccw = 正面**裁决（画面 y 向上 + CCW 外向几何，
+2026-11-27 双三角像素实证），所以 `back` 剔的确实是背向面；`"front"`
+仅供自建管线。
 
 #### <span class="c-func">access(offscreen=False) -> ResourceAccess</span>
 

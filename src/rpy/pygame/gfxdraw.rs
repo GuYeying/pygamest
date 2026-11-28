@@ -797,24 +797,9 @@ use std::cell::Cell;
             )
         }
 
-        /// set_blend_mode(**已移除**)：改用 draw_batch/draw_surface 的
-        /// `blend=` 参数（alpha / noblend / premultiplied / additive / multiply）
-        #[pyfunction]
-        fn set_blend_mode(_mode: String, vm: &VirtualMachine) -> PyResult<()> {
-            Err(vm.new_runtime_error(
-                "set_blend_mode 已移除：请改用 draw_batch/draw_surface 的 blend= 参数（alpha / noblend / premultiplied / additive / multiply）",
-            ))
-        }
-
-        /// set_cull_mode(**已移除**)：draw_batch 改用 `buf.cull` 属性
-        /// （none / back——剔除随数据，闭实体 gen_* 烤入 back）；
-        /// draw_surface 仍走 `cull=` 参数
-        #[pyfunction]
-        fn set_cull_mode(_mode: String, vm: &VirtualMachine) -> PyResult<()> {
-            Err(vm.new_runtime_error(
-                "set_cull_mode 已移除：draw_batch 请用 buf.cull 属性（none/back——剔除随数据，闭实体 gen_* 已烤入 back）；draw_surface 仍用 cull= 参数",
-            ))
-        }
+        // ── set_blend_mode / set_cull_mode 已删除（2026-11-28 用户定夺：
+        //    错误桩无价值——blend 走逐次 kwarg、剔除随 buf.cull，旧名
+        //    调用即 AttributeError，不留引导桩）──
 
         // ── gen_* 生成器族（Rust 内生成位置流——原点中心局部坐标；
         // 位置由 draw_batch 的 transform= 赋予，性能 = 语义函数族同级）──
@@ -1194,7 +1179,7 @@ use std::cell::Cell;
         }
 
         /// draw_surface(f, src, transform=None, src_rect=None, dst_rect=None,
-        /// tint=None, blend=None, cull=None)：
+        /// tint=None, blend=None)：
         /// 画离屏面统一口（2026-11-27 接口破坏定约——uv/tf/centered 三口
         /// 合并）。约束：transform 与 dst_rect **互斥**（同给 = ValueError）。
         /// 路由真值表：
@@ -1203,7 +1188,9 @@ use std::cell::Cell;
         /// - src_rect=Some → UV 归一化 [u0,v0,u1,v1] 取块（可与其他组合）
         /// - 全 None → src 原始尺寸中心锚直绘
         /// tint：None = 不着色；Some = 与 src.blit_tint 复合（RGBA 0..255）
-        /// blend/cull：本次调用的管线状态（None = alpha / 不剔除）
+        /// blend：本次调用的管线状态（None = alpha）。剔除恒 none
+        /// （2026-11-28——quad 每次绘制 1-4 个，剔除收益趋零纯参数税，
+        /// kwarg 退役；需要剔除的几何走 draw_batch + buf.cull）
         #[derive(FromArgs)]
         struct DrawSurfaceArgs {
             f: PyObjectRef,
@@ -1221,15 +1208,13 @@ use std::cell::Cell;
             /// 混合档位（None = alpha）
             #[pyarg(any, optional)]
             blend: Option<String>,
-            /// 剔除（None = none；none / back）
-            #[pyarg(any, optional)]
-            cull: Option<String>,
         }
 
         #[pyfunction]
         fn draw_surface(args: DrawSurfaceArgs, vm: &VirtualMachine) -> PyResult<()> {
             use starfish_pygame::render::DrawTarget;
-            let state = DrawState::from_names(args.blend.as_deref(), args.cull.as_deref())
+            // cull 恒 none（quad 面数极少剔除无收益——kwarg 已退役）
+            let state = DrawState::from_names(args.blend.as_deref(), None)
                 .map_err(|e| vm.new_value_error(e))?;
             // 互斥校验（文档写死 + 代码报错）
             if args.transform.is_some() && args.dst_rect.is_some() {

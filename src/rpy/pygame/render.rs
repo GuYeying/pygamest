@@ -9,9 +9,9 @@
 //! API 恒像素域（pack None 段内置换算，不读相机）；raw 段顶点 NDC
 //! 直通。**render.init 已退役**：创建期愿望走 SurfaceSettings（传
 //! set_mode 的 surface_settings=）。**内容层混合/剔除已参数化**
-//! （2026-11-27）：set_blend_mode/set_cull_mode 移除，改走
-//! `gfxdraw.draw_batch/draw_surface` 的 blend/cull 参数（3D 须显式
-//! set_camera）。
+//! （2026-11-27）：blend 走 draw_batch/draw_surface 的 blend= kwarg、
+//! 剔除随 buf.cull（2026-11-28）——set_blend_mode/set_cull_mode
+//! 已删除（3D 须显式 set_camera）。
 //!
 //! 批次 C/D（暴露面收缩定约）：**wgpu 裸对象（Device/Queue/Buffer/
 //! TextureView）零出 Python 界**——自建管线走 ResourceAccess 包装
@@ -486,25 +486,9 @@ pub(crate) mod render {
         Ok(format!("{fmt:?}").to_lowercase())
     }
 
-    /// set_blend_mode(**已移除**)：混合改为逐次绘制的参数——
-    /// `gfxdraw.draw_batch(..., blend=...)` / `draw_surface(..., blend=...)`，
-    /// 取值 alpha / noblend / premultiplied / additive / multiply。
-    #[pyfunction]
-    fn set_blend_mode(_mode: String, vm: &VirtualMachine) -> PyResult<()> {
-        Err(vm.new_runtime_error(
-            "set_blend_mode 已移除：请改用 draw_batch/draw_surface 的 blend= 参数（alpha / noblend / premultiplied / additive / multiply）",
-        ))
-    }
-
-    /// set_cull_mode(**已移除**)：剔除改为逐次绘制的参数——
-    /// `gfxdraw.draw_batch(..., cull=...)` / `draw_surface(..., cull=...)`，
-    /// 取值 none / back（front 仅供自定义管线）。
-    #[pyfunction]
-    fn set_cull_mode(_mode: String, vm: &VirtualMachine) -> PyResult<()> {
-        Err(vm.new_runtime_error(
-            "set_cull_mode 已移除：请改用 draw_batch/draw_surface 的 cull= 参数（none / back）",
-        ))
-    }
+    // ── set_blend_mode / set_cull_mode 已删除（2026-11-28——错误桩退役：
+    //    blend 走 draw_batch/draw_surface 逐次 kwarg，剔除随 buf.cull，
+    //    旧名调用即 AttributeError）──
 
 
     // ══════════════════════════════════════════════════════════════

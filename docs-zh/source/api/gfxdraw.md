@@ -41,10 +41,11 @@ pygame.render.game_camera_ortho(w, h, w, h))`，或会话段级
 `draw_batch(..., blend=...)` / `draw_surface(..., blend=...)`。取值
 `alpha`（默认）/ `opaque`（别名 `none` / `noblend`）/ `premultiplied` /
 `additive` / `multiply`。`cull` **随数据**（2026-11-28——`draw_batch`
-无此 kwarg，经 `buf.cull`；`draw_surface` 仍逐次收 `cull=`，取值
-`none`（默认）/ `back`，`front` 仅供自建管线）。模块级
-`pygame.render.set_blend_mode` / `set_cull_mode` **已移除**——调用即
-`RuntimeError`。
+无此 kwarg，经 `buf.cull`；`draw_surface` **恒不剔除**——quad 每次绘制
+1-4 个，剔除收益趋零，kwarg 同日退役，传了即 `TypeError`；`front`
+仅供自建管线）。模块级
+`pygame.render.set_blend_mode` / `set_cull_mode` **已删除**
+（2026-11-28）——调用即 `AttributeError`，不留引导桩。
 
 [3D 单一通道] 3D 直调口（`cube` / `sphere` / `plane` / `cylinder` /
 `cone` / `polygon3d`）**已全部删除**——3D 一律 `gen_*` → `draw_batch`
@@ -182,7 +183,7 @@ Rust 内生成位置流，返回 `VertexBuf`——性能与生成全程不落地
 
 ## <span class="c-func">贴图通道（draw_surface）</span>
 
-#### <span class="c-func">draw_surface(f, src, transform=None, src_rect=None, dst_rect=None, tint=None, blend=None, cull=None)</span>
+#### <span class="c-func">draw_surface(f, src, transform=None, src_rect=None, dst_rect=None, tint=None, blend=None)</span>
 
 画一张离屏面（单口——原 `draw_surface` / `draw_surface_uv` /
 `draw_surface_tf` 三口已合并，后两个名字**不存在**）。
@@ -194,9 +195,8 @@ Rust 内生成位置流，返回 `VertexBuf`——性能与生成全程不落地
 - `src_rect=[u0, v0, u1, v1]`：源面**归一化 UV** 子区域（不是像素）——
   精灵表/九宫格切片用它。
 - `tint=(r, g, b, a)`：整体染色（乘算）；`None` = 原色直出。
-- `blend`：同 `draw_batch`（逐次管线状态）。`cull`：同样逐次收参
-  （`none`/`back`——引擎生成的 quad 不经 VertexBuf，无数据可烤约定），
-  默认 `none`。
+- `blend`：同 `draw_batch`（逐次管线状态）。剔除恒 `none`（quad 每次
+  绘制 1-4 个，剔除收益趋零——无 `cull` kwarg，传了即 `TypeError`）。
 
 ```python
 pygame.gfxdraw.draw_surface(t, sprites, src_rect=(0.5, 0.0, 1.0, 0.5),
