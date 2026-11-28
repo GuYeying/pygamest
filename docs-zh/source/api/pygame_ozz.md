@@ -75,9 +75,10 @@ player.sample(t / player.duration())
 
 ## 渲染集成
 
-`pygame.gfxdraw.draw_ozz_bones()` 直接绘制骨架骨骼线（父子关节连线
-× 缩放 + 中心偏移；ozz 的 y 向上与引擎同构，零翻转）——蒙皮网格
-落地前的可视化形态：
+`pygame.gfxdraw.draw_ozz_bones(f, player, scale=80.0, cx=0.0, cy=0.0,
+transform=None)` 直接绘制骨架骨骼线（父子关节连线 × 缩放 + 中心偏移
++ 定位变换 kwarg——ozz 的 y 向上与引擎同构，零翻转；transform CPU 烘
+进线段坐标，None = 恒等）——蒙皮网格落地前的可视化形态：
 
 ```python
 while True:
@@ -88,4 +89,4 @@ while True:
 ```
 
 数据口 `joint_positions_xy()` / `joint_parents()` 支持自投影与自绘。
-完整演示见 `pygame-rs-dev/examples/ozz_render_demo.py`。
+完整演示见 `pygame-rs-dev/examples/test_examples/ozz_render_demo.py`。
