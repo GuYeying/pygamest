@@ -23,10 +23,10 @@ pub mod pygame {
     };
     use starfish_pygame::color::Color as EngineColor;
     use crate::rpy::args::{SfColor, SfPoint, SfRect};
-    pub(crate) const DEFAULT_FONT: &[u8] = include_bytes!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/resources/fonts/Antonio-Regular.ttf"
-    ));
+    // 默认字体 = 资源下沉到 starfish-pygame（`font::DEFAULT_FONT`，
+    // Antonio-Regular + SIL OFL 随附——本仓不再携带字体文件，宿主
+    // 零配置共用一份，接口行为一致；2026-11-28 下沉批次）
+    pub(crate) const DEFAULT_FONT: &[u8] = starfish_pygame::font::DEFAULT_FONT;
 
     // ── Surface：starfish Surface 直通句柄（批次 F）─────────────────
     // payload = owned starfish Surface（无 Clone/Debug/生命周期参数；

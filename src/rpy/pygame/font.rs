@@ -20,8 +20,8 @@ use std::cell::Cell;
         use rustpython_vm::builtins::{PyModule, PyStrRef, PyType};
         use rustpython_vm::{Py, PyObjectRef, PyPayload, PyRef, PyResult, VirtualMachine};
 
-        // 默认字体 = 顶层常量（见 mod pygame 顶部 DEFAULT_FONT 定义——维护者
-        // 自定义入口，本模块不重复声明）
+        // 默认字体 = 顶层别名（见 mod pygame 顶部 DEFAULT_FONT——指向
+        // starfish-pygame::font::DEFAULT_FONT，资源下沉共用一份）
         use crate::rpy::pygame::pygame::DEFAULT_FONT;
 
         /// draw_text(f, font, text, model, color)：文字表面渲染 + 显式

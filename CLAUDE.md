@@ -420,7 +420,7 @@ Python 触达 Rust 的分层链（自上而下，单向）：
   ADR-5 延迟提交冲突（纹理先于命令执行销毁 → 内容丢失/黑白帧交替
   闪烁，批次 F 真机实测）；
 - **font（批次 D/G）**：`pygame.font.Font(None|"cjk"|路径|bytes, size)`：
-  None = 内嵌 Antonio-Regular 47KB（拉丁，跨仓库 include_bytes 单源）；
+  None = 内嵌 Antonio-Regular 47KB（拉丁；资源下沉 starfish-pygame::font::DEFAULT_FONT 单源——本仓别名直通，2026-11-28 下沉批次）；
   **"cjk" = 宿主 io 预加载的 CJK 字体**（bridge 字节缓存；Windows 宿主
   预载系统 msyh.ttc，Web 预载 web/fonts/cjk.ttf fetch，Android 预载
   /system/fonts 系统候选链（NotoSansCJK/HarmonyOS_Sans_SC/miui 等 7 候选，
