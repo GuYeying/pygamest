@@ -105,11 +105,12 @@ pygame.gfxdraw.draw_surface(t, surf, blend="premultiplied")
 
 #### <span class="c-func">set_cull_mode(mode) —— 已移除</span>
 
-**已移除**（同上）——剔除走 `draw_batch(..., cull=...)` /
-`draw_surface(..., cull=...)`，取值 `"none"`（默认）/ `"back"`
-（只保留朝相机的面）。内容层按 **Ccw = 正面**裁决（画面 y 向上 +
-CCW 外向几何，2026-11-27 双三角像素实证），所以 `cull="back"` 剔的
-确实是背向面；`"front"` 仅供自建管线。调用本口抛 `RuntimeError`。
+**已移除**（同上）——剔除随数据：`buf.cull` 属性（`"none"` 默认 /
+`"back"`，闭实体 `gen_*` 已自动烤入 `back`）+ `draw_surface(...,
+cull=...)` 逐次口（引擎 quad 无数据缓冲）。只保留朝相机的面。内容层
+按 **Ccw = 正面**裁决（画面 y 向上 + CCW 外向几何，2026-11-27 双三角
+像素实证），所以 `back` 剔的确实是背向面；`"front"` 仅供自建管线。
+调用本口抛 `RuntimeError`。
 
 #### <span class="c-func">access(offscreen=False) -> ResourceAccess</span>
 

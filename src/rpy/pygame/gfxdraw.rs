@@ -437,15 +437,13 @@ use std::cell::Cell;
             Ok(())
         }
 
-        // ── push 统一口（v1 批次：VertexBuf + set_topology + push +
-        // gen_* 生成器族）────────────────────────────────────────────
+        // ── draw_batch 统一口（v1 批次：VertexBuf + gen_* 生成器族；
+        // push/set_topology/set_transform 全局口均退役）─────────────
         // 数据模型：VertexBuf = 顶点位置流（f32 [x,y,z × N]）+ 可选索引
-        // ——颜色/uv/变换全部 push 时按状态烘焙（与 push_geometry 同款，
-        // Geometry 颜色通道本就是死数据）。生成器 = Rust 内生成位置流
-        // （原点中心局部坐标——位置由 set_transform 赋予），数据全程
-        // 不落地 Python 逐顶点结构。push 流 = sticky 语义（color/
-        // topology/transform 跨 push 持续）；draw 函数族保持 one-shot
-        // （pygame 兼容语义）不变。
+        // + 拓扑/剔除约定随数据（buf.topology / buf.cull）。生成器 =
+        // Rust 内生成位置流（原点中心局部坐标——位置由 draw_batch 的
+        // transform= 赋予），数据全程不落地 Python 逐顶点结构。draw 函
+        // 数族保持 one-shot（pygame 兼容语义）不变。
 
         /// VertexBuf：顶点位置流容器（Rust Vec 持有——py 侧零逐顶点
         /// tuple 摆渡）。三条填充通道：add_point 单点 / add_points 扁平
@@ -455,6 +453,10 @@ use std::cell::Cell;
         /// sticky 状态）：线族生成器烤入 Lines、填充族 Triangles；py 可
         /// 经 `buf.topology` 属性覆写（"triangles"/"lines"）控制自己的
         /// 顶点数据解释——push 按缓冲自带拓扑分仓，零 sticky 陷阱。
+        /// **内外约定随数据走**（2026-11-28 定约）：闭实体生成器烤入
+        /// `buf.cull = "back"`（生成器是唯一知道绕序朝向的一方），开薄
+        /// 面/2D 族恒 "none"；线拓扑无面忽略剔除。cull 与 VertexBuf
+        /// 强绑定——draw_batch 的 cull kwarg 退役。
         #[derive(PyPayload)]
         #[pyattr]
         #[pyclass(module = "pygame.gfxdraw", name = "VertexBuf", unhashable = true)]
@@ -465,6 +467,8 @@ use std::cell::Cell;
             pub(crate) indices: std::cell::RefCell<Vec<u16>>,
             /// push 拓扑（None = Triangles；线族生成器烤入 Lines）
             pub(crate) topology: std::cell::RefCell<Option<starfish_pygame::render::batch::BatchTopology>>,
+            /// 剔除约定（None = "none"；闭实体生成器烤入 "back"）
+            pub(crate) cull: std::cell::RefCell<Option<String>>,
         }
 
         impl std::fmt::Debug for PyVertexBuf {
@@ -486,6 +490,7 @@ use std::cell::Cell;
                     points: std::cell::RefCell::new(Vec::new()),
                     indices: std::cell::RefCell::new(Vec::new()),
                     topology: std::cell::RefCell::new(None),
+                    cull: std::cell::RefCell::new(None),
                 })
             }
         }
@@ -521,6 +526,32 @@ use std::cell::Cell;
                     }
                 };
                 *self.topology.borrow_mut() = Some(topo);
+                Ok(())
+            }
+
+            /// cull 属性（"none" / "back"——内外约定随数据；闭实体 gen_*
+            /// 烤入 "back"，开薄面/2D 族恒 "none"；线拓扑无面忽略剔除）
+            #[pygetset]
+            fn cull(&self) -> String {
+                self.cull
+                    .borrow()
+                    .clone()
+                    .unwrap_or_else(|| "none".to_owned())
+            }
+
+            #[pygetset(setter)]
+            fn set_cull(&self, value: PyStrRef, vm: &VirtualMachine) -> PyResult<()> {
+                let s = value
+                    .to_str()
+                    .ok_or_else(|| vm.new_value_error("cull 含非 UTF-8 字符"))?;
+                match s {
+                    "none" | "back" => *self.cull.borrow_mut() = Some(s.to_owned()),
+                    other => {
+                        return Err(vm.new_value_error(format!(
+                            "cull 未识别：{other:?}（none/back）"
+                        )))
+                    }
+                }
                 Ok(())
             }
 
@@ -595,7 +626,8 @@ use std::cell::Cell;
         }
 
         /// Geometry → VertexBuf（生成器共用：抽 pos 流 + 索引；拓扑默认
-        /// Triangles——线族 gen 后自行覆写 Lines）
+        /// Triangles——线族 gen 后自行覆写 Lines；cull 默认 none——闭
+        /// 实体 gen 后烤入 back）
         fn geo_to_buf(g: starfish_gfx::geometry::Geometry) -> PyVertexBuf {
             let points: Vec<f32> = g
                 .vertices
@@ -606,6 +638,7 @@ use std::cell::Cell;
                 points: std::cell::RefCell::new(points),
                 indices: std::cell::RefCell::new(g.indices),
                 topology: std::cell::RefCell::new(None),
+                cull: std::cell::RefCell::new(None),
             }
         }
 
@@ -712,7 +745,7 @@ use std::cell::Cell;
         struct DrawBatchArgs {
             /// 渲染会话（with ...render() as f 的 f）
             f: PyObjectRef,
-            /// 顶点批（拓扑/索引随数据）
+            /// 顶点批（拓扑/索引/剔除约定随数据）
             data: PyRef<PyVertexBuf>,
             /// 模型变换（None = 沿用会话当前变换）
             #[pyarg(any, optional)]
@@ -727,18 +760,18 @@ use std::cell::Cell;
             /// premultiplied、additive、multiply）
             #[pyarg(any, optional)]
             blend: Option<String>,
-            /// 剔除（None = none；none / back）
-            #[pyarg(any, optional)]
-            cull: Option<String>,
         }
 
         /// draw_batch(f, data, transform=None, color=None, wireframe=None,
-        /// blend=None, cull=None)：**顶点批绘制统一口**——拓扑随数据走
-        /// （VertexBuf 烤入 / buf.topology 覆写），变换/色/线框/混合/
-        /// 剔除参数自包含（本次调用独立，不落回会话状态）。
+        /// blend=None)：**顶点批绘制统一口**——拓扑与剔除约定随数据走
+        /// （VertexBuf 烤入 / buf.topology、buf.cull 覆写），变换/色/
+        /// 线框/混合参数自包含（本次调用独立，不落回会话状态）。
+        /// cull kwarg 已退役（2026-11-28——剔除与 VertexBuf 强绑定：
+        /// 闭实体 gen_* 烤入 "back"，buf.cull 属性可覆写）。
         #[pyfunction]
         fn draw_batch(args: DrawBatchArgs, vm: &VirtualMachine) -> PyResult<()> {
-            let state = DrawState::from_names(args.blend.as_deref(), args.cull.as_deref())
+            let cull = args.data.cull.borrow().clone();
+            let state = DrawState::from_names(args.blend.as_deref(), cull.as_deref())
                 .map_err(|e| vm.new_value_error(e))?;
             let wireframe = args.wireframe.unwrap_or(false);
             let topo = args
@@ -773,12 +806,13 @@ use std::cell::Cell;
             ))
         }
 
-        /// set_cull_mode(**已移除**)：改用 draw_batch/draw_surface 的
-        /// `cull=` 参数（none / back）
+        /// set_cull_mode(**已移除**)：draw_batch 改用 `buf.cull` 属性
+        /// （none / back——剔除随数据，闭实体 gen_* 烤入 back）；
+        /// draw_surface 仍走 `cull=` 参数
         #[pyfunction]
         fn set_cull_mode(_mode: String, vm: &VirtualMachine) -> PyResult<()> {
             Err(vm.new_runtime_error(
-                "set_cull_mode 已移除：请改用 draw_batch/draw_surface 的 cull= 参数（none / back）",
+                "set_cull_mode 已移除：draw_batch 请用 buf.cull 属性（none/back——剔除随数据，闭实体 gen_* 已烤入 back）；draw_surface 仍用 cull= 参数",
             ))
         }
 
@@ -911,7 +945,9 @@ use std::cell::Cell;
                 glam::vec3(h, h, h),
                 [1.0; 4],
             );
-            Ok(geo_to_buf(g))
+            let mut buf = geo_to_buf(g);
+            buf.cull.replace(Some("back".to_owned()));
+            Ok(buf)
         }
 
         /// gen_line(x1, y1, x2, y2) -> VertexBuf：线段（lines 拓扑消费；
@@ -1041,7 +1077,9 @@ use std::cell::Cell;
                 sv,
                 [1.0; 4],
             );
-            Ok(geo_to_buf(g))
+            let mut buf = geo_to_buf(g);
+            buf.cull.replace(Some("back".to_owned()));
+            Ok(buf)
         }
 
         /// gen_plane(center, right, up, size) -> VertexBuf：任意朝向面片
@@ -1074,7 +1112,9 @@ use std::cell::Cell;
                 glam::vec3(max[0], max[1], max[2]),
                 [1.0; 4],
             );
-            Ok(geo_to_buf(g))
+            let mut buf = geo_to_buf(g);
+            buf.cull.replace(Some("back".to_owned()));
+            Ok(buf)
         }
 
         /// gen_polygon3d(points) -> VertexBuf：3D 多边形板（扁平
@@ -1119,7 +1159,9 @@ use std::cell::Cell;
                 seg,
                 [1.0; 4],
             );
-            Ok(geo_to_buf(g))
+            let mut buf = geo_to_buf(g);
+            buf.cull.replace(Some("back".to_owned()));
+            Ok(buf)
         }
 
         /// gen_cone(radius, height, segments=24) -> VertexBuf：圆锥（中心
@@ -1146,7 +1188,9 @@ use std::cell::Cell;
                 seg,
                 [1.0; 4],
             );
-            Ok(geo_to_buf(g))
+            let mut buf = geo_to_buf(g);
+            buf.cull.replace(Some("back".to_owned()));
+            Ok(buf)
         }
 
         /// draw_surface(f, src, transform=None, src_rect=None, dst_rect=None,

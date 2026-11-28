@@ -2,7 +2,7 @@
 
 形状生成器（`gen_*`）产出顶点数据 → `draw_batch` 一口入批——2D/3D
 几何共用这一条通道：**参数自包含**（`transform` / `color` / `wireframe` /
-`blend` / `cull` kwargs，one-shot 语义统一——本次是本次、下次是下次）。
+`blend` kwargs，one-shot 语义统一——本次是本次、下次是下次）。
 
 ```{note}
 首参 `f` 是**渲染会话**（`with screen.render() as f` 的 `f`，
@@ -22,6 +22,13 @@ pygame.render.game_camera_ortho(w, h, w, h))`，或会话段级
 `triangles`、线族烤入 `lines`——无需手工声明；自定义流经
 `buf.topology` 属性覆写（"triangles"/"lines"）。
 
+[剔除随数据] **内外约定与 VertexBuf 强绑定**（2026-11-28 定约）：
+闭实体生成器（`gen_cube` / `gen_box` / `gen_sphere` / `gen_cylinder` /
+`gen_cone`）烤入 `buf.cull = "back"`（绕序一致外向，内视全剔实证）；
+开薄面 / 2D 族恒 `"none"`（单面板天然双面，像素域剔除无意义）；
+线拓扑无面忽略剔除。`buf.cull` 属性可读写（"none"/"back"）覆写约定；
+`draw_batch` 的 `cull` kwarg **已退役**——传了即 `TypeError`。
+
 [图元函数族退役] SDL_gfx 风格图元函数（`filled_circle` / `box` /
 `line` / `rectangle` / `set_color` 等直接绘制口）已全部剔除——形状
 统一走 `gen_*` 生成器 + `draw_batch` 统一口（数据面收敛，见下节）。
@@ -30,18 +37,19 @@ pygame.render.game_camera_ortho(w, h, w, h))`，或会话段级
 与整张贴图 `blit` 已剔除——图元走本模块，贴图走 `draw_surface`。会话
 仍留低层逃逸舱 `fill` / `quad` / `vertices` / `blit_area`。
 
-[混合/剔除] **逐次参数**（2026-11-27 per-call 参数化）：
-`draw_batch(..., blend=..., cull=...)` / `draw_surface(..., blend=...,
-cull=...)`。`blend` 取值 `alpha`（默认）/ `opaque`（别名 `none` /
-`noblend`）/ `premultiplied` / `additive` / `multiply`；`cull` 只有
-`none`（默认）/ `back`（`front` 仅供自建管线）。模块级
+[混合/剔除] `blend` **逐次参数**（2026-11-27 per-call 参数化）：
+`draw_batch(..., blend=...)` / `draw_surface(..., blend=...)`。取值
+`alpha`（默认）/ `opaque`（别名 `none` / `noblend`）/ `premultiplied` /
+`additive` / `multiply`。`cull` **随数据**（2026-11-28——`draw_batch`
+无此 kwarg，经 `buf.cull`；`draw_surface` 仍逐次收 `cull=`，取值
+`none`（默认）/ `back`，`front` 仅供自建管线）。模块级
 `pygame.render.set_blend_mode` / `set_cull_mode` **已移除**——调用即
 `RuntimeError`。
 
 [3D 单一通道] 3D 直调口（`cube` / `sphere` / `plane` / `cylinder` /
 `cone` / `polygon3d`）**已全部删除**——3D 一律 `gen_*` → `draw_batch`
-（闭合体加 `cull="back"`），配合 `screen.render_depth()` 深度会话 +
-透视相机。
+（闭实体自动烤入 `buf.cull="back"`），配合 `screen.render_depth()`
+深度会话 + 透视相机。
 ```
 
 ## <span class="c-func">draw_batch 统一口</span>
@@ -68,7 +76,6 @@ with screen.render() as t:
         color=(90, 160, 255, 255),
         wireframe=True,                      # one-shot 仅本批
         blend="additive",                    # 混合逐次给
-        cull="back",                         # 剔除逐次给
     )
     seg = pygame.gfxdraw.VertexBuf()
     seg.extend(seg_bytes)                # f32 LE 直拷（每点 12 字节）
@@ -81,7 +88,8 @@ with screen.render() as t:
 - `color=None`：会话当前色，**默认引擎紫 `(128, 0, 128)`**——彩色场景
   务必逐个给色（否则一屏同色分不清结构）
 - `wireframe=None`：沿用会话当前线框开关
-- `blend=None`：`alpha`；`cull=None`：`none`（取值见页首 note）
+- `blend=None`：`alpha`（取值见页首 note）
+- 剔除**不收 kwarg**——随 `buf.cull`（见页首[剔除随数据]）
 
 数据形态为**位置流**（每点 x,y,z 三分量），颜色、uv、索引全部在入批
 时烘焙——数据全程 Rust 侧流转，Python 侧无逐顶点 tuple 摆渡。
@@ -97,50 +105,61 @@ indices)` 设置索引；`clear()` 清空复用容器。
 **`topology` 属性**（可读写）：`"triangles"`（默认）/ `"lines"`——
 自定义流的图元解释覆写口。
 
+**`cull` 属性**（可读写）：`"none"`（默认）/ `"back"`——内外约定
+覆写口。闭实体 `gen_*` 烤入 `"back"`，自定义 3D 外向绕序流想启用
+背面剔除就设它；`"front"` 与其他值拒绝（`ValueError`）。线拓扑忽略
+剔除（无面可剔）。
+
 ```python
 buf = pygame.gfxdraw.VertexBuf()
 buf.add_points([x1, y1, 0, x2, y2, 0, x3, y3, 0])   # 3 个点
 buf.set_indices([0, 1, 2])
 buf.topology = "lines"                               # 覆写解释（可选）
+buf.cull = "back"                                    # 覆写内外约定（可选）
 pygame.gfxdraw.draw_batch(t, buf)
 ```
 
-#### <span class="c-func">draw_batch(f, data, transform=None, color=None, wireframe=None, blend=None, cull=None)</span>
+#### <span class="c-func">draw_batch(f, data, transform=None, color=None, wireframe=None, blend=None)</span>
 
-顶点批绘制。`data` 只收 `VertexBuf`（拓扑/索引随数据）——外部数据先
-`VertexBuf().extend(bytes)` / `add_points(flat)` 灌进去再提交。
-`blend` / `cull` 是**本次绘制的管线状态**（不落回会话，见页首 note）。
+顶点批绘制。`data` 只收 `VertexBuf`（拓扑/索引/剔除约定随数据）——
+外部数据先 `VertexBuf().extend(bytes)` / `add_points(flat)` 灌进去再
+提交。`blend` 是**本次绘制的管线状态**（不落回会话，见页首 note）；
+剔除走 `data.cull`（无 kwarg——传了即 `TypeError`）。
 
 #### 生成器族（gen_*）
 
 Rust 内生成位置流，返回 `VertexBuf`——性能与生成全程不落地 Python
 一致。2D 形状产出为**原点中心局部坐标**（`gen_line`/`gen_polygon`
 系例外——输入点即局部坐标）。**拓扑烤入**：填充族 → `triangles`、
-`*_outline`/`line`/`arc` → `lines`：
+`*_outline`/`line`/`arc` → `lines`。**剔除烤入**：闭实体 →
+`back`、开薄面 / 2D 族 → `none`：
 
-| 生成器 | 产出 | 烤入拓扑 |
-|---|---|---|
-| `gen_circle(radius, segments=48)` | 填充圆（扇形三角化） | triangles |
-| `gen_circle_outline(radius, segments=64)` | 圆周线（1px） | lines |
-| `gen_rect(w, h)` / `gen_rect_outline(w, h)` | 矩形 / 周界线 | triangles / lines |
-| `gen_ellipse(rx, ry, segments=48)` | 填充椭圆 | triangles |
-| `gen_arc(radius, start_deg, stop_deg, segments=48)` | 圆弧线（度数制） | lines |
-| `gen_line(x1, y1, x2, y2)` | 线段 | lines |
-| `gen_polygon(points)` / `gen_polygon_outline(points)` | 多边形填充 / 周界线 | triangles / lines |
-| `gen_cube(size)` / `gen_box(min, max)` | 立方体 / 轴对齐盒（3D） | triangles |
-| `gen_sphere(radius, su=16, sv=12)` | 球体（3D，**中心原点**） | triangles |
-| `gen_plane(center, right, up, size)` | 任意朝向面片（3D） | triangles |
-| `gen_cylinder(radius, height, segments=24)` / `gen_cone(radius, height, segments=24)` | 圆柱 / 圆锥（3D，**原点 = 柱高中点**，沿 +y 挤出） | triangles |
-| `gen_polygon3d(points)` | 3D 多边形板（Newell 稳健三角化） | triangles |
+| 生成器 | 产出 | 烤入拓扑 | 烤入剔除 |
+|---|---|---|---|
+| `gen_circle(radius, segments=48)` | 填充圆（扇形三角化） | triangles | none |
+| `gen_circle_outline(radius, segments=64)` | 圆周线（1px） | lines | —（无面） |
+| `gen_rect(w, h)` / `gen_rect_outline(w, h)` | 矩形 / 周界线 | triangles / lines | none / — |
+| `gen_ellipse(rx, ry, segments=48)` | 填充椭圆 | triangles | none |
+| `gen_arc(radius, start_deg, stop_deg, segments=48)` | 圆弧线（度数制） | lines | —（无面） |
+| `gen_line(x1, y1, x2, y2)` | 线段 | lines | —（无面） |
+| `gen_polygon(points)` / `gen_polygon_outline(points)` | 多边形填充 / 周界线 | triangles / lines | none / — |
+| `gen_cube(size)` / `gen_box(min, max)` | 立方体 / 轴对齐盒（3D） | triangles | **back** |
+| `gen_sphere(radius, su=16, sv=12)` | 球体（3D，**中心原点**） | triangles | **back** |
+| `gen_plane(center, right, up, size)` | 任意朝向面片（3D） | triangles | none（单面板双面） |
+| `gen_cylinder(radius, height, segments=24)` / `gen_cone(radius, height, segments=24)` | 圆柱 / 圆锥（3D，**原点 = 柱高中点**，沿 +y 挤出） | triangles | **back** |
+| `gen_polygon3d(points)` | 3D 多边形板（Newell 稳健三角化） | triangles | none（单面板双面） |
 
 **3D 族约定**（配合 `screen.render_depth()` + 透视相机，一律显式
 `transform=` 摆位）：
 
 - `gen_sphere` / `gen_cylinder` / `gen_cone` 以**自身原点为心**（柱/锥
   = 柱高中点），没有 `center` 参数——摆位靠 `transform=mat4_translation(...)`；
-- 闭合体统一 **CCW 外向绕序**，`cull="back"` 剔的是背向面（内容层
-  按 Ccw = 正面裁决）；单面板（`gen_plane` / `gen_polygon3d`）按朝向
-  自行决定是否剔除；
+- 闭合体统一 **CCW 外向绕序**，烤入的 `back` 剔的是背向面（内容层
+  按 Ccw = 正面裁决；内视全剔已探针实证）。单面板（`gen_plane` /
+  `gen_polygon3d`）恒 `none` 双面可见——需要单面就 `buf.cull = "back"`；
+- **已知边界**：负行列数变换（镜像 `mat4_scale(-1,1,1)` 等）翻转绕序，
+  烤入的 back 会剔掉本应可见的面（静默隐形）——det<0 自动翻转剔除
+  属后续批次，现版镜像场景请 `buf.cull = "none"` 或复制缓冲覆写；
 - 旧 3D 直调口（`cube(f, min, max)` / `sphere(f, center, r)` /
   `cylinder(f, base_center, r, h)` 等带绝对坐标的便捷口）**已删除**，
   文档/案例里再出现即过期写法。
@@ -175,7 +194,9 @@ Rust 内生成位置流，返回 `VertexBuf`——性能与生成全程不落地
 - `src_rect=[u0, v0, u1, v1]`：源面**归一化 UV** 子区域（不是像素）——
   精灵表/九宫格切片用它。
 - `tint=(r, g, b, a)`：整体染色（乘算）；`None` = 原色直出。
-- `blend` / `cull`：同 `draw_batch`（逐次管线状态）。
+- `blend`：同 `draw_batch`（逐次管线状态）。`cull`：同样逐次收参
+  （`none`/`back`——引擎生成的 quad 不经 VertexBuf，无数据可烤约定），
+  默认 `none`。
 
 ```python
 pygame.gfxdraw.draw_surface(t, sprites, src_rect=(0.5, 0.0, 1.0, 0.5),
