@@ -477,6 +477,15 @@ pub(crate) mod render {
         .into_ref(&vm.ctx)
     }
 
+    /// surface_format() -> str：主 surface 当前颜色格式名（"rgba8unorm"
+    /// / "bgra8unorm" / ...——自绘管线 format= 对齐用；wasm 浏览器
+    /// WebGPU 的 canvas 格式与 native 不同，自建管线须与本口对齐）
+    #[pyfunction]
+    fn surface_format(vm: &VirtualMachine) -> PyResult<String> {
+        let fmt = starfish_pygame::display::get_screen().color_format();
+        Ok(format!("{fmt:?}").to_lowercase())
+    }
+
     /// set_blend_mode(**已移除**)：混合改为逐次绘制的参数——
     /// `gfxdraw.draw_batch(..., blend=...)` / `draw_surface(..., blend=...)`，
     /// 取值 alpha / noblend / premultiplied / additive / multiply。
